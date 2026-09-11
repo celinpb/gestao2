@@ -485,7 +485,7 @@
       }
       setBotao('f2-btn-entrar', false);
       if (typeof window.onLoginSucesso === 'function') {
-        window.onLoginSucesso(res.token, res.usuario);
+        window.onLoginSucesso(null, res.dados ? res.dados.usuario : res.usuario);
       }
     });
   }
@@ -546,7 +546,7 @@
       setBotao('f2-btn-definir', false);
       setTimeout(function() {
         if (typeof window.onLoginSucesso === 'function') {
-          window.onLoginSucesso(res.token, res.usuario);
+          window.onLoginSucesso(null, res.dados ? res.dados.usuario : res.usuario);
         }
       }, 800);
     });
