@@ -286,12 +286,17 @@ async function _usuariosCriar(sb, dados) {
   if (!dados.email || !dados.nome || !dados.papel) {
     return _err('Nome, e-mail e papel são obrigatórios.', 400);
   }
-  // Criar conta no Supabase Auth via convite (envia e-mail ao usuário)
-  var invite = await sb.auth.admin.inviteUserByEmail(dados.email);
-  if (invite.error) return _err(invite.error.message);
 
+  // Verificar duplicidade de e-mail
+  var dup = await sb.from('usuarios').select('id').eq('email', dados.email).maybeSingle();
+  if (dup.data) return _err('E-mail já cadastrado.', 409);
+
+  // Cria o registro na tabela usuarios sem auth_user_id vinculado.
+  // O vínculo com o Supabase Auth é feito manualmente pelo admin via SQL:
+  //   UPDATE usuarios SET auth_user_id = (SELECT id FROM auth.users WHERE email = 'EMAIL')
+  //   WHERE external_id = 'UXXX';
   var res = await sb.from('usuarios').insert({
-    auth_user_id:   invite.data.user.id,
+    auth_user_id:   null,
     login:          dados.login || dados.email,
     nome:           dados.nome,
     email:          dados.email,
@@ -299,7 +304,7 @@ async function _usuariosCriar(sb, dados) {
     situacao_ativo: true,
   }).select().single();
   if (res.error) return _err(res.error.message);
-  return _ok(res.data, 'Usuário criado. Convite enviado para ' + dados.email);
+  return _ok(res.data, 'Usuário criado. Vincule a conta no Supabase Auth e execute o SQL de vínculo para liberar o acesso.');
 }
 
 async function _usuariosAtualizar(sb, dados) {
@@ -348,8 +353,7 @@ async function _alunosListar(sb, dados) {
   if (res.error) return _err(res.error.message);
 
   // Normalizar para formato esperado pelos módulos HTML existentes (PascalCase + campos legados)
-  var lista = (res.data || []).map(_normalizarAluno);
-  return _ok({ dados: lista, totalRegistros: lista.length, totalPaginas: 1 });
+  return _ok(res.data || []);
 }
 
 // Normaliza um registro de aluno do banco (snake_case) para o formato dos módulos HTML (PascalCase)
@@ -405,7 +409,7 @@ async function _alunosBuscar(sb, dados) {
     .order('nome_completo')
     .limit(100);
   if (res.error) return _err(res.error.message);
-  return _ok((res.data || []).map(_normalizarAluno));
+  return _ok(res.data || []);
 }
 
 async function _alunosCriar(sb, dados) {
