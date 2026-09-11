@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SGE · CELINPB</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="shortcut icon" href="favicon.ico" type="image/x-icon">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+  <style>
+    :root {
+      --c-bg:#F5F4F0;--c-surface:#FFFFFF;--c-sidebar:#1A1A2E;--c-accent:#E63946;
+      --c-text-1:#1A1A2E;--c-text-2:#5C5C7A;--c-text-3:#9898B0;--c-border:#E8E7E2;
+      --c-success:#2A9D8F;--c-warning:#E9C46A;--c-danger:#E63946;--c-info:#457B9D;
+      --sidebar-w:248px;--header-h:56px;--radius-sm:6px;--radius-md:10px;--radius-lg:16px;
+      --font-sans:'DM Sans',sans-serif;--font-mono:'DM Mono',monospace;
+      --shadow-sm:0 1px 3px rgba(26,26,46,0.08);--shadow-md:0 4px 16px rgba(26,26,46,0.10);
+      --shadow-lg:0 8px 32px rgba(26,26,46,0.14);--transition:180ms cubic-bezier(0.4,0,0.2,1);
+    }
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    html,body{height:100%;font-family:var(--font-sans);background:var(--c-bg);color:var(--c-text-1);font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased;}
+    button{font-family:var(--font-sans);cursor:pointer;border:none;background:none;}
+    a{color:inherit;text-decoration:none;}ul,ol{list-style:none;}
+    #app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;grid-template-rows:var(--header-h) 1fr;grid-template-areas:"sidebar header" "sidebar main";min-height:100vh;}
+    #sidebar{grid-area:sidebar;background:var(--c-sidebar);display:flex;flex-direction:column;position:fixed;top:0;left:0;width:var(--sidebar-w);height:100vh;z-index:100;overflow:hidden;transition:transform var(--transition);}
+    .sidebar-brand{display:flex;align-items:center;gap:10px;padding:0 20px;height:var(--header-h);border-bottom:1px solid rgba(255,255,255,0.07);flex-shrink:0;}
+    .sidebar-brand-logo{width:32px;height:32px;border-radius:var(--radius-sm);background:rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;}
+    .sidebar-brand-logo img{width:100%;height:100%;object-fit:contain;}
+    .sidebar-brand-logo-placeholder{font-size:14px;font-weight:600;color:var(--c-accent);letter-spacing:-0.5px;}
+    .sidebar-brand-name{font-size:13px;font-weight:600;color:#FFFFFF;letter-spacing:0.3px;line-height:1.2;}
+    .sidebar-brand-sub{font-size:10px;color:rgba(255,255,255,0.38);font-weight:400;letter-spacing:0.5px;text-transform:uppercase;}
+    .sidebar-nav{flex:1;overflow-y:auto;padding:12px 0;scrollbar-width:none;}
+    .sidebar-nav::-webkit-scrollbar{display:none;}
+    .nav-item{display:flex;align-items:center;gap:10px;padding:9px 20px;margin:1px 8px;border-radius:var(--radius-sm);font-size:13.5px;font-weight:400;color:rgba(255,255,255,0.60);cursor:pointer;transition:background var(--transition),color var(--transition);position:relative;user-select:none;}
+    .nav-item:hover{background:rgba(255,255,255,0.07);color:rgba(255,255,255,0.90);}
+    .nav-item.active{background:rgba(230,57,70,0.18);color:#FFFFFF;font-weight:500;}
+    .nav-item.active::before{content:'';position:absolute;left:-8px;top:50%;transform:translateY(-50%);width:3px;height:18px;background:var(--c-accent);border-radius:0 3px 3px 0;}
+    .nav-item .material-icons-round{font-size:18px;flex-shrink:0;opacity:0.85;}
+    .nav-item.active .material-icons-round{opacity:1;}
+    .sidebar-footer{border-top:1px solid rgba(255,255,255,0.07);padding:12px;flex-shrink:0;}
+    .user-card{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--radius-sm);transition:background var(--transition);}
+    .user-card:hover{background:rgba(255,255,255,0.06);}
+    .user-avatar{width:32px;height:32px;border-radius:50%;background:var(--c-accent);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:#fff;flex-shrink:0;letter-spacing:-0.3px;}
+    .user-info{flex:1;min-width:0;}
+    .user-name{font-size:12.5px;font-weight:500;color:rgba(255,255,255,0.88);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .user-role{font-size:10.5px;color:rgba(255,255,255,0.38);text-transform:capitalize;}
+    .btn-logout{width:28px;height:28px;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.35);transition:background var(--transition),color var(--transition);flex-shrink:0;}
+    .btn-logout:hover{background:rgba(230,57,70,0.18);color:var(--c-accent);}
+    .btn-logout .material-icons-round{font-size:16px;}
+    #header{grid-area:header;background:var(--c-surface);border-bottom:1px solid var(--c-border);display:flex;align-items:center;padding:0 24px;gap:16px;position:sticky;top:0;z-index:50;box-shadow:var(--shadow-sm);}
+    .header-title{font-size:15px;font-weight:500;color:var(--c-text-1);flex:1;}
+    .header-semestre{font-size:11.5px;font-weight:500;color:var(--c-text-3);background:var(--c-bg);border:1px solid var(--c-border);border-radius:20px;padding:3px 10px;font-family:var(--font-mono);letter-spacing:0.3px;}
+    .header-sessao{font-size:11.5px;font-weight:600;color:var(--c-text-3);background:var(--c-bg);border:1px solid var(--c-border);border-radius:20px;padding:3px 10px;font-family:var(--font-mono);letter-spacing:0.3px;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;}
+    .header-sessao .material-icons-round{font-size:14px;}
+    .header-sessao.sessao-alerta{color:var(--c-danger);background:rgba(230,57,70,0.08);border-color:rgba(230,57,70,0.25);}
+    #main{grid-area:main;padding:28px 32px;overflow-y:auto;min-height:0;}
+    .state-loading,.state-error{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:240px;gap:12px;color:var(--c-text-3);}
+    .state-error{color:var(--c-danger);}
+    .spinner{width:28px;height:28px;border:2.5px solid var(--c-border);border-top-color:var(--c-accent);border-radius:50%;animation:spin 0.7s linear infinite;}
+    @keyframes spin{to{transform:rotate(360deg);}}
+    .state-loading p,.state-error p{font-size:13.5px;}
+    #toast-container{position:fixed;bottom:24px;right:24px;z-index:1000;display:flex;flex-direction:column;gap:8px;pointer-events:none;}
+    .toast{display:flex;align-items:center;gap:10px;background:var(--c-sidebar);color:#fff;padding:11px 16px;border-radius:var(--radius-md);font-size:13.5px;box-shadow:var(--shadow-lg);pointer-events:all;animation:toast-in 0.28s cubic-bezier(0.34,1.56,0.64,1);max-width:340px;border-left:3px solid var(--c-accent);}
+    .toast.success{border-left-color:var(--c-success);}
+    .toast.error{border-left-color:var(--c-danger);}
+    .toast.info{border-left-color:var(--c-info);}
+    .toast .material-icons-round{font-size:17px;flex-shrink:0;}
+    .toast.success .material-icons-round{color:var(--c-success);}
+    .toast.error .material-icons-round{color:var(--c-danger);}
+    .toast.info .material-icons-round{color:var(--c-info);}
+    @keyframes toast-in{from{opacity:0;transform:translateX(20px) scale(0.96);}to{opacity:1;transform:translateX(0) scale(1);}}
+    #login-overlay{position:fixed;inset:0;background:var(--c-bg);z-index:500;display:flex;align-items:center;justify-content:center;}
+    @media(max-width:768px){
+      :root{--sidebar-w:0px;}
+      #app{grid-template-columns:1fr;grid-template-areas:"header" "main";}
+      #sidebar{transform:translateX(-248px);}
+      #sidebar.open{transform:translateX(0);width:248px;box-shadow:var(--shadow-lg);}
+      #main{padding:16px;}
+      .header-sessao{display:none;}
+    }
+  </style>
+</head>
+<body>
+
+<!-- Tela de login / loading inicial -->
+<div id="login-overlay">
+  <div class="state-loading">
+    <div class="spinner"></div>
+    <p>Carregando…</p>
+  </div>
+</div>
+
+<!-- Shell principal (oculto até autenticar) -->
+<div id="app" style="display:none;">
+  <aside id="sidebar">
+    <div class="sidebar-brand">
+      <div class="sidebar-brand-logo" id="brand-logo">
+        <span class="sidebar-brand-logo-placeholder">CL</span>
+      </div>
+      <div>
+        <div class="sidebar-brand-name" id="brand-name">CELINPB</div>
+        <div class="sidebar-brand-sub">Gestão Escolar</div>
+      </div>
+    </div>
+    <nav class="sidebar-nav" id="sidebar-nav"></nav>
+    <div class="sidebar-footer">
+      <div class="user-card">
+        <div class="user-avatar" id="user-avatar">?</div>
+        <div class="user-info">
+          <div class="user-name" id="user-name">—</div>
+          <div class="user-role" id="user-role">—</div>
+        </div>
+        <button class="btn-logout" id="btn-logout" title="Sair">
+          <span class="material-icons-round">logout</span>
+        </button>
+      </div>
+    </div>
+  </aside>
+  <header id="header">
+    <button id="btn-menu-mobile" style="display:none;margin-right:8px;">
+      <span class="material-icons-round" style="font-size:22px;color:var(--c-text-2);">menu</span>
+    </button>
+    <h1 class="header-title" id="header-title">Início</h1>
+    <span class="header-sessao" id="header-sessao" title="Tempo restante da sessão">
+      <span class="material-icons-round">schedule</span><span id="header-sessao-txt">—:—</span>
+    </span>
+    <span class="header-semestre" id="header-semestre">—</span>
+  </header>
+  <main id="main">
+    <div class="state-loading"><div class="spinner"></div><p>Carregando…</p></div>
+  </main>
+</div>
+
+<div id="toast-container"></div>
+
+<!-- Carrega os módulos JS -->
+<script src="auth.js"></script>
+<script src="api.js"></script>
+
+<script>
+// =========================================================
+// ESTADO GLOBAL
+// =========================================================
+var App = { usuario: null, semestre: null, modulo: null, config: null };
+
+// =========================================================
+// MAPA DE MÓDULOS
+// Cada chave aponta para o arquivo HTML correspondente
+// na mesma pasta do repositório.
+// =========================================================
+var MODULOS = {
+  dashboard:  'modulos/dashboard.html',
+  usuarios:   'modulos/f3-usuarios.html',
+  alunos:     'modulos/f4-alunos.html',
+  cursos:     'modulos/f9-cursos.html',
+  turmas:     'modulos/f5-turmas.html',
+  matriculas: 'modulos/f5-matriculas.html',
+  diario:     'modulos/f6-diario.html',
+  notas:      'modulos/f7-notas.html',
+  relatorios: 'modulos/f8-relatorios.html',
+  config:     'modulos/f-config.html',
+};
+
+// =========================================================
+// CARREGAMENTO DE MÓDULO
+// Usa fetch para buscar o arquivo HTML local (sem Apps Script)
+// e injeta no #main. Reexecuta os <script> do fragmento.
+// =========================================================
+function carregarModulo(path) {
+  return fetch(path + '?v=' + Date.now())
+    .then(function(r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.text();
+    });
+}
+
+function executarScripts(container) {
+  container.querySelectorAll('script').forEach(function(original) {
+    var novo = document.createElement('script');
+    Array.from(original.attributes).forEach(function(attr) {
+      novo.setAttribute(attr.name, attr.value);
+    });
+    novo.textContent = original.textContent;
+    original.parentNode.replaceChild(novo, original);
+  });
+}
+
+// =========================================================
+// INICIALIZAÇÃO
+// =========================================================
+function init() {
+  // Verifica sessão salva no localStorage
+  if (!Auth.temSessao()) {
+    carregarLogin();
+    return;
+  }
+
+  // Valida token com o servidor
+  postApi('auth.verificarSessao', {})
+    .then(function(res) {
+      if (res.sucesso && res.dados) {
+        App.usuario = res.dados;
+        carregarShell();
+      } else {
+        Auth.limpar();
+        carregarLogin();
+      }
+    })
+    .catch(function() {
+      // Sem conexão — tenta usar dados locais
+      var usuario = Auth.getUsuario();
+      if (usuario) {
+        App.usuario = usuario;
+        carregarShell();
+      } else {
+        carregarLogin();
+      }
+    });
+}
+
+// =========================================================
+// LOGIN
+// =========================================================
+function carregarLogin() {
+  fetch('modulos/f2-login.html?v=' + Date.now())
+    .then(function(r) { return r.text(); })
+    .then(function(html) {
+      var overlay = document.getElementById('login-overlay');
+      overlay.innerHTML = html;
+      executarScripts(overlay);
+    })
+    .catch(function() {
+      document.getElementById('login-overlay').innerHTML =
+        '<p style="color:#E63946;padding:40px;font-family:sans-serif;text-align:center;">' +
+        'Erro ao carregar o login. Verifique sua conexão.</p>';
+    });
+}
+
+// Chamada pelo módulo de login após autenticação bem-sucedida
+function onLoginSucesso(token, usuario) {
+  Auth.salvar(token, usuario);
+  App.usuario = usuario;
+  document.getElementById('login-overlay').style.display = 'none';
+  carregarShell();
+}
+
+// =========================================================
+// SHELL
+// =========================================================
+function carregarShell() {
+  document.getElementById('app').style.display = 'grid';
+  preencherUsuarioSidebar();
+  iniciarContadorSessao();
+
+  postApi('sistema.menu', {})
+    .then(function(res) {
+      if (res.sucesso && res.dados && res.dados.length > 0) {
+        renderizarMenu(normalizarMenu(res.dados));
+      } else {
+        renderizarMenuFallback();
+      }
+      return postApi('sistema.config', {});
+    })
+    .then(function(res) {
+      if (res.sucesso) aplicarConfig(res.dados);
+      return postApi('sistema.semestreAtual', {});
+    })
+    .then(function(res) {
+      if (res.sucesso && res.dados) {
+        App.semestre = res.dados;
+        document.getElementById('header-semestre').textContent = res.dados.Semestre || '—';
+      }
+      navegarPara('dashboard', 'Início');
+    })
+    .catch(function() {
+      renderizarMenuFallback();
+      navegarPara('dashboard', 'Início');
+    });
+}
+
+function preencherUsuarioSidebar() {
+  var u = App.usuario;
+  if (!u) return;
+  var iniciais = (u.Nome || '').split(' ').filter(Boolean).slice(0,2)
+    .map(function(p){return p[0];}).join('').toUpperCase();
+  document.getElementById('user-avatar').textContent = iniciais || '?';
+  document.getElementById('user-name').textContent   = u.Nome  || '—';
+  document.getElementById('user-role').textContent   = u.Papel || '—';
+}
+
+function aplicarConfig(config) {
+  App.config = config;
+  if (config.sigla_escola) document.getElementById('brand-name').textContent = config.sigla_escola;
+  if (config.nome_escola)  document.title = config.nome_escola + ' · SGE';
+}
+
+function normalizarMenu(itens) {
+  var resultado = [];
+  var diarioAdicionado = false;
+  itens.forEach(function(item) {
+    if (item.id === 'frequencia' || item.id === 'conteudo') {
+      if (!diarioAdicionado) {
+        resultado.push({ id: 'diario', label: 'Diário de aula', icone: 'menu_book' });
+        diarioAdicionado = true;
+      }
+    } else {
+      resultado.push(item);
+    }
+  });
+  return resultado;
+}
+
+function renderizarMenuFallback() {
+  var papel = App.usuario ? App.usuario.Papel : '';
+  var itens = [{ id: 'dashboard', label: 'Início', icone: 'home' }];
+  if (papel === 'admin' || papel === 'coordenacao') {
+    itens.push(
+      { id: 'usuarios',   label: 'Usuários',      icone: 'people'       },
+      { id: 'alunos',     label: 'Alunos',         icone: 'school'       },
+      { id: 'cursos',     label: 'Cursos',         icone: 'auto_stories' },
+      { id: 'turmas',     label: 'Turmas',         icone: 'groups'       },
+      { id: 'matriculas', label: 'Matrículas',     icone: 'assignment'   },
+      { id: 'diario',     label: 'Diário de aula', icone: 'menu_book'    },
+      { id: 'notas',      label: 'Notas',          icone: 'grade'        },
+      { id: 'relatorios', label: 'Relatórios',     icone: 'summarize'    }
+    );
+    // ATENÇÃO: 'config' é EXCLUSIVO de admin (ver m3_menuPorPapel em
+    // M3_Permissoes.gs — é o único item ali restrito só a admin).
+    // Não mover este item para dentro do bloco acima.
+    if (papel === 'admin') {
+      itens.push({ id: 'config', label: 'Configurações', icone: 'settings' });
+    }
+  } else if (papel === 'professor') {
+    itens.push(
+      { id: 'alunos',     label: 'Alunos',         icone: 'school'    },
+      { id: 'turmas',     label: 'Turmas',         icone: 'groups'    },
+      { id: 'diario',     label: 'Diário de aula', icone: 'menu_book' },
+      { id: 'notas',      label: 'Notas',          icone: 'grade'     },
+      { id: 'relatorios', label: 'Relatórios',     icone: 'summarize' }
+    );
+  } else if (papel === 'secretaria') {
+    itens.push(
+      { id: 'alunos',     label: 'Alunos',     icone: 'school'    },
+      { id: 'turmas',     label: 'Turmas',     icone: 'groups'    },
+      { id: 'matriculas', label: 'Matrículas', icone: 'assignment'},
+      { id: 'relatorios', label: 'Relatórios', icone: 'summarize' }
+    );
+  }
+  renderizarMenu(itens);
+}
+
+// =========================================================
+// MENU
+// =========================================================
+function renderizarMenu(itens) {
+  var nav = document.getElementById('sidebar-nav');
+  nav.innerHTML = '';
+  itens.forEach(function(item) {
+    var li = document.createElement('li');
+    li.className = 'nav-item';
+    li.dataset.id = item.id;
+    li.innerHTML =
+      '<span class="material-icons-round">' + (item.icone || 'circle') + '</span>' +
+      '<span>' + item.label + '</span>';
+    li.addEventListener('click', function() { navegarPara(item.id, item.label); });
+    nav.appendChild(li);
+  });
+}
+
+// =========================================================
+// NAVEGAÇÃO
+// =========================================================
+function navegarPara(moduloId, titulo) {
+  if (App.modulo === moduloId) return;
+  App.modulo = moduloId;
+
+  document.querySelectorAll('.nav-item').forEach(function(el) {
+    el.classList.toggle('active', el.dataset.id === moduloId);
+  });
+  document.getElementById('header-title').textContent = titulo || moduloId;
+
+  var main = document.getElementById('main');
+  main.innerHTML = '<div class="state-loading"><div class="spinner"></div><p>Carregando…</p></div>';
+
+  var path = MODULOS[moduloId];
+  if (!path) {
+    main.innerHTML =
+      '<div class="state-error">' +
+      '<span class="material-icons-round" style="font-size:36px;">construction</span>' +
+      '<p>Módulo em construção.</p></div>';
+    return;
+  }
+
+  carregarModulo(path)
+    .then(function(html) {
+      main.innerHTML = html;
+      executarScripts(main);
+    })
+    .catch(function() {
+      main.innerHTML =
+        '<div class="state-error">' +
+        '<span class="material-icons-round" style="font-size:36px;">error_outline</span>' +
+        '<p>Erro ao carregar o módulo.</p></div>';
+    });
+}
+
+// =========================================================
+// LOGOUT
+// =========================================================
+document.getElementById('btn-logout').addEventListener('click', function() {
+  pararContadorSessao();
+  postApi('auth.logout', {})
+    .catch(function() {})
+    .then(function() {
+      Auth.limpar();
+      App.usuario = null;
+      App.modulo  = null;
+      window.location.href = window.location.href.split('?')[0] + '?t=' + Date.now();
+    });
+});
+
+// =========================================================
+// CONTADOR DE SESSÃO (contagem regressiva + logout automático)
+// =========================================================
+// Lê Auth.getSegundosRestantes() a cada segundo. Esse valor é calculado a
+// partir da duração informada pelo próprio back-end (M1.SESSAO.DURACAO_MINUTOS)
+// e é renovado automaticamente em toda chamada de API bem-sucedida (ver
+// api.js), espelhando o sliding window que o servidor já aplica no
+// CacheService. Assim, o número mostrado aqui nunca diverge do que o
+// back-end realmente está usando para expirar a sessão.
+var _sessaoIntervalo = null;
+
+function iniciarContadorSessao() {
+  pararContadorSessao();
+  atualizarContadorSessao();
+  _sessaoIntervalo = setInterval(atualizarContadorSessao, 1000);
+}
+
+function pararContadorSessao() {
+  if (_sessaoIntervalo) {
+    clearInterval(_sessaoIntervalo);
+    _sessaoIntervalo = null;
+  }
+}
+
+function atualizarContadorSessao() {
+  var badge = document.getElementById('header-sessao');
+  var txt   = document.getElementById('header-sessao-txt');
+  if (!badge || !txt) return;
+
+  var restante = Auth.getSegundosRestantes();
+
+  if (restante === null) {
+    txt.textContent = '—:—';
+    badge.classList.remove('sessao-alerta');
+    return;
+  }
+
+  if (restante <= 0) {
+    pararContadorSessao();
+    expirarSessaoPorTempo();
+    return;
+  }
+
+  var minutos  = Math.floor(restante / 60);
+  var segundos = restante % 60;
+  txt.textContent = minutos + ':' + String(segundos).padStart(2, '0');
+  badge.classList.toggle('sessao-alerta', restante <= 60);
+}
+
+// Chamada quando o tempo local chega a zero: faz o mesmo fluxo do botão
+// "Sair", mas avisando o usuário que foi por expiração, não por escolha.
+function expirarSessaoPorTempo() {
+  toast('Sua sessão expirou por inatividade. Faça login novamente.', 'error', 6000);
+  postApi('auth.logout', {})
+    .catch(function() {})
+    .then(function() {
+      Auth.limpar();
+      App.usuario = null;
+      App.modulo  = null;
+      window.location.href = window.location.href.split('?')[0] + '?t=' + Date.now();
+    });
+}
+
+// =========================================================
+// TOAST
+// =========================================================
+function toast(mensagem, tipo, duracao) {
+  tipo    = tipo    || 'default';
+  duracao = duracao || 3500;
+  var iconMap = { success:'check_circle', error:'error', info:'info', default:'notifications' };
+  var el = document.createElement('div');
+  el.className = 'toast ' + tipo;
+  el.innerHTML =
+    '<span class="material-icons-round">' + (iconMap[tipo] || 'notifications') + '</span>' +
+    '<span>' + mensagem + '</span>';
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(function() {
+    el.style.transition  = '0.25s ease';
+    el.style.opacity     = '0';
+    el.style.transform   = 'translateX(12px)';
+    setTimeout(function() { el.remove(); }, 260);
+  }, duracao);
+}
+
+// =========================================================
+// MOBILE
+// =========================================================
+var btnMenuMobile = document.getElementById('btn-menu-mobile');
+btnMenuMobile.addEventListener('click', function() {
+  document.getElementById('sidebar').classList.toggle('open');
+});
+document.addEventListener('click', function(e) {
+  var sidebar = document.getElementById('sidebar');
+  if (sidebar.classList.contains('open') &&
+      !sidebar.contains(e.target) &&
+      !btnMenuMobile.contains(e.target)) {
+    sidebar.classList.remove('open');
+  }
+});
+function ajustarResponsivo() {
+  btnMenuMobile.style.display = window.innerWidth <= 768 ? 'flex' : 'none';
+}
+window.addEventListener('resize', ajustarResponsivo);
+ajustarResponsivo();
+
+// =========================================================
+// INICIA
+// =========================================================
+init();
+</script>
+</body>
+</html>
