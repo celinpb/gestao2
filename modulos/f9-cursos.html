@@ -767,7 +767,7 @@
   function abrirModalCurso(modo,c){
     S.modoCurso=modo;S.cursoSel=c||null;
     if(el('fc-modal-titulo'))el('fc-modal-titulo').textContent=modo==='novo'?'Novo curso':'Editar curso';
-    if(el('fc-nome'))  el('fc-nome').value  =c?(c.Nome||')':'';
+    if(el('fc-nome'))  el('fc-nome').value  =c?(c.Nome||''):'';
     if(el('fc-sigla')) el('fc-sigla').value =c?(c.Sigla||''):'';
     if(el('fc-idioma'))el('fc-idioma').value=c?(c.Idioma||''):'';
     if(el('fc-id'))    el('fc-id').value    =c?(c.CursoID||''):'';
@@ -796,7 +796,7 @@
   function abrirModalAv(modo,a){
     S.modoAv=modo;S.avSel=a||null;
     if(el('fa-modal-titulo'))el('fa-modal-titulo').textContent=modo==='novo'?'Nova avaliação':'Editar avaliação';
-    if(el('fa-comp'))  el('fa-comp').value  =a?(a.ComponenteNota||')':'';
+    if(el('fa-comp'))  el('fa-comp').value  =a?(a.ComponenteNota||''):'';
     if(el('fa-tipo'))  el('fa-tipo').value  =a?(a.Tipo||'Nota bruta'):'Nota bruta';
     if(el('fa-qtd'))   el('fa-qtd').value   =a?(a.QntNotas||1):1;
     if(el('fa-aprov')) el('fa-aprov').value =a?(a.NotaAprovacao||70):70;
