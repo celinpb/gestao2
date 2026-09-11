@@ -266,8 +266,8 @@
     });
   }
   function setEstado(estado,msg){
-    var t=el('u3-tabela-wrap'),e=el('u3-estado');
-    if(estado==='tabela'){if(t)t.style.display='';if(e)e.style.display='none';return;}
+    var t=el('u3-tabela'),e=el('u3-estado');
+    if(estado==='tabela'){if(t)t.style.display='table';if(e)e.style.display='none';return;}
     if(t)t.style.display='none';
     if(e){e.style.display='block';e.innerHTML=estado==='carregando'?'<div class="u3-spinner"></div><p>Carregando…</p>':'<p>'+(msg||'Nenhum usuário encontrado.')+'</p>';}
   }
@@ -278,7 +278,7 @@
     el('fu-login').value=u?(u.Login||''):'';
     el('fu-email').value=u?(u.Email||''):'';
     el('fu-papel').value=u?(u.Papel||''):'';
-    if(el('u3-alerta')) el('u3-alerta').style.display='none';
+    if(el('u3-modal-alerta')) el('u3-modal-alerta').classList.remove('show','erro','sucesso');
     if(el('u3-modal-overlay')) el('u3-modal-overlay').style.display='flex';
   }
   function fecharModal(){ if(el('u3-modal-overlay')) el('u3-modal-overlay').style.display='none'; }
@@ -295,7 +295,7 @@
       carregarUsuarios();
     }).catch(function(){mostrarAlerta('Erro de comunicação.');});
   }
-  function mostrarAlerta(msg){ var a=el('u3-alerta');if(!a)return;a.textContent=msg;a.style.display='block'; }
+  function mostrarAlerta(msg){ var a=el('u3-modal-alerta'),m=el('u3-modal-alerta-msg');if(!a)return;a.className='u3-modal-alerta show erro';if(m)m.textContent=msg; }
   function redefinirSenha(u){
     if(!confirm('Enviar e-mail de redefinição de senha para '+u.Nome+'?')) return;
     postApi('usuarios.redefinirSenha',{email:u.Email}).then(function(res){
@@ -313,10 +313,10 @@
   function registrarEventos(){
     el('u3-busca')&&el('u3-busca').addEventListener('input',function(){state.busca=this.value.trim();renderizar();});
     el('u3-filtro-papel')&&el('u3-filtro-papel').addEventListener('change',function(){state.filtroPapel=this.value;renderizar();});
-    el('btn-novo-usuario')&&el('btn-novo-usuario').addEventListener('click',function(){abrirModal('novo');});
-    el('btn-fechar-u3-modal')&&el('btn-fechar-u3-modal').addEventListener('click',fecharModal);
-    el('btn-cancelar-u3')&&el('btn-cancelar-u3').addEventListener('click',fecharModal);
-    el('btn-salvar-u3')&&el('btn-salvar-u3').addEventListener('click',salvar);
+    el('btn-u3-novo')&&el('btn-u3-novo').addEventListener('click',function(){abrirModal('novo');});
+    el('btn-fechar-u3')&&el('btn-fechar-u3').addEventListener('click',fecharModal);
+    el('btn-u3-cancelar')&&el('btn-u3-cancelar').addEventListener('click',fecharModal);
+    el('btn-u3-salvar')&&el('btn-u3-salvar').addEventListener('click',salvar);
     el('u3-modal-overlay')&&el('u3-modal-overlay').addEventListener('click',function(e){if(e.target===this)fecharModal();});
   }
   if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',init);}else{init();}
