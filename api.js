@@ -84,6 +84,8 @@ async function postApi(acao, dados) {
     if (acao === 'alunos.atualizar') return await _alunosAtualizar(sb, dados);
     if (acao === 'alunos.inativar')  return await _alunosInativar(sb, dados);
     if (acao === 'alunos.ativar')    return await _alunosAtivar(sb, dados);
+    if (acao === 'alunos.inativarAluno') return await _alunosInativar(sb, dados);
+    if (acao === 'alunos.ativarAluno')   return await _alunosAtivar(sb, dados);
 
     // ── CURSOS ────────────────────────────────────────────────────────────────
     if (acao === 'cursos.listar')    return await _cursosListar(sb, dados);
@@ -135,8 +137,30 @@ async function postApi(acao, dados) {
     if (acao === 'config.salvar') return await _configSalvar(sb, dados);
 
     // ── RELATÓRIOS ────────────────────────────────────────────────────────────
+    // ── COMENTÁRIOS ───────────────────────────────────────────────────────────
+    if (acao === 'comentarios.listar') return await _comentariosListar(sb, dados);
+    if (acao === 'comentarios.salvar') return await _comentariosSalvar(sb, dados);
+
     if (acao === 'relatorios.frequencia')  return await _relatoriosFrequencia(sb, dados);
     if (acao === 'relatorios.boletim')     return await _relatoriosBoletim(sb, dados);
+
+    // ── ALIASES DE COMPATIBILIDADE (ações do sistema Apps Script) ───────────────
+    if (acao === 'sistema.semestreAtual') return await _semestresGetAtual(sb);
+    if (acao === 'sistema.config')        return await _configGet(sb);
+    if (acao === 'sistema.menu')          return _ok([]);
+
+    // ── ALIASES OCORRÊNCIAS ────────────────────────────────────────────────────
+    if (acao === 'ocorrencias.listarRespostas')      return await _ocorrenciasListarRespostas(sb, dados);
+    if (acao === 'ocorrencias.adicionarResposta')    return await _ocorrenciasResponder(sb, dados);
+    if (acao === 'ocorrencias.atualizarStatus')      return await _ocorrenciasResolverStatus(sb, Object.assign({}, dados, { id: dados.ocorrenciaId, status: dados.novoStatus }));
+    if (acao === 'ocorrencias.excluir')              return await _ocorrenciasExcluir(sb, dados);
+    if (acao === 'ocorrencias.professoresDasTurmas') return await _ocorrenciasProfessoresDasTurmas(sb, dados);
+    if (acao === 'ocorrencias.turmasAtivasDoAluno')  return await _ocorrenciasTurmasAtivasDoAluno(sb, dados);
+
+    // ── ALIASES ALUNOS ────────────────────────────────────────────────────────
+    if (acao === 'alunos.inativarCadastro') return await _alunosInativar(sb, Object.assign({}, dados, { id: dados.alunoId }));
+    if (acao === 'alunos.ativarCadastro')   return await _alunosAtivar(sb, Object.assign({}, dados, { id: dados.alunoId }));
+    if (acao === 'alunos.atualizar')        return await _alunosAtualizar(sb, Object.assign({}, dados, { id: dados.alunoId || dados.id }));
 
     return _err('Ação desconhecida: ' + acao, 404);
 
@@ -317,22 +341,71 @@ async function _usuariosRedefinirSenha(sb, dados) {
 
 async function _alunosListar(sb, dados) {
   var query = sb.from('alunos')
-    .select('id, external_id, nome_completo, nome_social, nascimento, genero, raca, telefone, email, municipio, uf, pcd, pcd_tipo, situacao_ativo, inscricao_data_hora')
+    .select('id, external_id, nome_completo, nome_social, nascimento, nascimento_uf, nascimento_municipio, genero, raca, estado_civil, estrangeiro, telefone, email, municipio, uf, bairro, pcd, pcd_tipo, situacao_ativo, inscricao_data_hora')
     .order('nome_completo');
   if (dados && dados.somenteAtivos) query = query.eq('situacao_ativo', true);
   var res = await query;
   if (res.error) return _err(res.error.message);
-  return _ok(res.data);
+
+  // Normalizar para formato esperado pelos módulos HTML existentes (PascalCase + campos legados)
+  var lista = (res.data || []).map(_normalizarAluno);
+  return _ok({ dados: lista, totalRegistros: lista.length, totalPaginas: 1 });
+}
+
+// Normaliza um registro de aluno do banco (snake_case) para o formato dos módulos HTML (PascalCase)
+function _normalizarAluno(a) {
+  if (!a) return a;
+  var nomeSocial = a.nome_social || '';
+  var nomeExibicao = nomeSocial || a.nome_completo || '';
+  return {
+    // IDs
+    AlunoID:            a.external_id || a.id,
+    id:                 a.id,
+    external_id:        a.external_id,
+    // Nomes
+    NomeCompleto:       a.nome_completo || '',
+    NomeSocial:         nomeSocial,
+    NomeSocialBoolean:  !!nomeSocial,
+    NomeExibicao:       nomeExibicao,
+    // Dados pessoais
+    Nascimento:         a.nascimento || '',
+    NascimentoUF:       a.nascimento_uf || '',
+    NascimentoMunicipio: a.nascimento_municipio || '',
+    Genero:             a.genero || '',
+    Raca:               a.raca || '',
+    EstadoCivil:        a.estado_civil || '',
+    Estrangeiro:        a.estrangeiro || false,
+    // Contato
+    Telefone:           a.telefone || '',
+    email:              a.email || '',
+    // Endereço
+    Municipio:          a.municipio || '',
+    UF:                 a.uf || '',
+    Bairro:             a.bairro || '',
+    // PcD
+    PcDBoolean:         a.pcd || false,
+    PcDTipo:            a.pcd_tipo || '',
+    // Situação
+    SituacaoAluno:      a.situacao_ativo !== false,
+    InscricaoDataHora:  a.inscricao_data_hora || '',
+    // snake_case também (para compatibilidade futura)
+    nome_completo:      a.nome_completo,
+    nome_social:        a.nome_social,
+    situacao_ativo:     a.situacao_ativo,
+    pcd:                a.pcd,
+    pcd_tipo:           a.pcd_tipo,
+  };
 }
 
 async function _alunosBuscar(sb, dados) {
   if (!dados.termo) return _err('Termo de busca é obrigatório.', 400);
   var res = await sb.from('alunos')
-    .select('id, external_id, nome_completo, nome_social, telefone, email, municipio, uf, pcd, situacao_ativo')
-    .ilike('nome_completo', '%' + dados.termo + '%')
-    .limit(50);
+    .select('id, external_id, nome_completo, nome_social, telefone, email, municipio, uf, bairro, pcd, pcd_tipo, situacao_ativo, nascimento, nascimento_uf, nascimento_municipio, genero, raca, estado_civil, estrangeiro, inscricao_data_hora')
+    .or('nome_completo.ilike.%' + dados.termo + '%,nome_social.ilike.%' + dados.termo + '%')
+    .order('nome_completo')
+    .limit(100);
   if (res.error) return _err(res.error.message);
-  return _ok(res.data);
+  return _ok((res.data || []).map(_normalizarAluno));
 }
 
 async function _alunosCriar(sb, dados) {
@@ -775,6 +848,36 @@ async function _configSalvar(sb, dados) {
 }
 
 // =============================================================================
+// COMENTÁRIOS
+// =============================================================================
+
+async function _comentariosListar(sb, dados) {
+  var query = sb.from('comentarios').select('*').order('etapa');
+  if (dados && dados.matricula_id) query = query.eq('matricula_id', dados.matricula_id);
+  if (dados && dados.turma_id)     query = query.eq('turma_id', dados.turma_id);
+  var res = await query;
+  if (res.error) return _err(res.error.message);
+  return _ok(res.data);
+}
+
+async function _comentariosSalvar(sb, dados) {
+  if (!dados.matricula_id || !dados.etapa || !dados.comentario) {
+    return _err('matricula_id, etapa e comentario são obrigatórios.', 400);
+  }
+  var usuario = Auth.getUsuario();
+  var res = await sb.from('comentarios').upsert({
+    matricula_id: dados.matricula_id,
+    semestre_id:  dados.semestre_id,
+    turma_id:     dados.turma_id,
+    etapa:        dados.etapa,
+    comentario:   dados.comentario,
+    autor_id:     usuario ? usuario.id : null,
+  }, { onConflict: 'matricula_id,etapa' });
+  if (res.error) return _err(res.error.message);
+  return _ok(null, 'Comentário salvo.');
+}
+
+// =============================================================================
 // RELATÓRIOS
 // =============================================================================
 
@@ -785,6 +888,77 @@ async function _relatoriosFrequencia(sb, dados) {
   var res = await query;
   if (res.error) return _err(res.error.message);
   return _ok(res.data);
+}
+
+// Funções auxiliares de ocorrências adicionais
+async function _ocorrenciasListarRespostas(sb, dados) {
+  if (!dados.ocorrenciaId) return _err('ocorrenciaId é obrigatório.', 400);
+  var res = await sb.from('ocorrencia_respostas')
+    .select('*, usuarios(nome)')
+    .eq('ocorrencia_id', dados.ocorrenciaId)
+    .order('criado_em');
+  if (res.error) return _err(res.error.message);
+  return _ok(res.data);
+}
+
+async function _ocorrenciasExcluir(sb, dados) {
+  var id = dados.ocorrenciaId || dados.id;
+  if (!id) return _err('ID é obrigatório.', 400);
+  var res = await sb.from('ocorrencias').delete().eq('id', id);
+  if (res.error) return _err(res.error.message);
+  return _ok(null, 'Ocorrência excluída.');
+}
+
+async function _ocorrenciasProfessoresDasTurmas(sb, dados) {
+  if (!dados.alunoId) return _err('alunoId é obrigatório.', 400);
+  // Buscar turmas ativas do aluno no semestre atual
+  var semAtual = await sb.from('semestres').select('id').eq('semestre_atual', true).single();
+  if (semAtual.error || !semAtual.data) return _ok([]);
+  var mats = await sb.from('matriculas')
+    .select('turma_id, turmas(professor_id, estagio, curso_id, cursos(sigla), usuarios(id, nome))')
+    .eq('aluno_id', dados.alunoId)
+    .eq('semestre_id', semAtual.data.id)
+    .eq('situacao', 'ATIVA');
+  if (mats.error) return _err(mats.error.message);
+  var profs = [];
+  var vistos = {};
+  (mats.data || []).forEach(function(m) {
+    var t = m.turmas;
+    if (!t || !t.usuarios) return;
+    var uid = t.usuarios.id;
+    if (vistos[uid]) return;
+    vistos[uid] = true;
+    profs.push({ UsuarioID: uid, Nome: t.usuarios.nome, Turma: m.turma_id, Estagio: t.estagio, CursoID: t.curso_id });
+  });
+  return _ok(profs);
+}
+
+async function _ocorrenciasTurmasAtivasDoAluno(sb, dados) {
+  if (!dados.alunoId) return _err('alunoId é obrigatório.', 400);
+  var semAtual = await sb.from('semestres').select('id').eq('semestre_atual', true).single();
+  if (semAtual.error || !semAtual.data) return _ok([]);
+  var mats = await sb.from('matriculas')
+    .select('turma_id, turmas(id, external_id, estagio, curso_id, professor_id, cursos(sigla), usuarios(nome))')
+    .eq('aluno_id', dados.alunoId)
+    .eq('semestre_id', semAtual.data.id)
+    .eq('situacao', 'ATIVA');
+  if (mats.error) return _err(mats.error.message);
+  var usuario = Auth.getUsuario();
+  var turmas = (mats.data || []).map(function(m) {
+    var t = m.turmas;
+    return {
+      TurmaID:       t.external_id || t.id,
+      id:            t.id,
+      ProfessorID:   t.professor_id,
+      ProfessorNome: t.usuarios ? t.usuarios.nome : '',
+      Estagio:       t.estagio,
+      CursoID:       t.curso_id,
+    };
+  }).filter(function(t) {
+    if (!usuario || usuario.papel !== 'professor') return true;
+    return t.ProfessorID === usuario.id;
+  });
+  return _ok(turmas);
 }
 
 async function _relatoriosBoletim(sb, dados) {
