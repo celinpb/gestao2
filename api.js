@@ -151,12 +151,30 @@ async function postApi(acao, dados) {
 // =============================================================================
 
 async function _login(sb, dados) {
-  if (!dados.email || !dados.senha) {
+  // Aceita tanto { email, senha } quanto { loginOuEmail, senha } (compatibilidade com f2-login.html)
+  var emailOuLogin = dados.email || dados.loginOuEmail || '';
+  var senha = dados.senha || '';
+  if (!emailOuLogin || !senha) {
     return _err('E-mail e senha são obrigatórios.', 400);
   }
+
+  // Se não parece ser e-mail, buscar e-mail pelo campo login na tabela usuarios
+  var emailFinal = emailOuLogin;
+  if (!emailOuLogin.includes('@')) {
+    var busca = await sb.from('usuarios')
+      .select('email')
+      .eq('login', emailOuLogin)
+      .eq('situacao_ativo', true)
+      .single();
+    if (busca.error || !busca.data) {
+      return _err('Usuário não encontrado.', 401);
+    }
+    emailFinal = busca.data.email;
+  }
+
   var res = await sb.auth.signInWithPassword({
-    email:    dados.email,
-    password: dados.senha,
+    email:    emailFinal,
+    password: senha,
   });
   if (res.error) {
     // Supabase retorna mensagem em inglês — traduzir as mais comuns
