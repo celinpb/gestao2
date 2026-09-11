@@ -222,443 +222,201 @@
 </div>
 
 <script>
-(function () {
+(function(){
   'use strict';
+  var state={turmas:[],turmaSel:null,dataSel:null,matriculas:[],frequencias:{},contFaltas:{},conteudoHist:[],papel:'',usuarioId:''};
+  function postApi(a,d){return window.postApi(a,d);}
+  function el(id){return document.getElementById(id);}
 
-  // Cache de token em memória
-
-  var state = {
-    turmas:[], turmaSel:null, dataSel:null,
-    matriculas:[], frequencias:{}, contFaltas:{}, jaRegistrado:false,
-  };
-
-  // =========================================================
-  // postApi — usa api.js carregado pelo index.html
-  // =========================================================
-  function postApi(acao, dados) {
-    return window.postApi(acao, dados);
+  function normT(t){
+    var p=t.usuarios||{},c=t.cursos||{};
+    return{id:t.id,TurmaID:t.external_id||t.id,Estagio:t.estagio||'',CursoSigla:c.sigla||'',ProfessorID:p.id||t.professor_id,professor_id:t.professor_id,semestre_id:t.semestre_id};
+  }
+  function normM(m){
+    var al=m.alunos||{};var ns=al.nome_social||'';
+    return{id:m.id,MatriculaID:m.external_id||m.id,AlunoID:al.external_id||m.aluno_id,NomeExibicao:ns||al.nome_completo||'',PcD:al.pcd||false,aluno_id:m.aluno_id};
   }
 
-  function el(id) { return document.getElementById(id); }
-
-  function formatarDataHora(dt) {
-    if (!dt) return '';
-    var d = (dt instanceof Date) ? dt : new Date(dt);
-    if (isNaN(d.getTime())) return String(dt);
-    var pad = function(n){return String(n).padStart(2,'0');};
-    return pad(d.getDate())+'/'+pad(d.getMonth()+1)+'/'+d.getFullYear()+' '+pad(d.getHours())+':'+pad(d.getMinutes());
+  function init(){
+    var u=(typeof App!=='undefined'&&App.usuario)?App.usuario:null;
+    if(u){state.papel=u.papel||u.Papel||'';state.usuarioId=u.id||'';}
+    carregarTurmas();
+    registrarEventos();
   }
 
-  function dataParaInputLocal(dataStr) {
-    if (!dataStr) return '';
-    var p = dataStr.split(' ');
-    if (p.length < 2) return '';
-    var d = p[0].split('/');
-    if (d.length < 3) return '';
-    return d[2]+'-'+d[1]+'-'+d[0]+'T'+p[1];
-  }
-
-  function inputLocalParaData(val) {
-    if (!val) return '';
-    var p = val.split('T');
-    if (p.length < 2) return '';
-    var d = p[0].split('-');
-    return d[2]+'/'+d[1]+'/'+d[0]+' '+p[1];
-  }
-
-  function mostrarAlerta(msg, tipo) {
-    var a=el('diario-alerta'),m=el('diario-alerta-msg'); if(!a||!m)return;
-    tipo=tipo||'erro'; a.className='diario-alerta show '+tipo; m.textContent=msg;
-    var ic=a.querySelector('.material-icons-round');
-    if(ic)ic.textContent=tipo==='sucesso'?'check_circle':'error_outline';
-    setTimeout(function(){a.classList.remove('show');},5000);
-  }
-
-  // Encontra o Timestamp mais recente entre os registros de frequência de
-  // uma data, para exibir "Já registrado em DD/MM/AAAA HH:MM" no badge.
-  function ultimoTimestamp(lista) {
-    var max = null;
-    (lista||[]).forEach(function(item) {
-      var ts = item.Timestamp;
-      if (!ts) return;
-      var partes = String(ts).split(' ');
-      var d  = (partes[0]||'').split('/');
-      var hm = (partes[1]||'00:00').split(':');
-      if (d.length !== 3) return;
-      var dt = new Date(Number(d[2]), Number(d[1])-1, Number(d[0]), Number(hm[0])||0, Number(hm[1])||0);
-      if (isNaN(dt.getTime())) return;
-      if (!max || dt > max.dt) max = { dt: dt, texto: ts };
-    });
-    return max ? max.texto : null;
-  }
-
-  function atualizarContador() {
-    var ta=el('diario-conteudo'),c=el('diario-conteudo-cont');
-    if(ta&&c)c.textContent=ta.value.length;
-  }
-
-  // =========================================================
-  // PASSO 1 — TURMAS
-  // =========================================================
-  function carregarTurmas() {
-    postApi('turmas.listar',{tamanhoPagina:300}).then(function(res){
-      el('diario-turmas-loading').style.display='none';
-      if(!res.sucesso||!res.dados||!res.dados.dados||res.dados.dados.length===0){
-        el('diario-turma-grid').style.display='grid';
-        el('diario-turma-grid').innerHTML='<p style="color:var(--c-text-3);font-size:13px;grid-column:1/-1;">Nenhuma turma encontrada.</p>';
-        return;
-      }
-      state.turmas=res.dados.dados;
-      if (el('diario-filtro-row')) el('diario-filtro-row').style.display='flex';
+  function carregarTurmas(){
+    var cont=el('diario-turmas-lista');if(cont)cont.innerHTML='<div class="diario-spinner"></div>';
+    var filtros={};
+    if(state.papel==='professor') filtros.professor_id=state.usuarioId;
+    postApi('turmas.listar',filtros).then(function(res){
+      if(!res.sucesso){if(cont)cont.innerHTML='<p>Erro ao carregar turmas.</p>';return;}
+      state.turmas=(res.dados||[]).filter(function(t){return t.situacao==='ATIVA';}).map(normT);
       renderizarTurmas();
-    }).catch(function(){
-      el('diario-turmas-loading').innerHTML='<span style="color:#E63946;">Erro ao carregar turmas.</span>';
     });
   }
 
-  // Turma "ativa" = SituacaoTurma true/'true' e diferente de 'ENCERRADA'.
-  // Qualquer outro valor (false/'false' ou 'ENCERRADA') é considerado não-ativa.
-  function turmaEstaAtiva(t) {
-    return (t.SituacaoTurma === true || t.SituacaoTurma === 'true') && String(t.SituacaoTurma) !== 'ENCERRADA';
-  }
-
-  function turmasFiltradasDiario() {
-    var mostrarNaoAtivas = el('diario-chk-encerradas') && el('diario-chk-encerradas').checked;
-    if (mostrarNaoAtivas) return state.turmas;
-    return state.turmas.filter(turmaEstaAtiva);
-  }
-
-  function renderizarTurmas() {
-    var grid=el('diario-turma-grid');
-    var lista=turmasFiltradasDiario();
-    grid.innerHTML='';
-    if (lista.length===0) {
-      grid.innerHTML='<p style="color:var(--c-text-3);font-size:13px;grid-column:1/-1;">Nenhuma turma ativa encontrada. Marque "Mostrar turmas encerradas/inativas" para ver todas.</p>';
-      grid.style.display='grid';
-      return;
-    }
-    lista.forEach(function(t){
-      var ativa = turmaEstaAtiva(t);
-      var encerrada = String(t.SituacaoTurma) === 'ENCERRADA';
-      var card=document.createElement('div');
-      card.className='turma-card'+(ativa?'':' turma-nao-ativa');
-      card.dataset.turmaId=t.TurmaID;
+  function renderizarTurmas(){
+    var cont=el('diario-turmas-lista');if(!cont)return;
+    if(!state.turmas.length){cont.innerHTML='<p style="padding:12px;color:var(--c-text-3);">Nenhuma turma ativa.</p>';return;}
+    cont.innerHTML='';
+    state.turmas.forEach(function(t){
+      var card=document.createElement('div');card.className='turma-card';
+      card.dataset.turmaId=t.id;
       card.innerHTML='<div class="turma-card-id">'+t.TurmaID+'</div>'+
-        '<div class="turma-card-estagio">'+(t.Estagio||t.CursoID)+'</div>'+
-        '<div class="turma-card-detalhe">'+(t.DiaSemana||'')+(t.Horario?' · '+t.Horario:'')+'</div>'+
-        '<div class="turma-card-detalhe" style="margin-top:2px;">'+(t.Modalidade||'')+'</div>'+
-        (!ativa ? '<div class="turma-card-badge-status"><span class="material-icons-round">'+(encerrada?'lock':'block')+'</span>'+(encerrada?'Encerrada':'Inativa')+'</div>' : '');
+        '<div class="turma-card-desc">'+(t.Estagio||t.CursoSigla||'—')+'</div>';
       card.addEventListener('click',function(){selecionarTurma(t);});
-      grid.appendChild(card);
+      cont.appendChild(card);
     });
-    grid.style.display='grid';
   }
 
-  function selecionarTurma(turma) {
-    state.turmaSel=turma;
-    document.querySelectorAll('.turma-card').forEach(function(c){
-      c.classList.toggle('selecionada',c.dataset.turmaId===turma.TurmaID);
-    });
-    el('diario-step-turma').style.display='none';
-    el('diario-step-data').style.display='block';
-    carregarDatas(turma);
+  function selecionarTurma(t){
+    state.turmaSel=t;state.dataSel=null;state.matriculas=[];state.frequencias={};state.contFaltas={};
+    document.querySelectorAll('.turma-card').forEach(function(c){c.classList.toggle('selecionada',c.dataset.turmaId===t.id);});
+    if(el('diario-header-turma'))el('diario-header-turma').textContent=t.TurmaID+' · '+(t.Estagio||t.CursoSigla||'');
+    carregarCalendario(t);
   }
 
-  // =========================================================
-  // PASSO 2 — DATAS
-  // =========================================================
-  function carregarDatas(turma) {
-    var sel=el('diario-select-data');
-    sel.innerHTML='<option value="">Carregando datas…</option>';
-    // turmaId: back-end filtra as datas pelo período letivo efetivo da turma
-    // (DataInicioTurma/DataFimTurma se definidos, senão o padrão do calendário
-    // do semestre). O filtro por dia da semana abaixo continua no front-end.
-    postApi('calendario.listar',{turmaId:turma.TurmaID}).then(function(res){
-      sel.innerHTML='<option value="">Selecione uma data…</option>';
-      if(!res.sucesso||!res.dados||res.dados.length===0){
-        sel.innerHTML+='<option disabled>Nenhuma data encontrada</option>'; return;
-      }
-
-      // Mapa de nome do dia em maiúsculas → número getDay()
-      // Cobre grafia com e sem acento (vinda de m7_maiusculas que faz toUpperCase)
-      var diasSemana={
-        'SEGUNDA-FEIRA':1,'SEGUNDA':1,
-        'TERCA-FEIRA':2,'TERÇA-FEIRA':2,'TERCA':2,'TERÇA':2,
-        'QUARTA-FEIRA':3,'QUARTA':3,
-        'QUINTA-FEIRA':4,'QUINTA':4,
-        'SEXTA-FEIRA':5,'SEXTA':5,
-        'SABADO':6,'SÁBADO':6,
-        'DOMINGO':0,
-      };
-
-      // DiaSemana vem de m7_maiusculas → sempre CAIXA ALTA
-      // Pode ser "SEGUNDA-FEIRA" ou "SEGUNDA-FEIRA,QUINTA-FEIRA"
-      var diasTurma = [];
-      if (turma.DiaSemana) {
-        turma.DiaSemana.toUpperCase().split(',').forEach(function(d) {
-          var num = diasSemana[d.trim()];
-          if (num !== undefined) diasTurma.push(num);
+  function carregarCalendario(t){
+    var cont=el('diario-datas-lista');if(cont)cont.innerHTML='<div class="diario-spinner"></div>';
+    // Buscar datas únicas de aulas já registradas + calendário do semestre
+    postApi('frequencias.listar',{turma_id:t.id}).then(function(res){
+      // Calcular faltas acumuladas
+      state.contFaltas={};
+      if(res.sucesso&&res.dados){
+        res.dados.forEach(function(f){
+          if(f.frequencia==='F'){state.contFaltas[f.matricula_id]=(state.contFaltas[f.matricula_id]||0)+1;}
         });
       }
-
-      var matchH=(turma.Horario||'').match(/(\d+)h/);
-      var horario=matchH?String(matchH[1]).padStart(2,'0')+':00':'08:00';
-
-      res.dados.forEach(function(d){
-        // Filtra dias não letivos
-        if(!d.DiaLetivo) return;
-
-        // DataAula vem no formato DD/MM/YYYY (de m7_dataParaString)
-        // new Date("DD/MM/YYYY") é Invalid Date no navegador — parsear manualmente
-        if(diasTurma.length > 0) {
-          var dataStr = String(d.DataAula || '');
-          var partes  = dataStr.split('/');   // ["15","04","2025"]
-          var diaSem  = NaN;
-          if (partes.length === 3) {
-            // Constrói como YYYY-MM-DD que o navegador reconhece corretamente
-            var dataObj = new Date(partes[2] + '-' + partes[1] + '-' + partes[0] + 'T12:00:00');
-            diaSem = dataObj.getDay();
-          }
-          if (isNaN(diaSem) || diasTurma.indexOf(diaSem) === -1) return;
-        }
-
-        var opt=document.createElement('option');
-        var dataStr2=String(d.DataAula||'');   // já está em DD/MM/YYYY
-        var label=dataStr2;
-        if(d.DiaSemana) label+=' ('+d.DiaSemana+')';
-        if(d.Informacao) label+=' — '+d.Informacao;
-        opt.value=dataStr2.split(' ')[0]+' '+horario;
-        opt.textContent=label;
-        sel.appendChild(opt);
+      // Buscar datas únicas do conteúdo para montar calendário
+      postApi('conteudo.listar',{turma_id:t.id}).then(function(res2){
+        state.conteudoHist=(res2.sucesso&&res2.dados)?res2.dados:[];
+        var datasSet={};
+        state.conteudoHist.forEach(function(c){if(c.data_aula)datasSet[c.data_aula]=true;});
+        // Adicionar hoje
+        var hoje=new Date().toISOString().slice(0,10);
+        datasSet[hoje]=true;
+        var datas=Object.keys(datasSet).sort().reverse();
+        renderizarDatas(datas, hoje);
       });
-    }).catch(function(){sel.innerHTML='<option value="">Erro ao carregar datas</option>';});
-
-    var agora=new Date();
-    var pad=function(n){return String(n).padStart(2,'0');};
-    el('diario-data-manual').value=agora.getFullYear()+'-'+pad(agora.getMonth()+1)+'-'+pad(agora.getDate())+'T'+pad(agora.getHours())+':'+pad(agora.getMinutes());
-  }
-
-  function abrirDiario() {
-    var sel=el('diario-select-data'),manual=el('diario-data-manual');
-    var dataFinal=sel.value||(manual.value?inputLocalParaData(manual.value):'');
-    if(!dataFinal){mostrarAlerta('Selecione ou informe uma data.','erro');return;}
-    state.dataSel=dataFinal;
-    el('diario-step-data').style.display='none';
-    el('diario-step-aula').classList.add('visivel');
-    el('diario-header-turma').textContent=state.turmaSel.TurmaID+' · '+(state.turmaSel.Estagio||state.turmaSel.CursoID);
-    el('diario-header-data').textContent=dataFinal;
-    carregarDadosAula();
-  }
-
-  // =========================================================
-  // PASSO 3 — DADOS DA AULA
-  // =========================================================
-  function carregarDadosAula() {
-    el('freq-loading').style.display='flex';
-    el('freq-tabela').style.display='none';
-    el('historico-corpo').innerHTML='<div class="historico-vazio">Carregando…</div>';
-    // Limpa o campo de conteúdo imediatamente — evita mostrar, ainda que
-    // brevemente, o texto de outra turma/data vista antes na mesma sessão.
-    el('diario-conteudo').value=''; atualizarContador();
-    var turmaId=state.turmaSel.TurmaID, data=state.dataSel;
-    Promise.all([
-      postApi('matriculas.listar',{turmaId:turmaId,situacao:'ATIVA',tamanhoPagina:300}),
-      postApi('frequencias.listar',{turmaId:turmaId,dataAula:data}),
-      postApi('conteudo.listar',{turmaId:turmaId}),
-    ]).then(function(res){
-      state.matriculas=(res[0].sucesso&&res[0].dados&&res[0].dados.dados)?res[0].dados.dados:[];
-      state.frequencias={}; state.jaRegistrado=false;
-      if(res[1].sucesso&&res[1].dados&&res[1].dados.length>0){
-        state.jaRegistrado=true;
-        res[1].dados.forEach(function(f){state.frequencias[f.MatriculaID]={freq:f.Frequencia,anotacao:f.Anotacao||''};});
-        var ts=ultimoTimestamp(res[1].dados);
-        el('diario-header-badge').className='diario-aula-header-badge salvo';
-        el('diario-header-badge').innerHTML='<span class="material-icons-round">check_circle</span><span>Já registrado'+(ts?' em '+ts:'')+'</span>';
-      }
-      // Sempre define (ou limpa) o campo de conteúdo com base no que existe
-      // para ESTA turma+data — nunca deixa o valor anterior (de outra
-      // turma/data, ou de uma aula futura sem registro) permanecer visível.
-      var conteudosLista = (res[2].sucesso && res[2].dados) ? res[2].dados : [];
-      var dataBase = data.split(' ')[0];
-      var aulasData = conteudosLista.filter(function(c){return String(c.DataAula||'').indexOf(dataBase)!==-1;});
-      el('diario-conteudo').value = aulasData.length>0 ? (aulasData[0].ConteudoMinistrado||'') : '';
-      atualizarContador();
-      var historico = conteudosLista.filter(function(c){return String(c.DataAula||'').indexOf(dataBase)===-1;}).slice(-3).reverse();
-      renderizarHistorico(historico);
-      calcularTotalFaltas(turmaId);
-    }).catch(function(){mostrarAlerta('Erro ao carregar dados da aula.','erro');el('freq-loading').style.display='none';});
-  }
-
-  function calcularTotalFaltas(turmaId) {
-    postApi('frequencias.listar',{turmaId:turmaId}).then(function(res){
-      state.contFaltas={};
-      if(res.sucesso&&res.dados){res.dados.forEach(function(f){if(f.Frequencia==='F')state.contFaltas[f.MatriculaID]=(state.contFaltas[f.MatriculaID]||0)+1;});}
-      renderizarTabela();
-    }).catch(function(){renderizarTabela();});
-  }
-
-  function renderizarTabela() {
-    el('freq-loading').style.display='none';
-    var tbody=el('freq-tbody'); tbody.innerHTML='';
-    if(state.matriculas.length===0){
-      tbody.innerHTML='<tr><td colspan="3" style="text-align:center;padding:20px;color:var(--c-text-3);">Nenhum aluno matriculado.</td></tr>';
-      el('freq-tabela').style.display='table'; atualizarContadores(); return;
-    }
-    state.matriculas.forEach(function(m){
-      var matId=m.MatriculaID, nome=m.NomeExibicao||m.AlunoID||matId;
-      var freqAtual=state.frequencias[matId]?state.frequencias[matId].freq:'P';
-      var anotacao=state.frequencias[matId]?(state.frequencias[matId].anotacao||''):'';  // fix: aspas balanceadas
-      if(!state.frequencias[matId])state.frequencias[matId]={freq:'P',anotacao:''};
-      var nFaltas=state.contFaltas[matId]||0;
-      var badgeClass=nFaltas===0?'zero':(nFaltas<=2?'baixo':'alto');
-      var tr=document.createElement('tr');
-      tr.innerHTML='<td><div class="aluno-nome">'+nome+'</div>'+
-        '<div id="just-wrap-'+matId+'" class="freq-justificativa'+(freqAtual==='J'?' show':'')+'">'+
-          '<input type="text" id="just-'+matId+'" placeholder="Motivo da justificativa…" value="'+anotacao+'">'+
-        '</div></td>'+
-        '<td class="col-faltas"><span class="badge-faltas '+badgeClass+'">'+nFaltas+'</span></td>'+
-        '<td class="col-freq"><div class="freq-btns">'+
-          '<button class="freq-btn '+(freqAtual==='P'?'ativo-p':'')+'" data-mat="'+matId+'" data-freq="P">P</button>'+
-          '<button class="freq-btn '+(freqAtual==='F'?'ativo-f':'')+'" data-mat="'+matId+'" data-freq="F">F</button>'+
-          '<button class="freq-btn '+(freqAtual==='J'?'ativo-j':'')+'" data-mat="'+matId+'" data-freq="J">J</button>'+
-        '</div></td>';
-      tbody.appendChild(tr);
-      tr.querySelectorAll('.freq-btn').forEach(function(btn){
-        btn.addEventListener('click',function(){marcarFrequencia(btn.dataset.mat,btn.dataset.freq,tr);});
-      });
-      var justInput=document.getElementById('just-'+matId);
-      if(justInput)justInput.addEventListener('input',function(){state.frequencias[matId].anotacao=this.value;});
     });
-    el('freq-tabela').style.display='table';
-    atualizarContadores();
   }
 
-  function marcarFrequencia(matId,freq,tr) {
+  function renderizarDatas(datas, hoje){
+    var cont=el('diario-datas-lista');if(!cont)return;
+    if(!datas.length){cont.innerHTML='<p style="padding:8px;color:var(--c-text-3);">Nenhuma data.</p>';return;}
+    cont.innerHTML='';
+    datas.forEach(function(d){
+      var btn=document.createElement('button');btn.className='data-btn'+(d===hoje?' hoje':'');
+      var pts=d.split('-');btn.textContent=pts[2]+'/'+pts[1]+'/'+pts[0];
+      btn.addEventListener('click',function(){selecionarData(d);});
+      cont.appendChild(btn);
+    });
+    // Selecionar hoje automaticamente
+    selecionarData(hoje);
+  }
+
+  function selecionarData(data){
+    state.dataSel=data;state.frequencias={};
+    document.querySelectorAll('.data-btn').forEach(function(b){
+      var d=b.textContent.split('/').reverse().join('-');
+      b.classList.toggle('selecionada',d===data);
+    });
+    if(el('diario-header-data')){
+      var pts=data.split('-');el('diario-header-data').textContent=pts[2]+'/'+pts[1]+'/'+pts[0];
+    }
+    carregarDiarioDia(data);
+  }
+
+  function carregarDiarioDia(data){
+    if(!state.turmaSel)return;
+    var cont=el('diario-tabela-wrap');if(cont)cont.style.display='none';
+    var spinner=el('diario-tabela-estado');if(spinner)spinner.style.display='block';
+    Promise.all([
+      postApi('matriculas.listar',{turma_id:state.turmaSel.id,situacao:'ATIVA'}),
+      postApi('frequencias.listar',{turma_id:state.turmaSel.id,data_aula:data}),
+    ]).then(function(results){
+      state.matriculas=(results[0].sucesso&&results[0].dados)?results[0].dados.map(normM):[];
+      state.frequencias={};
+      if(results[1].sucesso&&results[1].dados){
+        results[1].dados.forEach(function(f){state.frequencias[f.matricula_id]={freq:f.frequencia,anotacao:f.anotacao||''};});
+      }
+      // Conteúdo do dia
+      var aulasData=state.conteudoHist.filter(function(c){return c.data_aula===data;});
+      var conteudoAtual=aulasData.length?aulasData[0].conteudo_ministrado:'';
+      if(el('diario-conteudo'))el('diario-conteudo').value=conteudoAtual;
+      if(spinner)spinner.style.display='none';
+      if(cont)cont.style.display='';
+      renderizarTabela();
+    });
+  }
+
+  function renderizarTabela(){
+    var tbody=el('diario-tbody');if(!tbody)return;
+    tbody.innerHTML='';
+    if(!state.matriculas.length){tbody.innerHTML='<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--c-text-3);">Nenhum aluno matriculado.</td></tr>';return;}
+    state.matriculas.forEach(function(m){
+      var freq=(state.matriculas&&state.frequencias[m.id])||{freq:'P',anotacao:''};
+      var faltas=state.contFaltas[m.id]||0;
+      var tr=document.createElement('tr');
+      tr.innerHTML=
+        '<td class="diario-nome">'+(m.NomeExibicao||m.AlunoID||'—')+(m.PcD?'<span class="badge-pcd">PcD</span>':'')+' </td>'+
+        '<td class="diario-id">'+(m.MatriculaID||'—')+'</td>'+
+        '<td class="diario-freq-btns">'+
+          ['P','F','J'].map(function(f){
+            return '<button class="btn-freq'+(freq.freq===f?' ativo '+f.toLowerCase():'')+'" data-mat="'+m.id+'" data-freq="'+f+'">'+f+'</button>';
+          }).join('')+
+        '</td>'+
+        '<td class="diario-faltas">'+faltas+'</td>'+
+        '<td><input class="diario-anotacao" data-mat="'+m.id+'" placeholder="Anotação…" value="'+(freq.anotacao||'')+'" /></td>';
+      tr.querySelectorAll('.btn-freq').forEach(function(btn){
+        btn.addEventListener('click',function(){marcarFrequencia(m.id,btn.dataset.freq,tr);});
+      });
+      tr.querySelector('.diario-anotacao').addEventListener('change',function(){
+        state.frequencias[m.id]=state.frequencias[m.id]||{freq:'P'};
+        state.frequencias[m.id].anotacao=this.value;
+      });
+      tbody.appendChild(tr);
+    });
+  }
+
+  function marcarFrequencia(matId,freq,tr){
     state.frequencias[matId]=state.frequencias[matId]||{anotacao:''};
     state.frequencias[matId].freq=freq;
-    tr.querySelectorAll('.freq-btn').forEach(function(b){
-      b.className='freq-btn';
-      if(b.dataset.freq===freq)b.classList.add(freq==='P'?'ativo-p':freq==='F'?'ativo-f':'ativo-j');
-    });
-    var justWrap=document.getElementById('just-wrap-'+matId);
-    if(justWrap)justWrap.classList.toggle('show',freq==='J');
-    atualizarContadores();
-  }
-
-  function atualizarContadores() {
-    var p=0,f=0,j=0;
-    Object.keys(state.frequencias).forEach(function(k){
-      var freq=state.frequencias[k].freq;
-      if(freq==='P')p++; else if(freq==='F')f++; else if(freq==='J')j++;
-    });
-    if(el('diario-cont-p'))el('diario-cont-p').textContent=p;
-    if(el('diario-cont-f'))el('diario-cont-f').textContent=f;
-    if(el('diario-cont-j'))el('diario-cont-j').textContent=j;
-  }
-
-  function renderizarHistorico(historico) {
-    var corpo=el('historico-corpo');
-    if(!historico||historico.length===0){corpo.innerHTML='<div class="historico-vazio">Nenhuma aula anterior registrada.</div>';return;}
-    corpo.innerHTML='';
-    historico.forEach(function(c){
-      var div=document.createElement('div'); div.className='historico-item';
-      var data=c.DataAula?String(c.DataAula).substring(0,16):'—';
-      div.innerHTML='<div class="historico-data">'+data+'</div><div class="historico-conteudo">'+(c.ConteudoMinistrado||'—')+'</div>';
-      corpo.appendChild(div);
+    tr.querySelectorAll('.btn-freq').forEach(function(b){
+      b.className='btn-freq'+(b.dataset.freq===freq?' ativo '+freq.toLowerCase():'');
     });
   }
 
-  function todosPresente() {
+  function marcarTodos(freq){
     state.matriculas.forEach(function(m){
-      state.frequencias[m.MatriculaID]=state.frequencias[m.MatriculaID]||{anotacao:''};
-      state.frequencias[m.MatriculaID].freq='P';
-      var btn=document.querySelector('[data-mat="'+m.MatriculaID+'"][data-freq="P"]');
-      if(btn)marcarFrequencia(m.MatriculaID,'P',btn.closest('tr'));
+      var tr=document.querySelector('[data-mat="'+m.id+'"][data-freq]');
+      if(tr){marcarFrequencia(m.id,freq,tr.closest('tr'));}
+      else{state.frequencias[m.id]=state.frequencias[m.id]||{anotacao:''};state.frequencias[m.id].freq=freq;}
     });
+    renderizarTabela();
   }
 
-  function todosFalta() {
-    state.matriculas.forEach(function(m){
-      state.frequencias[m.MatriculaID]=state.frequencias[m.MatriculaID]||{anotacao:''};
-      state.frequencias[m.MatriculaID].freq='F';
-      var btn=document.querySelector('[data-mat="'+m.MatriculaID+'"][data-freq="F"]');
-      if(btn)marcarFrequencia(m.MatriculaID,'F',btn.closest('tr'));
-    });
-  }
-
-  // =========================================================
-  // NAVEGAÇÃO — volta para a etapa de seleção de data
-  // (mesma turma; o professor pode escolher outra data ou trocar de turma)
-  // =========================================================
-  function voltarParaSelecaoData() {
-    el('diario-step-aula').classList.remove('visivel');
-    el('diario-step-data').style.display='block';
-    state.dataSel=null; state.jaRegistrado=false;
-    el('diario-header-badge').className='diario-aula-header-badge';
-    el('diario-header-badge').innerHTML='<span class="material-icons-round">edit</span><span>Novo registro</span>';
-  }
-
-  function salvarRegistro() {
-    if(state.matriculas.length===0){mostrarAlerta('Não há alunos para registrar.','erro');return;}
-    var conteudo=el('diario-conteudo')?el('diario-conteudo').value.trim():'';
+  function salvarDiario(){
+    if(!state.turmaSel||!state.dataSel){if(typeof toast==='function')toast('Selecione turma e data.','error');return;}
     var lista=state.matriculas.map(function(m){
-      var f=state.frequencias[m.MatriculaID]||{freq:'P',anotacao:''};
-      return{MatriculaID:m.MatriculaID,Frequencia:f.freq||'P',Anotacao:f.anotacao||''};
+      var f=state.frequencias[m.id]||{freq:'P',anotacao:''};
+      return{matricula_id:m.id,turma_id:state.turmaSel.id,semestre_id:state.turmaSel.semestre_id,data_aula:state.dataSel,frequencia:f.freq||'P',anotacao:f.anotacao||''};
     });
-    var btn=el('diario-btn-salvar'); btn.disabled=true; btn.classList.add('loading');
-    var turmaId=state.turmaSel.TurmaID, data=state.dataSel;
+    var conteudo=el('diario-conteudo')?el('diario-conteudo').value.trim():'';
     Promise.all([
-      postApi('frequencias.salvar',{turmaId:turmaId,dataAula:data,lista:lista}),
-      conteudo?postApi('conteudo.salvar',{turmaId:turmaId,dataAula:data,conteudoMinistrado:conteudo}):Promise.resolve({sucesso:true}),
-    ]).then(function(res){
-      btn.disabled=false; btn.classList.remove('loading');
-      var erros=[];
-      if(!res[0].sucesso)erros.push('frequência: '+res[0].mensagem);
-      if(!res[1].sucesso)erros.push('conteúdo: '+res[1].mensagem);
-      if(erros.length>0){mostrarAlerta('Erro ao salvar: '+erros.join('; '),'erro');return;}
-      mostrarAlerta('Registro salvo com sucesso!','sucesso');
-      state.jaRegistrado=true;
-      el('diario-header-badge').className='diario-aula-header-badge salvo';
-      el('diario-header-badge').innerHTML='<span class="material-icons-round">check_circle</span><span>Salvo</span>';
-      if(typeof toast==='function')toast('Diário de aula salvo!','success');
-      // Volta automaticamente para a seleção de data da mesma turma, dando
-      // tempo do professor ver a confirmação antes da tela mudar.
-      setTimeout(voltarParaSelecaoData, 1400);
-    }).catch(function(){
-      btn.disabled=false; btn.classList.remove('loading');
-      mostrarAlerta('Erro de comunicação. Tente novamente.','erro');
+      postApi('frequencias.salvar',{registros:lista}),
+      conteudo?postApi('conteudo.salvar',{turma_id:state.turmaSel.id,semestre_id:state.turmaSel.semestre_id,data_aula:state.dataSel,conteudo_ministrado:conteudo}):{sucesso:true},
+    ]).then(function(results){
+      var ok=results[0].sucesso&&results[1].sucesso;
+      if(typeof toast==='function')toast(ok?'Diário salvo com sucesso!':'Erro ao salvar: '+(results[0].mensagem||results[1].mensagem||''),ok?'success':'error');
+      if(ok) carregarCalendario(state.turmaSel);
     });
   }
 
-  // =========================================================
-  // EVENTOS E INIT
-  // =========================================================
-  function init() {
-    el('diario-btn-abrir')&&el('diario-btn-abrir').addEventListener('click',abrirDiario);
-    el('diario-btn-trocar-turma')&&el('diario-btn-trocar-turma').addEventListener('click',function(){
-      state.turmaSel=null;
-      el('diario-step-data').style.display='none';
-      el('diario-step-turma').style.display='block';
-    });
-    el('diario-btn-voltar-data')&&el('diario-btn-voltar-data').addEventListener('click',voltarParaSelecaoData);
-    el('diario-btn-salvar')&&el('diario-btn-salvar').addEventListener('click',salvarRegistro);
-    el('btn-todos-p')&&el('btn-todos-p').addEventListener('click',todosPresente);
-    el('btn-todos-f')&&el('btn-todos-f').addEventListener('click',todosFalta);
-    el('diario-conteudo')&&el('diario-conteudo').addEventListener('input',atualizarContador);
-    el('diario-select-data')&&el('diario-select-data').addEventListener('change',function(){
-      if(this.value)el('diario-data-manual').value=dataParaInputLocal(this.value);
-    });
-    el('diario-data-manual')&&el('diario-data-manual').addEventListener('change',function(){
-      if(this.value)el('diario-select-data').value='';
-    });
-    el('diario-chk-encerradas')&&el('diario-chk-encerradas').addEventListener('change',renderizarTurmas);
-    // No GitHub Pages, usuario disponivel em App.usuario
-    var usuario = (typeof App !== 'undefined' && App.usuario) ? App.usuario : null;
-    if (usuario) {
-      state.papel     = usuario.Papel     || '';
-      state.usuarioId = usuario.UsuarioID || '';
-    }
-    carregarTurmas();
+  function registrarEventos(){
+    el('btn-todos-p')&&el('btn-todos-p').addEventListener('click',function(){marcarTodos('P');});
+    el('btn-todos-f')&&el('btn-todos-f').addEventListener('click',function(){marcarTodos('F');});
+    el('btn-salvar-diario')&&el('btn-salvar-diario').addEventListener('click',salvarDiario);
   }
 
   if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',init);}else{init();}
