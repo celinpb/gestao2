@@ -676,1083 +676,371 @@
 </div>
 
 <script>
-(function () {
+(function(){
   'use strict';
+  var S={turmas:[],turmaSel:null,matriculas:[],busca:'',papel:'',podeEditar:false,matriculaParaSit:null,modoNovaTurma:false};
+  function postApi(a,d){return window.postApi(a,d);}
+  function el(id){return document.getElementById(id);}
+  function val(id){return el(id)?el(id).value.trim():'';}
 
-  // ── postApi — usa api.js carregado pelo index.html ──────────────────────────
-  // No GitHub Pages, postApi() vem do api.js global. Não há google.script.run.
-  // O token é obtido do Auth (localStorage) diretamente pelo api.js.
-  // Esta função local redireciona para a global para manter compatibilidade
-  // com o restante do código do módulo.
-  function postApi(acao, dados) {
-    return window.postApi(acao, dados);
+  function normT(t){
+    if(!t)return t;
+    var p=t.usuarios||{},c=t.cursos||{},sm=t.semestres||{};
+    return{
+      id:t.id, TurmaID:t.external_id||t.id,
+      SemestreID:t.semestre_id, SemestreRotulo:sm.rotulo||'',
+      CursoID:c.external_id||t.curso_id, CursoNome:c.nome||'', CursoSigla:c.sigla||'',
+      ProfessorID:p.id||t.professor_id, ProfessorNome:p.nome||'',
+      Estagio:t.estagio||'', Modalidade:t.modalidade||'',
+      DiaSemana:t.dia_semana||'', Horario:t.horario||'', Turno:t.turno||'',
+      VagasTotais:t.vagas_totais||20, SituacaoTurma:t.situacao||'ATIVA',
+      GrupoWhatsapp:t.grupo_whatsapp||'', LinkMeet:t.link_meet||'', LinkClassroom:t.link_classroom||'',
+      semestre_id:t.semestre_id, curso_id:t.curso_id, professor_id:t.professor_id,
+    };
+  }
+  function normM(m){
+    if(!m)return m;
+    var al=m.alunos||{},t=m.turmas||{},c=(t.cursos)||{};
+    var ns=al.nome_social||'';
+    return{
+      id:m.id, MatriculaID:m.external_id||m.id,
+      AlunoID:al.external_id||m.aluno_id, NomeCompleto:al.nome_completo||'',
+      NomeExibicao:ns||al.nome_completo||'', PcD:al.pcd||false,
+      TurmaID:t.external_id||m.turma_id, SituacaoMatricula:m.situacao||'ATIVA',
+      aluno_id:m.aluno_id, turma_id:m.turma_id,
+    };
   }
 
-  function el(id) { return document.getElementById(id); }
-
-  // Conversão para uso com <input type="date">, que exige AAAA-MM-DD.
-  // O back-end trabalha e devolve datas no formato DD/MM/AAAA (m7_dataParaString).
-  function brParaIso(br) {
-    if (!br) return '';
-    var p = String(br).trim().split('/');
-    return p.length === 3 ? (p[2] + '-' + p[1].padStart(2,'0') + '-' + p[0].padStart(2,'0')) : '';
-  }
-  function isoParaBr(iso) {
-    if (!iso) return '';
-    var p = String(iso).trim().split('-');
-    return p.length === 3 ? (p[2] + '/' + p[1] + '/' + p[0]) : '';
-  }
-
-  // ── estado ───────────────────────────────────────────────
-  var S = {
-    turmas: [], turmaSel: null,
-    matriculas: [], matriculaParaSit: null,
-    papel: '', podeEditar: false, podeCriarMat: false, podeForcarVaga: false,
-    professores: [], cursos: [],
-    matriculaParaTrans: null, turmaTrans: null, transCursoAtual: '',
-    // Estado do combobox "Adicionar matrícula" (aba Alunos do painel de turma)
-    matAlunoSel: null,       // { AlunoID, NomeExibicao } escolhido na busca
-  };
-  var buscaAlunoMatTimer = null;
-
-  // ============================================================
-  // INIT
-  // ============================================================
-  function init() {
-    // No GitHub Pages, o usuario ja esta disponivel em App.usuario
-    // (definido pelo Shell apos o login). Nao e necessario chamar getSessaoAtiva.
-    var usuario = (typeof App !== 'undefined' && App.usuario) ? App.usuario : null;
-    if (usuario) {
-      S.papel        = usuario.Papel || '';
-      S.podeEditar   = S.papel === 'admin' || S.papel === 'coordenacao';
-      S.podeCriarMat = S.papel === 'admin' || S.papel === 'coordenacao' || S.papel === 'secretaria';
-      S.podeForcarVaga = S.papel === 'admin' || S.papel === 'coordenacao';
-      if (S.papel === 'professor') {
-        var w = el('add-mat-wrap'); if (w) w.style.display = 'none';
-      }
+  function init(){
+    var u=(typeof App!=='undefined'&&App.usuario)?App.usuario:null;
+    if(u){
+      S.papel=u.papel||u.Papel||'';
+      S.podeEditar=['admin','coordenacao'].indexOf(S.papel)!==-1;
     }
-    bindEventos();
+    carregarProfessores();
     carregarTurmas();
-    if (S.podeEditar) {
-      carregarProfessores();
-      carregarCursos();
-      var btnNova = el('btn-nova-turma');
-      if (btnNova) btnNova.style.display = 'inline-flex';
-    }
+    registrarEventos();
   }
 
-  // ============================================================
-  // PROFESSORES
-  // ============================================================
-  function carregarProfessores() {
-    postApi('usuarios.listar', {})
-      .then(function (res) {
-        if (!res.sucesso || !res.dados) return;
-        S.professores = (res.dados || []).filter(function (u) {
-          return u.Papel === 'professor' &&
-                 (u.SituacaoUsuario === true || u.SituacaoUsuario === 'true');
+  // ── PROFESSORES (para selects) ─────────────────────────────────────────
+  function carregarProfessores(profIdSel){
+    postApi('usuarios.listar',{}).then(function(res){
+      var profs=((res.dados)||[]).filter(function(u){return u.papel==='professor'&&u.situacao_ativo!==false;});
+      ['t5-edit-prof','t5-nova-prof'].forEach(function(selId){
+        var sel=el(selId); if(!sel)return;
+        sel.innerHTML='<option value="">Selecione o professor…</option>';
+        profs.forEach(function(p){
+          var opt=document.createElement('option');
+          opt.value=p.id; opt.textContent=p.nome+' ('+p.login+')';
+          if(profIdSel&&p.id===profIdSel)opt.selected=true;
+          sel.appendChild(opt);
         });
-      })
-      .catch(function () {});
-  }
-
-  function popularSelectProfessores(profIdSel) {
-    var sel = el('et-professor');
-    if (!sel) return;
-    sel.innerHTML = '<option value="">Selecione um professor…</option>';
-    S.professores.forEach(function (p) {
-      var opt = document.createElement('option');
-      opt.value       = p.UsuarioID;
-      opt.textContent = p.Nome + ' (' + p.UsuarioID + ')';
-      if (profIdSel && p.UsuarioID === profIdSel) opt.selected = true;
-      sel.appendChild(opt);
-    });
-    // Se ainda não carregou (usuário abriu modal antes do load): avisa
-    if (S.professores.length === 0) {
-      sel.innerHTML = '<option value="">Nenhum professor encontrado</option>';
-    }
-  }
-
-  // ============================================================
-  // TURMAS
-  // ============================================================
-  function carregarTurmas() {
-    el('t5-estado').style.display = 'block';
-    el('t5-estado').innerHTML = '<div class="t5-spinner"></div><p>Carregando turmas…</p>';
-    el('t5-tabela').style.display = 'none';
-
-    postApi('turmas.listar', { tamanhoPagina: 300 })
-      .then(function (res) {
-        if (!res.sucesso) { mostrarEstado('Erro: ' + (res.mensagem || '')); return; }
-        S.turmas = (res.dados && res.dados.dados) ? res.dados.dados : [];
-        renderTurmas();
-      })
-      .catch(function (e) { mostrarEstado('Erro de comunicação: ' + (e.message || '')); });
-  }
-
-  function turmasFiltradas() {
-    var busca  = (el('t5-busca').value || '').toLowerCase();
-    var modal  = el('t5-filtro-modalidade').value;
-    var sit    = el('t5-filtro-situacao').value;
-    return S.turmas.filter(function (t) {
-      var okB = !busca ||
-        (t.TurmaID     || '').toLowerCase().indexOf(busca) !== -1 ||
-        (t.Estagio     || '').toLowerCase().indexOf(busca) !== -1 ||
-        (t.ProfessorNome|| '').toLowerCase().indexOf(busca) !== -1;
-      var okM = !modal || (t.Modalidade || '').toUpperCase() === modal;
-      var enc   = String(t.SituacaoTurma) === 'ENCERRADA';
-      var ativo = !enc && (t.SituacaoTurma === true || t.SituacaoTurma === 'true');
-      var okS = sit === 'todas' ||
-                (sit === 'ativas'     &&  ativo) ||
-                (sit === 'inativas'   && !ativo && !enc) ||
-                (sit === 'encerradas' &&  enc);
-      return okB && okM && okS;
+      });
     });
   }
 
-  function renderTurmas() {
-    var lista = turmasFiltradas();
-    if (lista.length === 0) {
-      mostrarEstado('Nenhuma turma encontrada.');
-      return;
-    }
-    el('t5-estado').style.display = 'none';
-    el('t5-tabela').style.display = 'table';
-    var tbody = el('t5-tbody');
-    tbody.innerHTML = '';
+  // ── CURSOS (para select de nova turma) ────────────────────────────────
+  function carregarCursos(){
+    postApi('cursos.listar',{}).then(function(res){
+      var sel=el('t5-nova-curso'); if(!sel)return;
+      sel.innerHTML='<option value="">Selecione o curso…</option>';
+      ((res.dados)||[]).forEach(function(c){
+        var idioma=(c.idiomas&&c.idiomas.nome)||'';
+        var opt=document.createElement('option');
+        opt.value=c.id; opt.textContent=(c.nome||c.sigla||'')+(idioma?' ('+idioma+')':'');
+        sel.appendChild(opt);
+      });
+    });
+  }
 
-    lista.forEach(function (t) {
-      var ativo = (t.SituacaoTurma === true || t.SituacaoTurma === 'true') && String(t.SituacaoTurma) !== 'ENCERRADA';
-      var encerrada = String(t.SituacaoTurma) === 'ENCERRADA';
-      var mC    = { PRESENCIAL:'presencial', EAD:'ead', 'HÍBRIDO':'hibrido', HIBRIDO:'hibrido' };
-      var mc    = mC[(t.Modalidade || '').toUpperCase()] || 'presencial';
-      var vagas = Number(t.VagasTotais)         || 0;
-      var ocup  = Number(t._matriculasAtivas)   || 0;
-      var pct   = vagas > 0 ? Math.min(100, Math.round(ocup / vagas * 100)) : 0;
-      var fillC = pct >= 100 ? 'cheio' : pct >= 80 ? 'quase' : '';
-      var diaAbrev = (t.DiaSemana || '').split('-')[0];
+  // ── TURMAS ─────────────────────────────────────────────────────────────
+  function carregarTurmas(){
+    if(el('t5-estado')) el('t5-estado').innerHTML='<div class="t5-spinner"></div><p>Carregando turmas…</p>';
+    var filtros={};
+    if(S.papel==='professor'&&typeof App!=='undefined'&&App.usuario) filtros.professor_id=App.usuario.id;
+    postApi('turmas.listar',filtros).then(function(res){
+      if(!res.sucesso){if(el('t5-estado'))el('t5-estado').innerHTML='<p>Erro ao carregar.</p>';return;}
+      S.turmas=(res.dados||[]).map(normT);
+      renderizarLista();
+    });
+  }
 
-      var tr = document.createElement('tr');
-      if (S.turmaSel && S.turmaSel.TurmaID === t.TurmaID) tr.classList.add('selecionada');
+  function filtradas(){
+    var b=S.busca.toLowerCase();
+    return S.turmas.filter(function(t){
+      if(!b)return true;
+      return (t.TurmaID||'').toLowerCase().indexOf(b)!==-1||
+             (t.Estagio||'').toLowerCase().indexOf(b)!==-1||
+             (t.ProfessorNome||'').toLowerCase().indexOf(b)!==-1||
+             (t.CursoSigla||'').toLowerCase().indexOf(b)!==-1;
+    });
+  }
 
-      tr.innerHTML =
-        '<td class="t5-id">'      + (t.TurmaID      || '—') + '</td>' +
-        '<td class="t5-estagio">' + (t.Estagio       || t.CursoID || '—') + '</td>' +
-        '<td style="font-size:12.5px;">' + (t.ProfessorNome || '—') + '</td>' +
-        '<td style="font-size:12.5px;">' + (diaAbrev || '—') +
-          (t.Horario ? '<br><span style="color:var(--c-text-3);font-size:11px;">' + t.Horario + '</span>' : '') +
-        '</td>' +
-        '<td><span class="badge-modal ' + mc + '">' + (t.Modalidade || '—') + '</span></td>' +
-        '<td><div class="vagas-bar">' +
-          '<div class="vagas-progresso"><div class="vagas-fill ' + fillC + '" style="width:' + pct + '%"></div></div>' +
-          '<span style="font-size:11.5px;white-space:nowrap;">' + ocup + '/' + vagas + '</span>' +
-        '</div></td>' +
-        (encerrada
-        ? '<td><span class="badge-sit-turma encerrada"><span class="material-icons-round">lock</span>Encerrada</span></td>'
-        : '<td><span class="badge-sit-turma ' + (ativo ? 'ativa' : 'inativa') + '">' +
-          '<span class="material-icons-round">' + (ativo ? 'check_circle' : 'cancel') + '</span>' +
-          (ativo ? 'Ativa' : 'Inativa') + '</span></td>');
-
-      (function (turma) {
-        tr.addEventListener('click', function () { selecionarTurma(turma); });
-      }(t));
-
+  function renderizarLista(){
+    var lista=filtradas();
+    var tbody=el('t5-tbody'); if(!tbody)return;
+    tbody.innerHTML='';
+    if(!lista.length){if(el('t5-estado'))el('t5-estado').innerHTML='<span class="material-icons-round">class</span><p>Nenhuma turma encontrada.</p>';if(el('t5-tabela-wrap'))el('t5-tabela-wrap').style.display='none';return;}
+    if(el('t5-estado'))el('t5-estado').style.display='none';
+    if(el('t5-tabela-wrap'))el('t5-tabela-wrap').style.display='';
+    lista.forEach(function(t){
+      var tr=document.createElement('tr');
+      if(S.turmaSel&&S.turmaSel.TurmaID===t.TurmaID)tr.classList.add('selecionada');
+      tr.innerHTML=
+        '<td class="t5-id">'+(t.TurmaID||'—')+'</td>'+
+        '<td class="t5-estagio">'+(t.Estagio||t.CursoSigla||'—')+'</td>'+
+        '<td>'+(t.ProfessorNome||'—')+'</td>'+
+        '<td>'+(t.DiaSemana||'—')+'</td>'+
+        '<td>'+(t.Horario||'—')+'</td>'+
+        '<td>'+(t.VagasTotais||'—')+'</td>'+
+        '<td><span class="badge-sit-turma '+(t.SituacaoTurma||'').toLowerCase()+'">'+(t.SituacaoTurma||'—')+'</span></td>';
+      tr.addEventListener('click',function(){selecionarTurma(t);});
       tbody.appendChild(tr);
     });
   }
 
-  function mostrarEstado(msg) {
-    el('t5-estado').style.display = 'block';
-    el('t5-estado').innerHTML = '<span class="material-icons-round">groups</span><p>' + msg + '</p>';
-    el('t5-tabela').style.display = 'none';
-  }
-
-  // ============================================================
-  // PAINEL LATERAL
-  // ============================================================
-  function selecionarTurma(turma) {
-    S.turmaSel = turma;
-    // Atualiza linha selecionada
-    var lista = turmasFiltradas();
-    document.querySelectorAll('#t5-tbody tr').forEach(function (tr, i) {
-      if (lista[i]) tr.classList.toggle('selecionada', lista[i].TurmaID === turma.TurmaID);
+  function selecionarTurma(t){
+    S.turmaSel=t;
+    document.querySelectorAll('#t5-tbody tr').forEach(function(tr,i){
+      tr.classList.toggle('selecionada',filtradas()[i]&&filtradas()[i].TurmaID===t.TurmaID);
     });
-    el('t5-painel').classList.add('aberto');
-    el('turmas-main').classList.add('com-painel');
-    if (S.podeEditar) {
-      el('t5-painel-acoes').style.display = 'flex';
-      var enc = String(turma.SituacaoTurma) === 'ENCERRADA';
-      el('btn-editar-turma').style.display    = enc ? 'none' : 'inline-flex';
-      el('btn-encerrar-turma').style.display  = enc ? 'none' : 'inline-flex';
-      el('btn-reabrir-turma').style.display   = enc ? 'inline-flex' : 'none';
-    } else {
-      el('t5-painel-acoes').style.display = 'none';
-    }
-    // Reseta a checkbox de inativos ao trocar de turma — cada turma abre
-    // mostrando apenas alunos/matrículas ativos por padrão.
-    if (el('chk-mat-inativos')) el('chk-mat-inativos').checked = false;
-    // Reseta o combobox de "adicionar matrícula" e o aviso de vaga excedida
-    S.matAlunoSel = null;
-    if (el('add-mat-aluno-selecionado')) el('add-mat-aluno-selecionado').classList.remove('show');
-    if (el('add-mat-aluno-id')) { el('add-mat-aluno-id').style.display = 'block'; el('add-mat-aluno-id').value = ''; }
-    if (el('t5-mat-aviso-vaga')) el('t5-mat-aviso-vaga').classList.remove('show');
-    preencherInfo(turma);
-    mostrarTab('info');
+    if(el('t5-painel'))el('t5-painel').classList.add('aberto');
+    if(el('t5-main'))el('t5-main').classList.add('com-painel');
+    if(el('t5-painel-titulo'))el('t5-painel-titulo').textContent=t.Estagio||t.CursoSigla||'—';
+    if(el('t5-painel-sub'))el('t5-painel-sub').textContent=t.TurmaID||'—';
+    preencherInfoTurma(t);
+    carregarMatriculas();
   }
 
-  function fecharPainel() {
-    el('t5-painel').classList.remove('aberto');
-    el('turmas-main').classList.remove('com-painel');
-    S.turmaSel = null;
-    document.querySelectorAll('#t5-tbody tr').forEach(function (tr) { tr.classList.remove('selecionada'); });
+  function fecharPainel(){
+    S.turmaSel=null; S.matriculas=[];
+    if(el('t5-painel'))el('t5-painel').classList.remove('aberto');
+    if(el('t5-main'))el('t5-main').classList.remove('com-painel');
   }
 
-  function mostrarTab(id) {
-    document.querySelectorAll('.t5-tab').forEach(function (b) {
-      b.classList.toggle('ativa', b.dataset.tab === id);
-    });
-    document.querySelectorAll('.t5-tab-secao').forEach(function (s) {
-      s.classList.toggle('ativa', s.id === 'tab-' + id);
-    });
-    if (id === 'alunos') carregarMatriculas();
-    if (id === 'links')  preencherLinks();
-  }
-
-  function preencherInfo(t) {
-    el('t5-painel-titulo').textContent  = t.Estagio || t.CursoID || '—';
-    el('t5-painel-sub').textContent     = t.TurmaID || '—';
-    el('inf-id').textContent            = t.TurmaID       || '—';
-    el('inf-curso').textContent         = t.CursoID       || '—';
-    el('inf-estagio').textContent       = t.Estagio       || '—';
-    el('inf-modalidade').textContent    = t.Modalidade    || '—';
-    var ativo = t.SituacaoTurma === true || t.SituacaoTurma === 'true';
-    var enc = String(t.SituacaoTurma) === 'ENCERRADA';
-    el('inf-situacao').textContent = enc ? 'Encerrada' : (ativo ? 'Ativa' : 'Inativa');
-    el('inf-dia').textContent           = t.DiaSemana     || '—';
-    el('inf-horario').textContent       = t.Horario       || '—';
-    el('inf-turno').textContent         = t.Turno         || '—';
-    el('inf-prof').textContent          = t.ProfessorNome || '—';
-    el('inf-vagas').textContent         = t.VagasTotais   || '—';
-    el('inf-matriculados').textContent  = '…';
-    el('inf-data-inicio').textContent   = t.DataInicioTurma || 'Usa o padrão do calendário';
-    el('inf-data-fim').textContent      = t.DataFimTurma    || 'Usa o padrão do calendário';
-  }
-
-  // ============================================================
-  // MODAL DE EDIÇÃO DE TURMA
-  // ============================================================
-  function abrirModalEditar() {
-    var t = S.turmaSel;
-    if (!t) return;
-
-    el('t5-edit-titulo').textContent = 'Editar turma — ' + t.TurmaID;
-    el('t5-edit-alerta').classList.remove('show');
-
-    // Preenche campos com valores atuais da turma
-    popularSelectProfessores(t.ProfessorID);
-    el('et-modalidade').value = (t.Modalidade || '').toUpperCase();
-    var ativo = t.SituacaoTurma === true || t.SituacaoTurma === 'true';
-    el('et-situacao').value   = ativo ? 'true' : 'false';
-    // Preenche checkboxes de dias (DiaSemana pode ser "Segunda-Feira,Quarta-Feira")
-    var diasSel = String(t.DiaSemana || '').split(',').map(function(d){ return d.trim(); });
-    el('et-dias-check').querySelectorAll('input[type=checkbox]').forEach(function(cb) {
-      cb.checked = diasSel.indexOf(cb.value) !== -1;
-    });
-    el('et-turno').value      = t.Turno        || '';
-    el('et-horario').value    = t.Horario      || '';
-    el('et-vagas').value      = t.VagasTotais  || '';
-    el('et-whatsapp').value   = t.GrupoWhatsapp|| '';
-    el('et-meet').value       = t.LinkMeet     || '';
-    el('et-classroom').value  = t.LinkClassroom|| '';
-    el('et-data-inicio').value = brParaIso(t.DataInicioTurma);
-    el('et-data-fim').value    = brParaIso(t.DataFimTurma);
-
-    el('t5-edit-overlay').style.display = 'flex';
-  }
-
-  function fecharModalEditar() {
-    el('t5-edit-overlay').style.display = 'none';
-  }
-
-  function salvarEdicaoTurma() {
-    if (!S.turmaSel) return;
-
-    var btn = el('btn-salvar-edit');
-    btn.disabled = true;
-    btn.classList.add('loading');
-    el('t5-edit-alerta').classList.remove('show');
-
-    var profSel  = el('et-professor');
-    var profId   = profSel.value;
-    var profNome = profId && profSel.selectedIndex > 0
-      ? profSel.options[profSel.selectedIndex].text.replace(/\s*\(.*\)\s*$/, '')
-      : S.turmaSel.ProfessorNome || '';
-
-    var vagasVal = parseInt(el('et-vagas').value, 10);
-    if (isNaN(vagasVal) || vagasVal < 1) {
-      mostrarErroEdit('Vagas totais deve ser um número maior que zero.');
-      btn.disabled = false; btn.classList.remove('loading');
-      return;
-    }
-
-    var dataInicioIso = el('et-data-inicio').value;
-    var dataFimIso    = el('et-data-fim').value;
-    if (dataInicioIso && dataFimIso && dataInicioIso > dataFimIso) {
-      mostrarErroEdit('A data de início da turma não pode ser posterior à data de fim.');
-      btn.disabled = false; btn.classList.remove('loading');
-      return;
-    }
-
-    var dados = {
-      turmaId:       S.turmaSel.TurmaID,
-      ProfessorID:   profId   || S.turmaSel.ProfessorID,
-      ProfessorNome: profNome,
-      Modalidade:    el('et-modalidade').value,
-      SituacaoTurma: el('et-situacao').value === 'true',
-      DiaSemana:     (function() {
-        var checked = [];
-        el('et-dias-check').querySelectorAll('input:checked').forEach(function(cb){ checked.push(cb.value); });
-        return checked.join(',');
-      }()),
-      Turno:         el('et-turno').value,
-      Horario:       el('et-horario').value.trim(),
-      VagasTotais:   vagasVal,
-      GrupoWhatsapp: el('et-whatsapp').value.trim(),
-      LinkMeet:      el('et-meet').value.trim(),
-      LinkClassroom: el('et-classroom').value.trim(),
-      DataInicioTurma: isoParaBr(dataInicioIso),
-      DataFimTurma:    isoParaBr(dataFimIso),
+  function preencherInfoTurma(t){
+    var campos={
+      'inf-id':t.TurmaID,'inf-curso':t.CursoNome||t.CursoSigla,'inf-prof':t.ProfessorNome,
+      'inf-mod':t.Modalidade,'inf-dias':t.DiaSemana,'inf-hora':t.Horario,'inf-turno':t.Turno,
+      'inf-vagas':t.VagasTotais,'inf-sit':t.SituacaoTurma,
+      'inf-wa':t.GrupoWhatsapp,'inf-meet':t.LinkMeet,'inf-class':t.LinkClassroom,
     };
+    Object.keys(campos).forEach(function(id){if(el(id))el(id).textContent=campos[id]||'—';});
+    var btnEditar=el('btn-editar-turma');
+    if(btnEditar)btnEditar.style.display=S.podeEditar?'':'none';
+  }
 
-    postApi('turmas.atualizar', dados)
-      .then(function (res) {
-        btn.disabled = false; btn.classList.remove('loading');
-        if (!res.sucesso) {
-          mostrarErroEdit(res.mensagem || 'Erro ao salvar alterações.');
-          return;
-        }
-        fecharModalEditar();
-        // Atualiza objeto local e painel
-        Object.assign(S.turmaSel, dados);
-        preencherInfo(S.turmaSel);
-        renderTurmas();
-        if (typeof toast === 'function') toast('Turma atualizada com sucesso!', 'success');
-      })
-      .catch(function () {
-        btn.disabled = false; btn.classList.remove('loading');
-        mostrarErroEdit('Erro de comunicação. Tente novamente.');
+  // ── MATRÍCULAS ─────────────────────────────────────────────────────────
+  function carregarMatriculas(){
+    if(!S.turmaSel)return;
+    var cont=el('t5-matriculas-lista'); if(!cont)return;
+    cont.innerHTML='<div class="t5-spinner"></div>';
+    postApi('matriculas.listar',{turma_id:S.turmaSel.id,situacao:'ATIVA'}).then(function(res){
+      S.matriculas=(res.sucesso&&res.dados)?res.dados.map(normM):[];
+      renderizarMatriculas();
+      atualizarContadores();
+    });
+  }
+
+  function renderizarMatriculas(){
+    var cont=el('t5-matriculas-lista'); if(!cont)return;
+    if(!S.matriculas.length){cont.innerHTML='<p style="padding:12px;color:var(--c-text-3);">Nenhum aluno matriculado.</p>';return;}
+    cont.innerHTML='';
+    S.matriculas.forEach(function(m){
+      var div=document.createElement('div'); div.className='t5-mat-item';
+      div.innerHTML=
+        '<div class="t5-mat-info">'+
+          '<div class="mat-nome">'+(m.NomeExibicao||m.AlunoID||'—')+(m.PcD?'<span class="badge-pcd">PcD</span>':'')+' </div>'+
+          '<div class="mat-id">'+(m.MatriculaID||m.id||'—')+'</div>'+
+        '</div>'+
+        (S.podeEditar?
+          '<button class="btn-mat-acao" data-id="'+m.id+'" data-mid="'+(m.MatriculaID||m.id)+'">'+
+            '<span class="material-icons-round">more_vert</span>'+
+          '</button>':'');
+      div.querySelector('button[data-id]')&&div.querySelector('button[data-id]').addEventListener('click',function(){
+        S.matriculaParaSit=m;
+        if(el('modal-sit-aluno'))el('modal-sit-aluno').textContent='Aluno: '+(m.NomeExibicao||m.AlunoID);
+        if(el('modal-situacao-overlay'))el('modal-situacao-overlay').style.display='flex';
       });
-  }
-
-  function mostrarErroEdit(msg) {
-    var a = el('t5-edit-alerta'), m = el('t5-edit-alerta-msg');
-    a.className = 't5-edit-alerta show erro'; m.textContent = msg;
-  }
-
-  // ============================================================
-  // MATRÍCULAS
-  // ============================================================
-  function carregarMatriculas() {
-    if (!S.turmaSel) return;
-    el('lista-matriculados').innerHTML = '<div class="mat-vazio">Carregando…</div>';
-    var mostrarInativos = el('chk-mat-inativos') && el('chk-mat-inativos').checked;
-    var params = { turmaId: S.turmaSel.TurmaID, tamanhoPagina: 200 };
-    if (!mostrarInativos) params.somenteAtivos = true;
-    postApi('matriculas.listar', params)
-      .then(function (res) {
-        if (!res.sucesso || !res.dados) {
-          el('lista-matriculados').innerHTML = '<div class="mat-vazio">Erro ao carregar matrículas.</div>';
-          return;
-        }
-        S.matriculas = res.dados.dados || [];
-        renderMatriculas();
-        var ativas = S.matriculas.filter(function (m) { return m.SituacaoMatricula === 'ATIVA'; }).length;
-        el('inf-matriculados').textContent = ativas + ' ativo(s)';
-      })
-      .catch(function () {
-        el('lista-matriculados').innerHTML = '<div class="mat-vazio">Erro de comunicação.</div>';
-      });
-  }
-
-  function badgeSituacaoMatT5(m, sit) {
-    if (sit === 'CANCELADA' && (m.MotivoCancelamento || m.DataCancelamento)) {
-      var titulo = 'Cancelada em ' + (m.DataCancelamento || '—') +
-        (m.MotivoCancelamento ? '\nMotivo: ' + m.MotivoCancelamento : '') +
-        (m.CanceladoPor ? '\nPor: ' + m.CanceladoPor : '');
-      return '<span class="badge-sit-mat ' + sit + '" title="' + titulo.replace(/"/g, '&quot;') + '" style="cursor:help;border-bottom:1px dotted currentColor;">' + sit + '</span>';
-    }
-    return '<span class="badge-sit-mat ' + sit + '">' + sit + '</span>';
-  }
-
-  function renderMatriculas() {
-    var cont = el('lista-matriculados');
-    if (!S.matriculas.length) {
-      cont.innerHTML = '<div class="mat-vazio">Nenhum aluno matriculado nesta turma.</div>';
-      return;
-    }
-    cont.innerHTML = '';
-    S.matriculas.forEach(function (m) {
-      var sit = m.SituacaoMatricula || 'ATIVA';
-      var div = document.createElement('div');
-      div.className = 'mat-item';
-      div.innerHTML =
-        '<div style="flex:1;min-width:0;">' +
-          '<div class="mat-nome">' + (m.NomeExibicao || m.AlunoID || m.MatriculaID) + '</div>' +
-          '<div class="mat-id">' + m.MatriculaID + '</div>' +
-        '</div>' +
-        badgeSituacaoMatT5(m, sit) +
-        (S.podeEditar || S.podeCriarMat
-          ? '<div class="mat-acoes">' +
-              '<button class="btn-mat-acao btn-sit-mat" title="Alterar situacao"><span class="material-icons-round">swap_horiz</span></button>' +
-              (sit === 'ATIVA'
-                ? '<button class="btn-mat-acao btn-trans" title="Transferir de turma"><span class="material-icons-round">compare_arrows</span></button>'
-                : '') +
-            '</div>'
-          : '');
-      var btnSit   = div.querySelector('.btn-sit-mat');
-      var btnTrans = div.querySelector('.btn-trans');
-      if (btnSit) {
-        (function (mat) {
-          btnSit.addEventListener('click', function () {
-            S.matriculaParaSit = mat;
-            el('modal-sit-aluno').textContent = 'Aluno: ' + (mat.NomeExibicao || mat.AlunoID || mat.MatriculaID);
-            resetarModalSitT5();
-            el('modal-sit-overlay').style.display = 'flex';
-          });
-        }(m));
-      }
-      if (btnTrans) {
-        (function (mat) {
-          btnTrans.addEventListener('click', function () {
-            abrirModalTransferir(mat);
-          });
-        }(m));
-      }
       cont.appendChild(div);
     });
   }
 
-  // ── Busca/autocomplete de aluno por nome (reaproveita alunos.listar) ──────
-  function buscarAlunosParaComboT5(termo) {
-    var dropdown = el('add-mat-aluno-dropdown');
-    if (!termo || termo.length < 2) {
-      dropdown.classList.remove('show');
-      dropdown.innerHTML = '';
-      return;
-    }
-    postApi('alunos.listar', { busca: termo, somenteAtivos: true, tamanhoPagina: 8 })
-      .then(function (res) {
-        var lista = (res.sucesso && res.dados && res.dados.dados) ? res.dados.dados : [];
-        renderizarDropdownAlunoT5(lista, termo);
-      })
-      .catch(function () { renderizarDropdownAlunoT5([], termo); });
+  function atualizarContadores(){
+    var vagas=S.turmaSel?S.turmaSel.VagasTotais:0;
+    var ocupadas=S.matriculas.length;
+    if(el('t5-cnt-mat'))el('t5-cnt-mat').textContent=ocupadas;
+    if(el('t5-cnt-vagas'))el('t5-cnt-vagas').textContent=Math.max(0,vagas-ocupadas);
   }
 
-  function renderizarDropdownAlunoT5(lista, termo) {
-    var dropdown = el('add-mat-aluno-dropdown');
-    dropdown.innerHTML = '';
-
-    if (lista.length === 0) {
-      dropdown.innerHTML = '<div class="t5-aluno-item vazio">Nenhum aluno encontrado para "' + termo + '".</div>';
-      dropdown.classList.add('show');
-      return;
-    }
-
-    lista.forEach(function (a) {
-      var item = document.createElement('div');
-      item.className = 't5-aluno-item';
-      item.innerHTML = '<span class="m5-ai-nome">' + (a.NomeExibicao || a.NomeCompleto || '—') + '</span>' +
-        '<span class="m5-ai-id">' + a.AlunoID + '</span>';
-      item.addEventListener('click', function () {
-        selecionarAlunoComboT5(a.AlunoID, a.NomeExibicao || a.NomeCompleto || a.AlunoID);
-      });
-      dropdown.appendChild(item);
-    });
-    dropdown.classList.add('show');
+  // ── EDITAR TURMA ───────────────────────────────────────────────────────
+  function abrirEditarTurma(){
+    if(!S.turmaSel)return;
+    var t=S.turmaSel;
+    if(el('t5-edit-titulo'))el('t5-edit-titulo').textContent='Editar turma — '+t.TurmaID;
+    if(el('t5-edit-dias'))  el('t5-edit-dias').value  =t.DiaSemana||'';
+    if(el('t5-edit-hora'))  el('t5-edit-hora').value  =t.Horario||'';
+    if(el('t5-edit-turno')) el('t5-edit-turno').value =t.Turno||'';
+    if(el('t5-edit-vagas')) el('t5-edit-vagas').value =t.VagasTotais||20;
+    if(el('t5-edit-wa'))    el('t5-edit-wa').value    =t.GrupoWhatsapp||'';
+    if(el('t5-edit-meet'))  el('t5-edit-meet').value  =t.LinkMeet||'';
+    if(el('t5-edit-class')) el('t5-edit-class').value =t.LinkClassroom||'';
+    carregarProfessores(t.professor_id);
+    if(el('t5-edit-overlay'))el('t5-edit-overlay').style.display='flex';
   }
 
-  function selecionarAlunoComboT5(alunoId, nomeExibicao) {
-    S.matAlunoSel = { AlunoID: alunoId, NomeExibicao: nomeExibicao };
-    el('add-mat-aluno-dropdown').classList.remove('show');
-    el('add-mat-aluno-id').value = '';
-    el('add-mat-aluno-id').style.display = 'none';
-    el('add-mat-aluno-selecionado-txt').textContent = nomeExibicao + ' (' + alunoId + ')';
-    el('add-mat-aluno-selecionado').classList.add('show');
-  }
-
-  function limparAlunoComboT5() {
-    S.matAlunoSel = null;
-    el('add-mat-aluno-selecionado').classList.remove('show');
-    el('add-mat-aluno-id').style.display = 'block';
-    el('add-mat-aluno-id').value = '';
-    el('add-mat-aluno-id').focus();
-  }
-
-  // ── Matricular ─────────────────────────────────────────────────────────
-  function adicionarMatricula(forcarVaga) {
-    // Resolve o AlunoID: veio do combobox (busca por nome) ou foi digitado
-    // diretamente como AlunoID no campo de texto — o sistema aceita os dois.
-    var alunoId = S.matAlunoSel
-      ? S.matAlunoSel.AlunoID
-      : (el('add-mat-aluno-id').value || '').trim().toUpperCase();
-
-    if (!alunoId) {
-      mostrarAlerta('t5-mat-alerta', 't5-mat-alerta-msg', 'Informe o aluno pelo nome (e selecione na lista) ou pelo AlunoID.', 'erro');
-      return;
-    }
-
-    el('t5-mat-aviso-vaga').classList.remove('show');
-    var btn = el('btn-add-mat');
-    btn.disabled = true; btn.classList.add('loading');
-
-    var dados = { AlunoID: alunoId, TurmaID: S.turmaSel.TurmaID };
-    if (forcarVaga) dados.forcarVaga = true;
-
-    postApi('matriculas.criar', dados)
-      .then(function (res) {
-        btn.disabled = false; btn.classList.remove('loading');
-
-        if (!res.sucesso) {
-          // Vaga acima do limite: back-end pede confirmação explícita
-          // (somente para admin/coordenação — outros papéis recebem erro comum).
-          if (res.dados && res.dados.confirmacaoNecessaria && S.podeForcarVaga) {
-            el('t5-mat-aviso-vaga-msg').textContent = res.mensagem;
-            el('t5-mat-aviso-vaga').classList.add('show');
-            return;
-          }
-          mostrarAlerta('t5-mat-alerta', 't5-mat-alerta-msg', res.mensagem || 'Erro ao matricular.', 'erro');
-          return;
-        }
-
-        limparAlunoComboT5();
-        el('add-mat-aluno-id').value = '';
-        var msg = 'Matrícula realizada com sucesso!';
-        if (res.dados && res.dados.vagaForcada) msg += ' (Vaga forçada.)';
-        mostrarAlerta('t5-mat-alerta', 't5-mat-alerta-msg', msg, 'sucesso');
-        carregarMatriculas();
-      })
-      .catch(function () {
-        btn.disabled = false; btn.classList.remove('loading');
-        mostrarAlerta('t5-mat-alerta', 't5-mat-alerta-msg', 'Erro de comunicação.', 'erro');
-      });
-  }
-
-  function resetarModalSitT5() {
-    el('t5-sit-opcoes').style.display = 'grid';
-    el('t5-motivo-wrap').style.display = 'none';
-    el('t5-motivo-texto').value = '';
-    el('t5-motivo-erro').style.display = 'none';
-  }
-
-  function fecharModalSitT5() {
-    el('modal-sit-overlay').style.display = 'none';
-    resetarModalSitT5();
-  }
-
-  function confirmarCancelamentoT5() {
-    var motivo = (el('t5-motivo-texto').value || '').trim();
-    if (!motivo) {
-      el('t5-motivo-erro').style.display = 'block';
-      return;
-    }
-    alterarSituacaoMatricula('CANCELADA', motivo);
-  }
-
-  function alterarSituacaoMatricula(novaSit, motivo) {
-    if (!S.matriculaParaSit) return;
-    el('modal-sit-overlay').style.display = 'none';
-    resetarModalSitT5();
-    postApi('matriculas.atualizarSituacao', {
-      matriculaId: S.matriculaParaSit.MatriculaID,
-      novaSituacao: novaSit,
-      motivo: motivo || undefined,
-    }).then(function (res) {
-      if (typeof toast === 'function') toast(
-        res.sucesso ? 'Situação atualizada para ' + novaSit + '.' : (res.mensagem || 'Erro.'),
-        res.sucesso ? 'success' : 'error'
-      );
-      if (res.sucesso) carregarMatriculas();
-    }).catch(function () {
-      if (typeof toast === 'function') toast('Erro de comunicação.', 'error');
-    });
-  }
-
-  // ============================================================
-  // LINKS
-  // ============================================================
-  function preencherLinks() {
-    if (!S.turmaSel) return;
-    el('link-whatsapp').value  = S.turmaSel.GrupoWhatsapp || '';
-    el('link-meet').value      = S.turmaSel.LinkMeet       || '';
-    el('link-classroom').value = S.turmaSel.LinkClassroom  || '';
-  }
-
-  function salvarLinks() {
-    if (!S.turmaSel) return;
-    var btn = el('btn-salvar-links');
-    btn.disabled = true; btn.classList.add('loading');
-    postApi('turmas.atualizar', {
-      turmaId:       S.turmaSel.TurmaID,
-      GrupoWhatsapp: el('link-whatsapp').value.trim(),
-      LinkMeet:      el('link-meet').value.trim(),
-      LinkClassroom: el('link-classroom').value.trim(),
-    }).then(function (res) {
-      btn.disabled = false; btn.classList.remove('loading');
-      if (!res.sucesso) {
-        mostrarAlerta('t5-links-alerta', 't5-links-alerta-msg', res.mensagem || 'Erro.', 'erro');
-        return;
-      }
-      S.turmaSel.GrupoWhatsapp = el('link-whatsapp').value.trim();
-      S.turmaSel.LinkMeet      = el('link-meet').value.trim();
-      S.turmaSel.LinkClassroom = el('link-classroom').value.trim();
-      mostrarAlerta('t5-links-alerta', 't5-links-alerta-msg', 'Links salvos com sucesso!', 'sucesso');
-    }).catch(function () {
-      btn.disabled = false; btn.classList.remove('loading');
-      mostrarAlerta('t5-links-alerta', 't5-links-alerta-msg', 'Erro de comunicação.', 'erro');
-    });
-  }
-
-  // ============================================================
-  // UTILITÁRIOS
-  // ============================================================
-  function mostrarAlerta(alertaId, msgId, msg, tipo) {
-    var a = el(alertaId), m = el(msgId);
-    if (!a || !m) return;
-    a.className = 't5-alerta show ' + (tipo || 'erro');
-    m.textContent = msg;
-    var ic = a.querySelector('.material-icons-round');
-    if (ic) ic.textContent = tipo === 'sucesso' ? 'check_circle' : 'error_outline';
-    setTimeout(function () { a.classList.remove('show'); }, 4500);
-  }
-
-
-  // =========================================================
-  // CURSOS (para modal de criacao)
-  // =========================================================
-  function carregarCursos() {
-    postApi('cursos.listar', {})
-      .then(function (res) {
-        if (!res.sucesso || !res.dados) return;
-        S.cursos = res.dados || [];
-        var sel = el('cr-curso');
-        if (!sel) return;
-        sel.innerHTML = '<option value="">Selecione um curso...</option>';
-        S.cursos.forEach(function (c) {
-          var opt = document.createElement('option');
-          opt.value       = c.CursoID;
-          opt.textContent = c.Nome + ' (' + c.CursoID + ')';
-          sel.appendChild(opt);
-        });
-      })
-      .catch(function () {});
-  }
-
-  function popularSelectProfessoresCriar() {
-    var sel = el('cr-professor');
-    if (!sel) return;
-    sel.innerHTML = '<option value="">Selecione um professor...</option>';
-    S.professores.forEach(function (p) {
-      var opt = document.createElement('option');
-      opt.value       = p.UsuarioID;
-      opt.textContent = p.Nome + ' (' + p.UsuarioID + ')';
-      sel.appendChild(opt);
-    });
-  }
-
-  // =========================================================
-  // MODAL CRIAR TURMA
-  // =========================================================
-  function abrirModalCriar() {
-    el('t5-criar-alerta').classList.remove('show');
-    if (el('cr-estagio'))    el('cr-estagio').value    = '';
-    if (el('cr-horario'))    el('cr-horario').value    = '';
-    if (el('cr-vagas'))      el('cr-vagas').value      = '20';
-    if (el('cr-turno'))      el('cr-turno').value      = '';
-    if (el('cr-modalidade')) el('cr-modalidade').value = 'PRESENCIAL';
-    if (el('cr-curso'))      el('cr-curso').value      = '';
-    if (el('cr-professor'))  el('cr-professor').value  = '';
-    if (el('cr-dias-check')) {
-      el('cr-dias-check').querySelectorAll('input').forEach(function (cb) { cb.checked = false; });
-    }
-    if (el('cr-data-inicio')) el('cr-data-inicio').value = '';
-    if (el('cr-data-fim'))    el('cr-data-fim').value    = '';
-    popularSelectProfessoresCriar();
-    el('t5-criar-overlay').style.display = 'flex';
-  }
-
-  function fecharModalCriar() {
-    el('t5-criar-overlay').style.display = 'none';
-  }
-
-  function salvarNovaTurma() {
-    var btn = el('btn-salvar-criar');
-    btn.disabled = true; btn.classList.add('loading');
-    el('t5-criar-alerta').classList.remove('show');
-
-    var cursoId    = el('cr-curso')     ? el('cr-curso').value         : '';
-    var profId     = el('cr-professor') ? el('cr-professor').value      : '';
-    var estagio    = el('cr-estagio')   ? el('cr-estagio').value.trim() : '';
-    var modalidade = el('cr-modalidade')? el('cr-modalidade').value     : '';
-
-    if (!cursoId || !profId || !estagio || !modalidade) {
-      btn.disabled = false; btn.classList.remove('loading');
-      var a = el('t5-criar-alerta'); var m = el('t5-criar-alerta-msg');
-      a.className = 't5-edit-alerta show erro';
-      m.textContent = 'Preencha Curso, Professor, Estagio e Modalidade.';
-      return;
-    }
-
-    var dias = [];
-    if (el('cr-dias-check')) {
-      el('cr-dias-check').querySelectorAll('input:checked').forEach(function (cb) { dias.push(cb.value); });
-    }
-
-    var profNome = '';
-    var profSel  = el('cr-professor');
-    if (profSel && profSel.selectedIndex > 0) {
-      profNome = profSel.options[profSel.selectedIndex].text.replace(/\s*\(.*\)\s*$/, '');
-    }
-
-    var dataInicioIso = el('cr-data-inicio') ? el('cr-data-inicio').value : '';
-    var dataFimIso    = el('cr-data-fim')    ? el('cr-data-fim').value    : '';
-    if (dataInicioIso && dataFimIso && dataInicioIso > dataFimIso) {
-      btn.disabled = false; btn.classList.remove('loading');
-      var a2 = el('t5-criar-alerta'); var m2 = el('t5-criar-alerta-msg');
-      a2.className = 't5-edit-alerta show erro';
-      m2.textContent = 'A data de início da turma não pode ser posterior à data de fim.';
-      return;
-    }
-
-    postApi('turmas.criar', {
-      CursoID:       cursoId,
-      Estagio:       estagio,
-      Modalidade:    modalidade,
-      ProfessorID:   profId,
-      ProfessorNome: profNome,
-      DiaSemana:     dias.join(','),
-      Turno:         el('cr-turno')   ? el('cr-turno').value           : '',
-      Horario:       el('cr-horario') ? el('cr-horario').value.trim()  : '',
-      VagasTotais:   parseInt(el('cr-vagas') ? el('cr-vagas').value : '20', 10) || 20,
-      DataInicioTurma: isoParaBr(dataInicioIso),
-      DataFimTurma:    isoParaBr(dataFimIso),
-    }).then(function (res) {
-      btn.disabled = false; btn.classList.remove('loading');
-      if (!res.sucesso) {
-        var a = el('t5-criar-alerta'); var m = el('t5-criar-alerta-msg');
-        a.className = 't5-edit-alerta show erro';
-        m.textContent = res.mensagem || 'Erro ao criar turma.';
-        return;
-      }
-      fecharModalCriar();
-      if (typeof toast === 'function') toast('Turma criada com sucesso!', 'success');
+  function salvarEditarTurma(){
+    if(!S.turmaSel)return;
+    var dados={
+      id:           S.turmaSel.id,
+      dia_semana:   val('t5-edit-dias'),
+      horario:      val('t5-edit-hora'),
+      turno:        val('t5-edit-turno'),
+      vagas_totais: parseInt(val('t5-edit-vagas'))||S.turmaSel.VagasTotais,
+      grupo_whatsapp: val('t5-edit-wa'),
+      link_meet:    val('t5-edit-meet'),
+      link_classroom: val('t5-edit-class'),
+    };
+    var profId=el('t5-edit-prof')?el('t5-edit-prof').value:'';
+    if(profId) dados.professor_id=profId;
+    postApi('turmas.atualizar',dados).then(function(res){
+      if(!res.sucesso){if(typeof toast==='function')toast(res.mensagem||'Erro.','error');return;}
+      if(typeof toast==='function')toast('Turma atualizada.','success');
+      if(el('t5-edit-overlay'))el('t5-edit-overlay').style.display='none';
       carregarTurmas();
-    }).catch(function () {
-      btn.disabled = false; btn.classList.remove('loading');
-      var a = el('t5-criar-alerta'); var m = el('t5-criar-alerta-msg');
-      a.className = 't5-edit-alerta show erro';
-      m.textContent = 'Erro de comunicacao. Tente novamente.';
     });
   }
 
-  // =========================================================
-  // ENCERRAR / REABRIR TURMA
-  // =========================================================
-  function encerrarTurma() {
-    if (!S.turmaSel) return;
-    var confirmMsg = 'Encerrar a turma ' + S.turmaSel.TurmaID + '?\n\n' +
-      'Todas as matriculas ATIVAS serao marcadas como CONCLUIDA.\n' +
-      'Esta acao pode ser desfeita reabrindo a turma.';
-    if (!confirm(confirmMsg)) return;
-    postApi('turmas.encerrar', { turmaId: S.turmaSel.TurmaID })
-      .then(function (res) {
-        if (!res.sucesso) { if (typeof toast === 'function') toast(res.mensagem || 'Erro.', 'error'); return; }
-        var msg = 'Turma encerrada.';
-        if (res.dados && res.dados.matriculasConcluidas) msg += ' ' + res.dados.matriculasConcluidas + ' matricula(s) concluida(s).';
-        if (typeof toast === 'function') toast(msg, 'success');
-        Object.assign(S.turmaSel, { SituacaoTurma: 'ENCERRADA' });
-        preencherInfo(S.turmaSel);
-        if (el('btn-editar-turma'))   el('btn-editar-turma').style.display   = 'none';
-        if (el('btn-encerrar-turma')) el('btn-encerrar-turma').style.display = 'none';
-        if (el('btn-reabrir-turma'))  el('btn-reabrir-turma').style.display  = 'inline-flex';
-        renderTurmas();
-      })
-      .catch(function () { if (typeof toast === 'function') toast('Erro de comunicacao.', 'error'); });
+  // ── NOVA TURMA ─────────────────────────────────────────────────────────
+  function abrirNovaTurma(){
+    carregarCursos();
+    carregarProfessores();
+    if(el('t5-nova-overlay'))el('t5-nova-overlay').style.display='flex';
   }
 
-  function reabrirTurma() {
-    if (!S.turmaSel) return;
-    var confirmMsg = 'Reabrir a turma ' + S.turmaSel.TurmaID + ' para edicao?\n\n' +
-      'As matriculas nao serao revertidas automaticamente.';
-    if (!confirm(confirmMsg)) return;
-    postApi('turmas.reabrir', { turmaId: S.turmaSel.TurmaID })
-      .then(function (res) {
-        if (!res.sucesso) { if (typeof toast === 'function') toast(res.mensagem || 'Erro.', 'error'); return; }
-        if (typeof toast === 'function') toast('Turma reaberta com sucesso.', 'success');
-        Object.assign(S.turmaSel, { SituacaoTurma: true });
-        preencherInfo(S.turmaSel);
-        if (el('btn-editar-turma'))   el('btn-editar-turma').style.display   = 'inline-flex';
-        if (el('btn-encerrar-turma')) el('btn-encerrar-turma').style.display = 'inline-flex';
-        if (el('btn-reabrir-turma'))  el('btn-reabrir-turma').style.display  = 'none';
-        renderTurmas();
-      })
-      .catch(function () { if (typeof toast === 'function') toast('Erro de comunicacao.', 'error'); });
-  }
-
-
-  // =========================================================
-  // TRANSFERENCIA DE TURMA
-  // =========================================================
-  function abrirModalTransferir(mat) {
-    S.matriculaParaTrans  = mat;
-    S.turmaTrans          = null;
-    S.transCursoAtual     = S.turmaSel ? (S.turmaSel.CursoID || '') : '';
-    el('modal-trans-aluno').textContent =
-      'Aluno: ' + (mat.NomeExibicao || mat.AlunoID) +
-      ' — Turma atual: ' + (S.turmaSel ? S.turmaSel.TurmaID : mat.TurmaID);
-    el('trans-alerta').classList.remove('show');
-    el('trans-aviso-vaga').classList.remove('show');
-    el('btn-confirmar-trans').disabled = true;
-    el('trans-lista-turmas').innerHTML = '<div class="mat-vazio">Carregando turmas...</div>';
-    // Toggle "outros cursos": visível apenas para admin/coordenacao
-    var toggle = el('trans-toggle-wrap');
-    if (toggle) {
-      toggle.style.display = (S.papel === 'admin' || S.papel === 'coordenacao') ? 'flex' : 'none';
-    }
-    var cb = el('trans-outros-cursos');
-    if (cb) cb.checked = false;
-    el('modal-trans-overlay').style.display = 'flex';
-    carregarTurmasParaTransferencia();
-  }
-
-  function fecharModalTransferir() {
-    el('modal-trans-overlay').style.display = 'none';
-    S.matriculaParaTrans = null;
-    S.turmaTrans         = null;
-  }
-
-  function carregarTurmasParaTransferencia() {
-    postApi('turmas.listar', { tamanhoPagina: 300 })
-      .then(function (res) {
-        if (!res.sucesso || !res.dados) { renderTurmasTransferencia([]); return; }
-        var todas        = res.dados.dados || [];
-        var turmaAtualId = S.turmaSel ? S.turmaSel.TurmaID : '';
-        var outrosCursos = el('trans-outros-cursos') && el('trans-outros-cursos').checked;
-        var ehSecretaria = S.papel === 'secretaria';
-
-        var filtradas = todas.filter(function (t) {
-          // Exclui turma atual e encerradas
-          if (t.TurmaID === turmaAtualId) return false;
-          if (String(t.SituacaoTurma) === 'ENCERRADA') return false;
-          if (!(t.SituacaoTurma === true || t.SituacaoTurma === 'true')) return false;
-          // Secretaria: apenas mesmo curso, apenas com vaga
-          if (ehSecretaria) {
-            if (t.CursoID !== S.transCursoAtual) return false;
-            var livre = (Number(t.VagasTotais) || 0) - (Number(t._matriculasAtivas) || 0);
-            if (livre <= 0) return false;
-          }
-          // Admin/coordenacao sem toggle: filtra pelo mesmo curso
-          // Admin/coordenacao com toggle ligado: mostra todos os cursos
-          if (!ehSecretaria && !outrosCursos) {
-            if (t.CursoID !== S.transCursoAtual) return false;
-          }
-          return true;
-        });
-        renderTurmasTransferencia(filtradas);
-      })
-      .catch(function () { renderTurmasTransferencia([]); });
-  }
-
-  function renderTurmasTransferencia(turmas) {
-    var cont = el('trans-lista-turmas');
-    if (!turmas.length) {
-      cont.innerHTML = '<div class="mat-vazio">Nenhuma turma disponivel para transferencia.</div>';
-      return;
-    }
-    cont.innerHTML = '';
-    turmas.forEach(function (t) {
-      var vagas  = Number(t.VagasTotais)       || 0;
-      var ocup   = Number(t._matriculasAtivas)  || 0;
-      var livre  = vagas - ocup;
-      var temVaga = livre > 0;
-      var div = document.createElement('div');
-      div.className = 't5-trans-item';
-      div.innerHTML =
-        '<div style="flex:1;min-width:0;">' +
-          '<div class="t5-trans-nome">' + (t.Estagio || t.CursoID) + '</div>' +
-          '<div class="t5-trans-meta">' + t.TurmaID +
-            (t.ProfessorNome ? ' · ' + t.ProfessorNome : '') +
-            (t.Modalidade    ? ' · ' + t.Modalidade    : '') +
-            (t.DiaSemana     ? ' · ' + t.DiaSemana      : '') +
-            (t.Horario       ? ' · ' + t.Horario        : '') +
-          '</div>' +
-        '</div>' +
-        '<span class="t5-trans-vagas ' + (temVaga ? 'ok' : 'cheio') + '">' +
-          (temVaga ? livre + ' vaga(s)' : 'Sem vagas') +
-        '</span>';
-      (function (turma, tv) {
-        div.addEventListener('click', function () {
-          cont.querySelectorAll('.t5-trans-item').forEach(function (el) {
-            el.classList.remove('selecionado');
-          });
-          div.classList.add('selecionado');
-          S.turmaTrans = turma;
-          // Aviso de sem vaga (secretaria nao pode forcar)
-          if (!tv) {
-            el('trans-aviso-vaga').classList.add('show');
-          } else {
-            el('trans-aviso-vaga').classList.remove('show');
-          }
-          el('btn-confirmar-trans').disabled = false;
-        });
-      }(t, temVaga));
-      cont.appendChild(div);
-    });
-  }
-
-  function confirmarTransferencia() {
-    if (!S.matriculaParaTrans || !S.turmaTrans) return;
-    var btn = el('btn-confirmar-trans');
-    btn.disabled = true;
-    el('trans-alerta').classList.remove('show');
-
-    postApi('matriculas.transferir', {
-      matriculaOrigemId: S.matriculaParaTrans.MatriculaID,
-      turmaDestinoId:    S.turmaTrans.TurmaID,
-    }).then(function (res) {
-      btn.disabled = false;
-      if (!res.sucesso) {
-        var a = el('trans-alerta'); var m = el('trans-alerta-msg');
-        a.className = 't5-alerta show erro'; m.textContent = res.mensagem || 'Erro ao transferir.';
-        return;
-      }
-      fecharModalTransferir();
-      var msgToast = 'Transferencia realizada com sucesso.';
-      if (res.dados && res.dados.vagaForcada) msgToast += ' (Vaga forcada.)';
-      if (typeof toast === 'function') toast(msgToast, 'success');
-      carregarMatriculas();
-    }).catch(function () {
-      btn.disabled = false;
-      var a = el('trans-alerta'); var m = el('trans-alerta-msg');
-      a.className = 't5-alerta show erro'; m.textContent = 'Erro de comunicacao. Tente novamente.';
-    });
-  }
-
-  // ============================================================
-  // EVENTOS
-  // ============================================================
-  function bindEventos() {
-    // Filtros da tabela
-    ['t5-busca', 't5-filtro-modalidade', 't5-filtro-situacao'].forEach(function (id) {
-      var e = el(id); if (!e) return;
-      e.addEventListener('input',  renderTurmas);
-      e.addEventListener('change', renderTurmas);
-    });
-
-    // Painel
-    el('btn-fechar-t5') && el('btn-fechar-t5').addEventListener('click', fecharPainel);
-
-    // Abas do painel
-    document.querySelectorAll('.t5-tab').forEach(function (btn) {
-      btn.addEventListener('click', function () { mostrarTab(this.dataset.tab); });
-    });
-
-    // Matrículas
-    el('btn-add-mat') && el('btn-add-mat').addEventListener('click', function () { adicionarMatricula(false); });
-    el('add-mat-aluno-id') && el('add-mat-aluno-id').addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') { e.preventDefault(); adicionarMatricula(false); }
-    });
-    el('add-mat-aluno-id') && el('add-mat-aluno-id').addEventListener('input', function () {
-      var termo = this.value.trim();
-      clearTimeout(buscaAlunoMatTimer);
-      buscaAlunoMatTimer = setTimeout(function () { buscarAlunosParaComboT5(termo); }, 300);
-    });
-    document.addEventListener('click', function (e) {
-      var wrap = el('add-mat-aluno-dropdown');
-      if (wrap && !wrap.contains(e.target) && e.target.id !== 'add-mat-aluno-id') {
-        wrap.classList.remove('show');
-      }
-    });
-    el('add-mat-aluno-limpar') && el('add-mat-aluno-limpar').addEventListener('click', limparAlunoComboT5);
-    el('btn-t5-mat-forcar-confirmar') && el('btn-t5-mat-forcar-confirmar').addEventListener('click', function () {
-      adicionarMatricula(true);
-    });
-    el('btn-t5-mat-forcar-cancelar') && el('btn-t5-mat-forcar-cancelar').addEventListener('click', function () {
-      el('t5-mat-aviso-vaga').classList.remove('show');
-    });
-    el('chk-mat-inativos') && el('chk-mat-inativos').addEventListener('change', function () {
-      carregarMatriculas();
-    });
-
-    // Links
-    el('btn-salvar-links') && el('btn-salvar-links').addEventListener('click', salvarLinks);
-    ['whatsapp', 'meet', 'classroom'].forEach(function (tipo) {
-      el('btn-abrir-' + tipo) && el('btn-abrir-' + tipo).addEventListener('click', function () {
-        var url = el('link-' + tipo).value.trim();
-        if (url) window.open(url, '_blank');
+  function salvarNovaTurma(){
+    var cursoId=el('t5-nova-curso')?el('t5-nova-curso').value:'';
+    var profId =el('t5-nova-prof') ?el('t5-nova-prof').value:'';
+    var estagio=val('t5-nova-estagio');
+    var mod    =el('t5-nova-mod')?el('t5-nova-mod').value:'PRESENCIAL';
+    if(!cursoId||!profId||!estagio){if(typeof toast==='function')toast('Curso, professor e estágio são obrigatórios.','error');return;}
+    postApi('semestres.getAtual',{}).then(function(res){
+      var semId=(res.sucesso&&res.dados)?res.dados.id:'';
+      if(!semId){if(typeof toast==='function')toast('Nenhum semestre atual definido.','error');return;}
+      postApi('turmas.criar',{
+        semestre_id:semId, curso_id:cursoId, professor_id:profId,
+        estagio:estagio.toUpperCase(), modalidade:mod,
+        dia_semana:val('t5-nova-dias'), horario:val('t5-nova-hora'),
+        vagas_totais:parseInt(val('t5-nova-vagas'))||20,
+      }).then(function(res2){
+        if(!res2.sucesso){if(typeof toast==='function')toast(res2.mensagem||'Erro.','error');return;}
+        if(typeof toast==='function')toast('Turma criada.','success');
+        if(el('t5-nova-overlay'))el('t5-nova-overlay').style.display='none';
+        carregarTurmas();
       });
     });
+  }
 
-    // Situação matrícula — apenas as 4 opções principais em #t5-sit-opcoes
-    el('t5-sit-opcoes') && el('t5-sit-opcoes').querySelectorAll('.sit-opcao').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        if (this.dataset.sit === 'CANCELADA') {
-          el('t5-sit-opcoes').style.display = 'none';
-          el('t5-motivo-wrap').style.display = 'block';
-          el('t5-motivo-texto').focus();
-          return;
-        }
-        alterarSituacaoMatricula(this.dataset.sit);
+  // ── NOVA MATRÍCULA ──────────────────────────────────────────────────────
+  var _buscarAlunoTimer=null, _alunoSel=null;
+
+  function buscarAluno(termo){
+    if(!termo||termo.length<2)return;
+    postApi('alunos.buscar',{termo:termo}).then(function(res){
+      var lista=(res.sucesso&&res.dados)?res.dados:[];
+      var sug=el('t5-nova-mat-sugestoes'); if(!sug)return;
+      sug.innerHTML=''; if(!lista.length){sug.style.display='none';return;}
+      sug.style.display='block';
+      lista.slice(0,8).forEach(function(a){
+        var ns=a.nome_social||''; var ne=ns||a.nome_completo||'';
+        var div=document.createElement('div'); div.className='t5-sug-item';
+        div.innerHTML='<span class="t5-sug-nome">'+ne+'</span><span class="t5-sug-id">'+(a.external_id||a.id)+'</span>';
+        div.addEventListener('click',function(){
+          _alunoSel={id:a.id,AlunoID:a.external_id||a.id,NomeExibicao:ne};
+          if(el('t5-nova-mat-busca'))el('t5-nova-mat-busca').value=ne;
+          sug.style.display='none';
+        });
+        sug.appendChild(div);
       });
     });
-    el('btn-t5-confirmar-cancelamento') && el('btn-t5-confirmar-cancelamento').addEventListener('click', confirmarCancelamentoT5);
-    el('btn-t5-motivo-voltar') && el('btn-t5-motivo-voltar').addEventListener('click', resetarModalSitT5);
-    el('t5-motivo-texto') && el('t5-motivo-texto').addEventListener('input', function () {
-      el('t5-motivo-erro').style.display = 'none';
-    });
-    el('btn-cancelar-sit') && el('btn-cancelar-sit').addEventListener('click', fecharModalSitT5);
-    el('modal-sit-overlay') && el('modal-sit-overlay').addEventListener('click', function (e) {
-      if (e.target === this) fecharModalSitT5();
-    });
+  }
 
-    // Modal edição turma
-    el('btn-editar-turma')  && el('btn-editar-turma').addEventListener('click', abrirModalEditar);
-    el('btn-fechar-edit')   && el('btn-fechar-edit').addEventListener('click', fecharModalEditar);
-    el('btn-cancelar-edit') && el('btn-cancelar-edit').addEventListener('click', fecharModalEditar);
-    el('btn-salvar-edit')   && el('btn-salvar-edit').addEventListener('click', salvarEdicaoTurma);
-    el('t5-edit-overlay')   && el('t5-edit-overlay').addEventListener('click', function (e) {
-      if (e.target === this) fecharModalEditar();
-    });
-    // Nova turma
-    el('btn-nova-turma')    && el('btn-nova-turma').addEventListener('click', abrirModalCriar);
-    el('btn-fechar-criar')  && el('btn-fechar-criar').addEventListener('click', fecharModalCriar);
-    el('btn-cancelar-criar')&& el('btn-cancelar-criar').addEventListener('click', fecharModalCriar);
-    el('btn-salvar-criar')  && el('btn-salvar-criar').addEventListener('click', salvarNovaTurma);
-    el('t5-criar-overlay')  && el('t5-criar-overlay').addEventListener('click', function (e) {
-      if (e.target === this) fecharModalCriar();
-    });
-    // Encerrar / Reabrir
-    el('btn-encerrar-turma')&& el('btn-encerrar-turma').addEventListener('click', encerrarTurma);
-    el('btn-reabrir-turma') && el('btn-reabrir-turma').addEventListener('click', reabrirTurma);
-    // Transferencia
-    el('trans-outros-cursos') && el('trans-outros-cursos').addEventListener('change', function () {
-      S.turmaTrans = null;
-      el('btn-confirmar-trans').disabled = true;
-      el('trans-aviso-vaga').classList.remove('show');
-      el('trans-lista-turmas').innerHTML = '<div class="mat-vazio">Carregando turmas...</div>';
-      carregarTurmasParaTransferencia();
-    });
-    el('btn-cancelar-trans')  && el('btn-cancelar-trans').addEventListener('click', fecharModalTransferir);
-    el('btn-confirmar-trans') && el('btn-confirmar-trans').addEventListener('click', confirmarTransferencia);
-    el('modal-trans-overlay') && el('modal-trans-overlay').addEventListener('click', function (e) {
-      if (e.target === this) fecharModalTransferir();
+  function salvarNovaMatricula(){
+    if(!S.turmaSel){if(typeof toast==='function')toast('Selecione uma turma primeiro.','error');return;}
+    if(!_alunoSel){if(typeof toast==='function')toast('Selecione um aluno.','error');return;}
+    postApi('semestres.getAtual',{}).then(function(res){
+      var semId=(res.sucesso&&res.dados)?res.dados.id:'';
+      postApi('matriculas.criar',{aluno_id:_alunoSel.id,turma_id:S.turmaSel.id,semestre_id:semId}).then(function(res2){
+        if(!res2.sucesso){if(typeof toast==='function')toast(res2.mensagem||'Erro.','error');return;}
+        if(typeof toast==='function')toast('Matrícula realizada.','success');
+        if(el('t5-nova-mat-overlay'))el('t5-nova-mat-overlay').style.display='none';
+        _alunoSel=null;
+        if(el('t5-nova-mat-busca'))el('t5-nova-mat-busca').value='';
+        carregarMatriculas();
+      });
     });
   }
 
-  // Inicializa
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
+  // ── ALTERAR SITUAÇÃO MATRÍCULA ──────────────────────────────────────────
+  function salvarSituacao(){
+    if(!S.matriculaParaSit)return;
+    var sit=el('modal-nova-sit')?el('modal-nova-sit').value:'';
+    var motivo=val('modal-sit-motivo');
+    if(!sit)return;
+    postApi('matriculas.atualizarSituacao',{id:S.matriculaParaSit.id,situacao:sit,motivo_cancelamento:motivo}).then(function(res){
+      if(!res.sucesso){if(typeof toast==='function')toast(res.mensagem||'Erro.','error');return;}
+      if(typeof toast==='function')toast('Situação atualizada.','success');
+      if(el('modal-situacao-overlay'))el('modal-situacao-overlay').style.display='none';
+      carregarMatriculas();
+    });
   }
+
+  // ── ENCERRAR / REABRIR TURMA ───────────────────────────────────────────
+  function encerrarTurma(){
+    if(!S.turmaSel||!confirm('Encerrar a turma '+S.turmaSel.TurmaID+'?'))return;
+    postApi('turmas.atualizar',{id:S.turmaSel.id,situacao:'ENCERRADA'}).then(function(res){
+      if(typeof toast==='function')toast(res.sucesso?'Turma encerrada.':res.mensagem,res.sucesso?'success':'error');
+      if(res.sucesso){fecharPainel();carregarTurmas();}
+    });
+  }
+
+  function reabrirTurma(){
+    if(!S.turmaSel||!confirm('Reabrir a turma '+S.turmaSel.TurmaID+'?'))return;
+    postApi('turmas.atualizar',{id:S.turmaSel.id,situacao:'ATIVA'}).then(function(res){
+      if(typeof toast==='function')toast(res.sucesso?'Turma reaberta.':res.mensagem,res.sucesso?'success':'error');
+      if(res.sucesso){fecharPainel();carregarTurmas();}
+    });
+  }
+
+  // ── EVENTOS ───────────────────────────────────────────────────────────
+  function registrarEventos(){
+    el('t5-busca')&&el('t5-busca').addEventListener('input',function(){S.busca=this.value.trim();renderizarLista();});
+    el('btn-fechar-t5-painel')&&el('btn-fechar-t5-painel').addEventListener('click',fecharPainel);
+    el('btn-nova-turma')&&el('btn-nova-turma').addEventListener('click',abrirNovaTurma);
+    el('btn-editar-turma')&&el('btn-editar-turma').addEventListener('click',abrirEditarTurma);
+    el('btn-encerrar-turma')&&el('btn-encerrar-turma').addEventListener('click',encerrarTurma);
+    el('btn-reabrir-turma')&&el('btn-reabrir-turma').addEventListener('click',reabrirTurma);
+    el('btn-nova-matricula')&&el('btn-nova-matricula').addEventListener('click',function(){
+      _alunoSel=null;
+      if(el('t5-nova-mat-busca'))el('t5-nova-mat-busca').value='';
+      if(el('t5-nova-mat-sugestoes'))el('t5-nova-mat-sugestoes').innerHTML='';
+      if(el('t5-nova-mat-overlay'))el('t5-nova-mat-overlay').style.display='flex';
+    });
+    el('t5-nova-mat-busca')&&el('t5-nova-mat-busca').addEventListener('input',function(){
+      clearTimeout(_buscarAlunoTimer);
+      var t=this.value.trim();
+      _buscarAlunoTimer=setTimeout(function(){buscarAluno(t);},350);
+    });
+    el('btn-salvar-nova-mat')&&el('btn-salvar-nova-mat').addEventListener('click',salvarNovaMatricula);
+    el('btn-fechar-nova-mat')&&el('btn-fechar-nova-mat').addEventListener('click',function(){if(el('t5-nova-mat-overlay'))el('t5-nova-mat-overlay').style.display='none';});
+    el('btn-salvar-t5-edit')&&el('btn-salvar-t5-edit').addEventListener('click',salvarEditarTurma);
+    el('btn-cancelar-t5-edit')&&el('btn-cancelar-t5-edit').addEventListener('click',function(){if(el('t5-edit-overlay'))el('t5-edit-overlay').style.display='none';});
+    el('btn-salvar-nova-turma')&&el('btn-salvar-nova-turma').addEventListener('click',salvarNovaTurma);
+    el('btn-cancelar-nova-turma')&&el('btn-cancelar-nova-turma').addEventListener('click',function(){if(el('t5-nova-overlay'))el('t5-nova-overlay').style.display='none';});
+    el('btn-salvar-sit')&&el('btn-salvar-sit').addEventListener('click',salvarSituacao);
+    el('btn-cancelar-sit')&&el('btn-cancelar-sit').addEventListener('click',function(){if(el('modal-situacao-overlay'))el('modal-situacao-overlay').style.display='none';});
+  }
+
+  if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',init);}else{init();}
 }());
 </script>
