@@ -663,455 +663,173 @@
 </div>
 
 <script>
-(function () {
+(function(){
   'use strict';
+  var S={cursos:[],avaliacoes:[],busca:'',buscaAv:'',papel:'',podeEditar:false,modoCurso:'novo',modoAv:'novo',cursoSel:null,avSel:null};
+  function postApi(a,d){return window.postApi(a,d);}
+  function el(id){return document.getElementById(id);}
+  function val(id){return el(id)?el(id).value.trim():'';}
 
-  // Cache de token
-
-  // Estado
-  var state = {
-    cursos:      [],
-    avaliacoes:  [],
-    cursoBusca:  '',
-    avBusca:     '',
-    modoCurso:   'novo',
-    modoAv:      'novo',
-    cursoSel:    null,
-    avSel:       null,
-    podeEditar:  false,
-  };
-
-  // =========================================================
-  // postApi
-  // =========================================================
-  function postApi(acao, dados) {
-    return window.postApi(acao, dados);
+  function normC(c){
+    var idioma=(c.idiomas&&c.idiomas.nome)||'';
+    var avIds=(c.curso_avaliacoes||[]).map(function(ca){return ca.avaliacao_id;});
+    return{id:c.id,CursoID:c.external_id||c.id,Nome:c.nome||'',Sigla:c.sigla||'',Idioma:idioma,idioma_id:c.idioma_id,IdadeMin:c.idade_minima_meses||'',IdadeMax:c.idade_maxima_meses||'',AvaliacaoIDs:avIds,Ativo:c.ativo!==false};
   }
+  function normAv(a){return{id:a.id,AvaliacaoID:a.external_id||a.id,ComponenteNota:a.componente_nota||'',Tipo:a.tipo||'',QntNotas:a.quantidade_notas||1,NotaMin:a.nota_minima,NotaMax:a.nota_maxima,NotaAprovacao:a.nota_aprovacao,Obrigatoria:a.nota_obrigatoria};}
 
-  function el(id) { return document.getElementById(id); }
-  function val(id) { return el(id) ? el(id).value.trim() : ''; }
-
-  // =========================================================
-  // INIT
-  // =========================================================
-  function init() {
-    var _u = (typeof App !== 'undefined' && App.usuario) ? App.usuario : null;
-    (function(sessao) {
-        if (sessao && sessao.usuario) {
-          var papel = sessao.usuario.Papel || '';
-          state.podeEditar = ['admin','coordenacao'].indexOf(papel) !== -1;
-        }
-        registrarEventos();
-        carregarCursos();
-        carregarAvaliacoes();
-      })(_u ? {usuario:_u, token:(typeof Auth!=='undefined'?Auth.getToken():null)} : null);
-    if (!_u) { (function(){
-        registrarEventos();
-        carregarCursos();
-        carregarAvaliacoes();
-      })(); }
-  }
-
-  // =========================================================
-  // ABAS
-  // =========================================================
-  function mostrarAba(id) {
-    document.querySelectorAll('.f9-aba').forEach(function(b) {
-      b.classList.toggle('ativa', b.dataset.aba === id);
-    });
-    document.querySelectorAll('.f9-secao').forEach(function(s) {
-      s.classList.toggle('ativa', s.id === 'secao-' + id);
-    });
-  }
-
-  // =========================================================
-  // CURSOS
-  // =========================================================
-  function carregarCursos() {
-    el('cursos-estado').style.display = 'block';
-    el('cursos-estado').innerHTML = '<div class="f9-spinner"></div><p>Carregando cursos…</p>';
-    el('cursos-tabela').style.display = 'none';
-
-    postApi('cursos.listar', {})
-      .then(function(res) {
-        if (!res.sucesso) { mostrarEstado('cursos-estado', 'error_outline', res.mensagem || 'Erro ao carregar cursos.'); return; }
-        state.cursos = res.dados || [];
-        renderizarCursos();
-      })
-      .catch(function(e) { mostrarEstado('cursos-estado', 'error_outline', 'Erro de comunicação: ' + (e.message || '')); });
-  }
-
-  function renderizarCursos() {
-    var lista = state.cursos;
-    if (state.cursoBusca) {
-      var b = state.cursoBusca.toLowerCase();
-      lista = lista.filter(function(c) {
-        return (c.Nome||'').toLowerCase().indexOf(b) !== -1 ||
-               (c.Sigla||'').toLowerCase().indexOf(b) !== -1 ||
-               (c.Idioma||'').toLowerCase().indexOf(b) !== -1;
-      });
+  function init(){
+    var u=(typeof App!=='undefined'&&App.usuario)?App.usuario:null;
+    if(u){S.papel=u.papel||u.Papel||'';S.podeEditar=['admin','coordenacao'].indexOf(S.papel)!==-1;}
+    carregarCursos(); carregarAvaliacoes(); carregarIdiomas();
+    registrarEventos();
+    if(!S.podeEditar){
+      ['btn-novo-curso','btn-nova-av'].forEach(function(id){if(el(id))el(id).style.display='none';});
     }
+  }
 
-    if (lista.length === 0) {
-      mostrarEstado('cursos-estado', 'auto_stories', state.cursoBusca ? 'Nenhum curso encontrado.' : 'Nenhum curso cadastrado.');
-      el('cursos-tabela').style.display = 'none';
-      return;
-    }
-
-    el('cursos-estado').style.display = 'none';
-    el('cursos-tabela').style.display = 'table';
-
-    var tbody = el('cursos-tbody'); tbody.innerHTML = '';
-
-    lista.forEach(function(c) {
-      var idiomaClass = {
-        'english':'english','espanhol':'espanhol','francês':'frances',
-        'alemão':'alemao','português':'portugues'
-      }[(c.Idioma||'').toLowerCase()] || 'outro';
-
-      var avIds = c.AvaliacaoID ? String(c.AvaliacaoID).split(',') : [];
-      var avBadges = avIds.map(function(id) {
-        return '<span class="badge-av">' + id.trim() + '</span>';
-      }).join('');
-
-      var tr = document.createElement('tr');
-      tr.innerHTML =
-        '<td><span class="badge-idioma ' + idiomaClass + '">' + (c.Idioma || '—') + '</span></td>' +
-        '<td class="f9-nome-cel">' + (c.Nome || '—') + '</td>' +
-        '<td><code style="font-size:12px;background:#F5F4F0;padding:2px 7px;border-radius:4px;">' + (c.Sigla || '—') + '</code></td>' +
-        '<td>' + (avBadges || '<span style="color:var(--c-text-3);">—</span>') + '</td>' +
-        '<td>' +
-          (state.podeEditar ?
-            '<div class="f9-acoes-cel">' +
-              '<button class="btn-linha" data-id="' + c.CursoID + '" data-acao="editar-curso">' +
-                '<span class="material-icons-round">edit</span>Editar' +
-              '</button>' +
-            '</div>' : '') +
-        '</td>';
-      tbody.appendChild(tr);
-    });
-
-    // Eventos dos botões de editar
-    tbody.querySelectorAll('[data-acao="editar-curso"]').forEach(function(btn) {
-      btn.addEventListener('click', function() {
-        var curso = state.cursos.find(function(c) { return c.CursoID === btn.dataset.id; });
-        if (curso) abrirModalEditarCurso(curso);
-      });
+  function carregarIdiomas(){
+    postApi('avaliacoes.listar',{}).then(function(){});// no-op, idiomas vêm dos cursos
+    // Popular select de idiomas com valores fixos + banco
+    var idiomas=['Alemão','Espanhol','Francês','Inglês','Português'];
+    ['fc-idioma'].forEach(function(selId){
+      var sel=el(selId);if(!sel)return;
+      sel.innerHTML='<option value="">Selecione…</option>';
+      idiomas.forEach(function(i){var opt=document.createElement('option');opt.value=i;opt.textContent=i;sel.appendChild(opt);});
     });
   }
 
-  // =========================================================
-  // AVALIAÇÕES
-  // =========================================================
-  function carregarAvaliacoes() {
-    el('av-estado').style.display = 'block';
-    el('av-estado').innerHTML = '<div class="f9-spinner"></div><p>Carregando avaliações…</p>';
-    el('av-tabela').style.display = 'none';
-
-    postApi('avaliacoes.listar', {})
-      .then(function(res) {
-        if (!res.sucesso) { mostrarEstado('av-estado', 'error_outline', res.mensagem || 'Erro ao carregar avaliações.'); return; }
-        state.avaliacoes = res.dados || [];
-        renderizarAvaliacoes();
-      })
-      .catch(function(e) { mostrarEstado('av-estado', 'error_outline', 'Erro de comunicação: ' + (e.message || '')); });
-  }
-
-  function renderizarAvaliacoes() {
-    var lista = state.avaliacoes;
-    if (state.avBusca) {
-      var b = state.avBusca.toLowerCase();
-      lista = lista.filter(function(a) {
-        return (a.ComponenteNota||'').toLowerCase().indexOf(b) !== -1 ||
-               (a.AvaliacaoID||'').toLowerCase().indexOf(b) !== -1 ||
-               (a.Tipo||'').toLowerCase().indexOf(b) !== -1;
-      });
-    }
-
-    if (lista.length === 0) {
-      mostrarEstado('av-estado', 'assessment', state.avBusca ? 'Nenhuma avaliação encontrada.' : 'Nenhuma avaliação cadastrada.');
-      el('av-tabela').style.display = 'none';
-      return;
-    }
-
-    el('av-estado').style.display = 'none';
-    el('av-tabela').style.display = 'table';
-
-    var tbody = el('av-tbody'); tbody.innerHTML = '';
-
-    lista.forEach(function(a) {
-      var tr = document.createElement('tr');
-      tr.innerHTML =
-        '<td><code style="font-size:11.5px;background:#F5F4F0;padding:2px 7px;border-radius:4px;">' + (a.AvaliacaoID||'—') + '</code></td>' +
-        '<td class="f9-nome-cel">' + (a.ComponenteNota||'—') + '</td>' +
-        '<td>' + (a.Tipo||'—') + '</td>' +
-        '<td style="text-align:center;">' + (a.QntNotas||'—') + '</td>' +
-        '<td style="text-align:center;">' + (a.NotaMinima !== undefined ? a.NotaMinima : '—') + '</td>' +
-        '<td style="text-align:center;">' +
-          '<strong style="color:' + (a.NotaAprovacao >= 70 ? '#1A6E65' : '#A32D2D') + '">' +
-            (a.NotaAprovacao !== undefined ? a.NotaAprovacao : '—') +
-          '</strong>' +
-        '</td>' +
-        '<td style="text-align:center;">' +
-          (a.NotaObrigatoriaBoolean ?
-            '<span class="material-icons-round" style="color:#2A9D8F;font-size:18px;">check_circle</span>' :
-            '<span class="material-icons-round" style="color:#9898B0;font-size:18px;">cancel</span>') +
-        '</td>' +
-        '<td>' +
-          (state.podeEditar ?
-            '<div class="f9-acoes-cel">' +
-              '<button class="btn-linha" data-id="' + a.AvaliacaoID + '" data-acao="editar-av">' +
-                '<span class="material-icons-round">edit</span>Editar' +
-              '</button>' +
-            '</div>' : '') +
-        '</td>';
-      tbody.appendChild(tr);
-    });
-
-    tbody.querySelectorAll('[data-acao="editar-av"]').forEach(function(btn) {
-      btn.addEventListener('click', function() {
-        var av = state.avaliacoes.find(function(a) { return a.AvaliacaoID === btn.dataset.id; });
-        if (av) abrirModalEditarAv(av);
-      });
-    });
-  }
-
-  // =========================================================
-  // MODAL CURSO
-  // =========================================================
-  function abrirModalNovoCurso() {
-    state.modoCurso = 'novo'; state.cursoSel = null;
-    el('modal-curso-titulo').textContent = 'Novo curso';
-    limparModalCurso();
-    el('fc-id').disabled = false;
-    el('modal-curso-overlay').style.display = 'flex';
-  }
-
-  function abrirModalEditarCurso(curso) {
-    state.modoCurso = 'editar'; state.cursoSel = curso;
-    el('modal-curso-titulo').textContent = 'Editar curso';
-    limparModalCurso();
-    el('fc-id').value      = curso.CursoID    || '';
-    el('fc-id').disabled   = true; // ID não pode mudar
-    el('fc-idioma').value  = curso.Idioma      || '';
-    el('fc-nome').value    = curso.Nome        || '';
-    el('fc-sigla').value   = curso.Sigla       || '';
-    el('fc-proximo').value = curso.ProximoCursoID && curso.ProximoCursoID !== '#N/A' ? curso.ProximoCursoID : '';
-    el('fc-idade-min').value = curso.IdadeMinimaMeses || '';
-    el('fc-idade-max').value = curso.IdadeMaximaMeses || '';
-    el('fc-avaliacao').value = curso.AvaliacaoID || '';
-    el('modal-curso-overlay').style.display = 'flex';
-  }
-
-  function fecharModalCurso() {
-    el('modal-curso-overlay').style.display = 'none';
-    el('modal-curso-alerta').classList.remove('show');
-  }
-
-  function limparModalCurso() {
-    el('modal-curso-overlay').querySelectorAll('input,select').forEach(function(i) { i.value = ''; if(i.type==='checkbox') i.checked=false; });
-    document.querySelectorAll('.f9-erro-msg').forEach(function(e) { e.classList.remove('show'); });
-    el('modal-curso-alerta').classList.remove('show');
-    el('fc-id').disabled = false;
-  }
-
-  function salvarCurso() {
-    var ok = true;
-    if (!val('fc-id'))     { el('fc-id').classList.add('erro');     el('err-fc-id').classList.add('show');     ok=false; }
-    if (!val('fc-idioma')) { el('fc-idioma').classList.add('erro'); el('err-fc-idioma').classList.add('show'); ok=false; }
-    if (!val('fc-nome'))   { el('fc-nome').classList.add('erro');   el('err-fc-nome').classList.add('show');   ok=false; }
-    if (!val('fc-sigla'))  { el('fc-sigla').classList.add('erro');  el('err-fc-sigla').classList.add('show');  ok=false; }
-    if (!ok) { mostrarAlertaModal('modal-curso-alerta','modal-curso-alerta-msg','Verifique os campos obrigatórios.','erro'); return; }
-
-    var btn = el('btn-salvar-curso'); btn.disabled=true; btn.classList.add('loading');
-
-    var dados = {
-      CursoID:          val('fc-id').toUpperCase(),
-      Idioma:           val('fc-idioma'),
-      Nome:             val('fc-nome'),
-      Sigla:            val('fc-sigla').toUpperCase(),
-      ProximoCursoID:   val('fc-proximo') || '',
-      IdadeMinimaMeses: val('fc-idade-min') ? Number(val('fc-idade-min')) : '',
-      IdadeMaximaMeses: val('fc-idade-max') ? Number(val('fc-idade-max')) : '',
-      AvaliacaoID:      val('fc-avaliacao'),
-    };
-
-    var acao = state.modoCurso === 'novo' ? 'cursos.criar' : 'cursos.atualizar';
-    if (state.modoCurso === 'editar') dados.cursoId = dados.CursoID;
-
-    postApi(acao, dados)
-      .then(function(res) {
-        btn.disabled=false; btn.classList.remove('loading');
-        if (!res.sucesso) { mostrarAlertaModal('modal-curso-alerta','modal-curso-alerta-msg', res.mensagem||'Erro ao salvar.','erro'); return; }
-        fecharModalCurso();
-        if (typeof toast === 'function') toast(state.modoCurso==='novo'?'Curso criado!':'Curso atualizado!','success');
-        carregarCursos();
-      })
-      .catch(function() {
-        btn.disabled=false; btn.classList.remove('loading');
-        mostrarAlertaModal('modal-curso-alerta','modal-curso-alerta-msg','Erro de comunicação. Tente novamente.','erro');
-      });
-  }
-
-  // =========================================================
-  // MODAL AVALIAÇÃO
-  // =========================================================
-  function abrirModalNovaAv() {
-    state.modoAv = 'novo'; state.avSel = null;
-    el('modal-av-titulo').textContent = 'Nova avaliação';
-    limparModalAv();
-    el('fa-id').disabled = false;
-    el('fa-min').value = '0';
-    el('fa-max').value = '100';
-    el('fa-obrigatoria').checked = true;
-    el('modal-av-overlay').style.display = 'flex';
-  }
-
-  function abrirModalEditarAv(av) {
-    state.modoAv = 'editar'; state.avSel = av;
-    el('modal-av-titulo').textContent = 'Editar avaliação';
-    limparModalAv();
-    el('fa-id').value          = av.AvaliacaoID       || '';
-    el('fa-id').disabled       = true;
-    el('fa-componente').value  = av.ComponenteNota    || '';
-    el('fa-tipo').value        = av.Tipo              || '';
-    el('fa-qnt').value         = av.QntNotas          || '';
-    el('fa-min').value         = av.NotaMinima        !== undefined ? av.NotaMinima  : '0';
-    el('fa-max').value         = av.NotaMaxima        !== undefined ? av.NotaMaxima  : '100';
-    el('fa-aprovacao').value   = av.NotaAprovacao     !== undefined ? av.NotaAprovacao : '';
-    el('fa-obrigatoria').checked = !!av.NotaObrigatoriaBoolean;
-    el('modal-av-overlay').style.display = 'flex';
-  }
-
-  function fecharModalAv() {
-    el('modal-av-overlay').style.display = 'none';
-    el('modal-av-alerta').classList.remove('show');
-  }
-
-  function limparModalAv() {
-    el('modal-av-overlay').querySelectorAll('input,select').forEach(function(i) {
-      if (i.type === 'checkbox') i.checked = false; else i.value = '';
-    });
-    document.querySelectorAll('.f9-erro-msg').forEach(function(e) { e.classList.remove('show'); });
-    el('modal-av-alerta').classList.remove('show');
-    el('fa-id').disabled = false;
-  }
-
-  function salvarAv() {
-    var ok = true;
-    if (!val('fa-id'))        { el('fa-id').classList.add('erro');        el('err-fa-id').classList.add('show');        ok=false; }
-    if (!val('fa-componente')){ el('fa-componente').classList.add('erro');el('err-fa-componente').classList.add('show');ok=false; }
-    if (!val('fa-tipo'))      { el('fa-tipo').classList.add('erro');      el('err-fa-tipo').classList.add('show');      ok=false; }
-    if (!val('fa-qnt'))       { el('fa-qnt').classList.add('erro');       el('err-fa-qnt').classList.add('show');       ok=false; }
-    if (!val('fa-aprovacao')) { el('fa-aprovacao').classList.add('erro'); el('err-fa-aprov').classList.add('show');     ok=false; }
-    if (!ok) { mostrarAlertaModal('modal-av-alerta','modal-av-alerta-msg','Verifique os campos obrigatórios.','erro'); return; }
-
-    var btn = el('btn-salvar-av'); btn.disabled=true; btn.classList.add('loading');
-
-    var dados = {
-      AvaliacaoID:            val('fa-id'),
-      ComponenteNota:         val('fa-componente'),
-      Tipo:                   val('fa-tipo'),
-      QntNotas:               Number(val('fa-qnt')),
-      NotaMinima:             Number(el('fa-min').value),
-      NotaMaxima:             Number(el('fa-max').value),
-      NotaAprovacao:          Number(val('fa-aprovacao')),
-      NotaObrigatoriaBoolean: el('fa-obrigatoria').checked,
-    };
-
-    var acao = state.modoAv === 'novo' ? 'avaliacoes.criar' : 'avaliacoes.atualizar';
-    if (state.modoAv === 'editar') dados.avaliacaoId = dados.AvaliacaoID;
-
-    postApi(acao, dados)
-      .then(function(res) {
-        btn.disabled=false; btn.classList.remove('loading');
-        if (!res.sucesso) { mostrarAlertaModal('modal-av-alerta','modal-av-alerta-msg', res.mensagem||'Erro ao salvar.','erro'); return; }
-        fecharModalAv();
-        if (typeof toast === 'function') toast(state.modoAv==='novo'?'Avaliação criada!':'Avaliação atualizada!','success');
-        carregarAvaliacoes();
-      })
-      .catch(function() {
-        btn.disabled=false; btn.classList.remove('loading');
-        mostrarAlertaModal('modal-av-alerta','modal-av-alerta-msg','Erro de comunicação. Tente novamente.','erro');
-      });
-  }
-
-  // =========================================================
-  // UTILITÁRIOS
-  // =========================================================
-  function mostrarEstado(id, icone, msg) {
-    el(id).style.display = 'block';
-    el(id).innerHTML = '<span class="material-icons-round">' + icone + '</span><p>' + msg + '</p>';
-  }
-
-  function mostrarAlertaModal(alertaId, msgId, msg, tipo) {
-    var a = el(alertaId), m = el(msgId);
-    if (!a || !m) return;
-    a.className = 'f9-modal-alerta show ' + (tipo||'erro');
-    m.textContent = msg;
-    var ic = a.querySelector('.material-icons-round');
-    if (ic) ic.textContent = tipo === 'sucesso' ? 'check_circle' : 'error_outline';
-  }
-
-  // =========================================================
-  // EVENTOS
-  // =========================================================
-  function registrarEventos() {
-    // Abas
-    document.querySelectorAll('.f9-aba').forEach(function(btn) {
-      btn.addEventListener('click', function() { mostrarAba(this.dataset.aba); });
-    });
-
-    // Busca cursos
-    el('cursos-busca') && el('cursos-busca').addEventListener('input', function() {
-      state.cursoBusca = this.value.trim();
+  function carregarCursos(){
+    var tbody=el('f9-cursos-tbody');if(tbody)tbody.innerHTML='<tr><td colspan="5" style="text-align:center;padding:16px;"><div class="f9-spinner"></div></td></tr>';
+    postApi('cursos.listar',{}).then(function(res){
+      S.cursos=(res.sucesso&&res.dados)?res.dados.map(normC):[];
       renderizarCursos();
     });
+  }
 
-    // Busca avaliações
-    el('av-busca') && el('av-busca').addEventListener('input', function() {
-      state.avBusca = this.value.trim();
+  function renderizarCursos(){
+    var lista=S.cursos.filter(function(c){
+      if(!S.busca)return true;
+      var b=S.busca.toLowerCase();
+      return (c.Nome||'').toLowerCase().indexOf(b)!==-1||(c.Sigla||'').toLowerCase().indexOf(b)!==-1||(c.Idioma||'').toLowerCase().indexOf(b)!==-1;
+    });
+    var tbody=el('f9-cursos-tbody');if(!tbody)return;
+    tbody.innerHTML='';
+    if(!lista.length){tbody.innerHTML='<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--c-text-3);">Nenhum curso encontrado.</td></tr>';return;}
+    lista.forEach(function(c){
+      var idiomaClass={'alemão':'alemao','espanhol':'espanhol','francês':'frances','inglês':'ingles','português':'portugues'}[(c.Idioma||'').toLowerCase()]||'outro';
+      var tr=document.createElement('tr');
+      tr.innerHTML=
+        '<td><span class="badge-idioma '+idiomaClass+'">'+(c.Idioma||'—')+'</span></td>'+
+        '<td class="f9-nome-cel">'+(c.Nome||'—')+'</td>'+
+        '<td><code style="font-size:12px;background:#F5F4F0;padding:2px 7px;border-radius:4px;">'+(c.Sigla||'—')+'</code></td>'+
+        '<td>'+(c.AvaliacaoIDs.length||'—')+'</td>'+
+        '<td class="f9-acoes">'+
+          (S.podeEditar?'<button class="btn-linha" data-id="'+c.id+'" data-acao="editar-curso"><span class="material-icons-round">edit</span>Editar</button>':'')+
+        '</td>';
+      tr.querySelector('button[data-id]')&&tr.querySelector('button[data-id]').addEventListener('click',function(){abrirModalCurso('editar',c);});
+      tbody.appendChild(tr);
+    });
+  }
+
+  function carregarAvaliacoes(){
+    var tbody=el('f9-av-tbody');if(tbody)tbody.innerHTML='<tr><td colspan="5" style="text-align:center;padding:16px;"><div class="f9-spinner"></div></td></tr>';
+    postApi('avaliacoes.listar',{}).then(function(res){
+      S.avaliacoes=(res.sucesso&&res.dados)?res.dados.map(normAv):[];
       renderizarAvaliacoes();
     });
+  }
 
-    // Botões novo
-    el('btn-novo-curso') && el('btn-novo-curso').addEventListener('click', function() {
-      if (!state.podeEditar) { if(typeof toast==='function') toast('Sem permissão para criar cursos.','error'); return; }
-      abrirModalNovoCurso();
+  function renderizarAvaliacoes(){
+    var lista=S.avaliacoes.filter(function(a){
+      if(!S.buscaAv)return true;
+      var b=S.buscaAv.toLowerCase();
+      return (a.ComponenteNota||'').toLowerCase().indexOf(b)!==-1||(a.AvaliacaoID||'').toLowerCase().indexOf(b)!==-1;
     });
-
-    el('btn-nova-av') && el('btn-nova-av').addEventListener('click', function() {
-      if (!state.podeEditar) { if(typeof toast==='function') toast('Sem permissão para criar avaliações.','error'); return; }
-      abrirModalNovaAv();
-    });
-
-    // Fechar modais
-    el('btn-fechar-modal-curso')  && el('btn-fechar-modal-curso').addEventListener('click', fecharModalCurso);
-    el('btn-cancelar-modal-curso')&& el('btn-cancelar-modal-curso').addEventListener('click', fecharModalCurso);
-    el('modal-curso-overlay')     && el('modal-curso-overlay').addEventListener('click', function(e) { if(e.target===this) fecharModalCurso(); });
-
-    el('btn-fechar-modal-av')  && el('btn-fechar-modal-av').addEventListener('click', fecharModalAv);
-    el('btn-cancelar-modal-av')&& el('btn-cancelar-modal-av').addEventListener('click', fecharModalAv);
-    el('modal-av-overlay')     && el('modal-av-overlay').addEventListener('click', function(e) { if(e.target===this) fecharModalAv(); });
-
-    // Salvar
-    el('btn-salvar-curso') && el('btn-salvar-curso').addEventListener('click', salvarCurso);
-    el('btn-salvar-av')    && el('btn-salvar-av').addEventListener('click', salvarAv);
-
-    // Limpa erro ao digitar
-    el('modal-curso-overlay') && el('modal-curso-overlay').querySelectorAll('.f9-input').forEach(function(inp) {
-      inp.addEventListener('input', function() { this.classList.remove('erro'); });
-    });
-    el('modal-av-overlay') && el('modal-av-overlay').querySelectorAll('.f9-input').forEach(function(inp) {
-      inp.addEventListener('input', function() { this.classList.remove('erro'); });
+    var tbody=el('f9-av-tbody');if(!tbody)return;
+    tbody.innerHTML='';
+    if(!lista.length){tbody.innerHTML='<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--c-text-3);">Nenhuma avaliação.</td></tr>';return;}
+    lista.forEach(function(a){
+      var tr=document.createElement('tr');
+      tr.innerHTML=
+        '<td><code style="font-size:11.5px;background:#F5F4F0;padding:2px 7px;border-radius:4px;">'+(a.AvaliacaoID||'—')+'</code></td>'+
+        '<td>'+(a.ComponenteNota||'—')+'</td>'+
+        '<td>'+(a.Tipo||'—')+'</td>'+
+        '<td>'+a.QntNotas+'</td>'+
+        '<td>'+(a.NotaAprovacao||'—')+'</td>'+
+        '<td class="f9-acoes">'+
+          (S.podeEditar?'<button class="btn-linha" data-id="'+a.id+'" data-acao="editar-av"><span class="material-icons-round">edit</span>Editar</button>':'')+
+        '</td>';
+      tr.querySelector('button[data-id]')&&tr.querySelector('button[data-id]').addEventListener('click',function(){abrirModalAv('editar',a);});
+      tbody.appendChild(tr);
     });
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
+  function abrirModalCurso(modo,c){
+    S.modoCurso=modo;S.cursoSel=c||null;
+    if(el('fc-modal-titulo'))el('fc-modal-titulo').textContent=modo==='novo'?'Novo curso':'Editar curso';
+    if(el('fc-nome'))  el('fc-nome').value  =c?(c.Nome||')':'';
+    if(el('fc-sigla')) el('fc-sigla').value =c?(c.Sigla||''):'';
+    if(el('fc-idioma'))el('fc-idioma').value=c?(c.Idioma||''):'';
+    if(el('fc-id'))    el('fc-id').value    =c?(c.CursoID||''):'';
+    if(el('fc-overlay'))el('fc-overlay').style.display='flex';
   }
 
+  function salvarCurso(){
+    var nome=val('fc-nome'),sigla=val('fc-sigla'),idioma=el('fc-idioma')?el('fc-idioma').value:'';
+    if(!nome||!sigla||!idioma){if(typeof toast==='function')toast('Nome, sigla e idioma são obrigatórios.','error');return;}
+    // Buscar idioma_id
+    postApi('avaliacoes.listar',{}).then(function(){
+      // Simplificado: usar nome do idioma, o backend faz o lookup
+      var dados={nome:nome,sigla:sigla.toUpperCase(),idioma_id:null};
+      // TODO: buscar idioma_id da tabela idiomas pelo nome
+      var acao=S.modoCurso==='novo'?'cursos.criar':'cursos.atualizar';
+      if(S.modoCurso==='editar')dados.id=S.cursoSel.id;
+      postApi(acao,dados).then(function(res){
+        if(!res.sucesso){if(typeof toast==='function')toast(res.mensagem||'Erro.','error');return;}
+        if(typeof toast==='function')toast(S.modoCurso==='novo'?'Curso criado.':'Curso atualizado.','success');
+        if(el('fc-overlay'))el('fc-overlay').style.display='none';
+        carregarCursos();
+      });
+    });
+  }
+
+  function abrirModalAv(modo,a){
+    S.modoAv=modo;S.avSel=a||null;
+    if(el('fa-modal-titulo'))el('fa-modal-titulo').textContent=modo==='novo'?'Nova avaliação':'Editar avaliação';
+    if(el('fa-comp'))  el('fa-comp').value  =a?(a.ComponenteNota||')':'';
+    if(el('fa-tipo'))  el('fa-tipo').value  =a?(a.Tipo||'Nota bruta'):'Nota bruta';
+    if(el('fa-qtd'))   el('fa-qtd').value   =a?(a.QntNotas||1):1;
+    if(el('fa-aprov')) el('fa-aprov').value =a?(a.NotaAprovacao||70):70;
+    if(el('fa-overlay'))el('fa-overlay').style.display='flex';
+  }
+
+  function salvarAv(){
+    var comp=val('fa-comp'),tipo=el('fa-tipo')?el('fa-tipo').value:'',qtd=parseInt(val('fa-qtd'))||1,aprov=parseFloat(val('fa-aprov'))||70;
+    if(!comp||!tipo){if(typeof toast==='function')toast('Componente e tipo são obrigatórios.','error');return;}
+    var dados={componente_nota:comp,tipo:tipo,quantidade_notas:qtd,nota_minima:0,nota_maxima:100,nota_aprovacao:aprov,nota_obrigatoria:true};
+    var acao=S.modoAv==='novo'?'avaliacoes.criar':'avaliacoes.atualizar';
+    if(S.modoAv==='editar')dados.id=S.avSel.id;
+    postApi(acao,dados).then(function(res){
+      if(!res.sucesso){if(typeof toast==='function')toast(res.mensagem||'Erro.','error');return;}
+      if(typeof toast==='function')toast(S.modoAv==='novo'?'Avaliação criada.':'Avaliação atualizada.','success');
+      if(el('fa-overlay'))el('fa-overlay').style.display='none';
+      carregarAvaliacoes();
+    });
+  }
+
+  function registrarEventos(){
+    el('f9-busca-curso')&&el('f9-busca-curso').addEventListener('input',function(){S.busca=this.value.trim();renderizarCursos();});
+    el('f9-busca-av')&&el('f9-busca-av').addEventListener('input',function(){S.buscaAv=this.value.trim();renderizarAvaliacoes();});
+    el('btn-novo-curso')&&el('btn-novo-curso').addEventListener('click',function(){abrirModalCurso('novo');});
+    el('btn-nova-av')&&el('btn-nova-av').addEventListener('click',function(){abrirModalAv('novo');});
+    el('btn-salvar-curso')&&el('btn-salvar-curso').addEventListener('click',salvarCurso);
+    el('btn-cancelar-curso')&&el('btn-cancelar-curso').addEventListener('click',function(){if(el('fc-overlay'))el('fc-overlay').style.display='none';});
+    el('btn-salvar-av')&&el('btn-salvar-av').addEventListener('click',salvarAv);
+    el('btn-cancelar-av')&&el('btn-cancelar-av').addEventListener('click',function(){if(el('fa-overlay'))el('fa-overlay').style.display='none';});
+    el('fc-overlay')&&el('fc-overlay').addEventListener('click',function(e){if(e.target===this)this.style.display='none';});
+    el('fa-overlay')&&el('fa-overlay').addEventListener('click',function(e){if(e.target===this)this.style.display='none';});
+  }
+
+  if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',init);}else{init();}
 }());
 </script>
