@@ -274,7 +274,7 @@
   function abrirModal(modo,u){
     state.modo=modo; state.usuarioSel=u||null;
     el('u3-modal-titulo').textContent=modo==='novo'?'Novo usuário':'Editar usuário';
-    el('fu-nome').value=u?(u.Nome||')':'';
+    el('fu-nome').value=u?(u.Nome||''):'';
     el('fu-login').value=u?(u.Login||''):'';
     el('fu-email').value=u?(u.Email||''):'';
     el('fu-papel').value=u?(u.Papel||''):'';
