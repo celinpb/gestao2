@@ -1088,8 +1088,8 @@
     var label = acao === 'inativar'
       ? 'Informe o motivo da inativação de ' + (aluno.NomeExibicao||aluno.NomeCompleto||aluno.AlunoID) + '.'
       : 'Informe o motivo da reativação de '  + (aluno.NomeExibicao||aluno.NomeCompleto||aluno.AlunoID) + '.';
-    if(el('motivo-label'))  el('motivo-label').textContent  = label;
-    if(el('motivo-titulo')) el('motivo-titulo').textContent = acao === 'inativar' ? 'Inativar aluno' : 'Ativar aluno';
+    if(el('motivo-modal-descricao')) el('motivo-modal-descricao').textContent = label;
+    if(el('motivo-modal-titulo'))   el('motivo-modal-titulo').textContent    = acao === 'inativar' ? 'Inativar aluno' : 'Ativar aluno';
     if(el('motivo-texto'))  el('motivo-texto').value = '';
     if(el('motivo-modal-overlay')) el('motivo-modal-overlay').style.display = 'flex';
   }
