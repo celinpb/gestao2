@@ -292,8 +292,11 @@ function preencherUsuarioSidebar() {
 
 function aplicarConfig(config) {
   App.config = config;
-  if (config.sigla_escola) document.getElementById('brand-name').textContent = config.sigla_escola;
-  if (config.nome_escola)  document.title = config.nome_escola + ' · SGE';
+  var sigla = config.sigla_escola || config.SiglaEscola || '';
+  var nome  = config.nome_escola  || config.NomeEscola  || '';
+  if (sigla) document.getElementById('brand-name').textContent = sigla;
+  if (nome)  document.title = nome + ' · SGE';
+
 }
 
 function normalizarMenu(itens) {
@@ -313,7 +316,7 @@ function normalizarMenu(itens) {
 }
 
 function renderizarMenuFallback() {
-  var papel = App.usuario ? App.usuario.Papel : '';
+  var papel = App.usuario ? (App.usuario.papel || App.usuario.Papel || '') : '';
   var itens = [{ id: 'dashboard', label: 'Início', icone: 'home' }];
   if (papel === 'admin' || papel === 'coordenacao') {
     itens.push(
