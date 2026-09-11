@@ -194,567 +194,233 @@
 </div>
 
 <script>
-(function () {
+(function(){
   'use strict';
+  var S={turmas:[],turmaSel:null,matriculas:[],avaliacoes:[],notas:{},notasSalvas:{},comentarios:{},medias:{},papel:'',usuarioId:'',matComentario:null};
+  function postApi(a,d){return window.postApi(a,d);}
+  function el(id){return document.getElementById(id);}
+  function normT(t){var c=t.cursos||{};return{id:t.id,TurmaID:t.external_id||t.id,Estagio:t.estagio||'',CursoSigla:c.sigla||'',curso_id:t.curso_id,semestre_id:t.semestre_id};}
+  function normM(m){var al=m.alunos||{};var ns=al.nome_social||'';return{id:m.id,MatriculaID:m.external_id||m.id,AlunoID:al.external_id||m.aluno_id,NomeExibicao:ns||al.nome_completo||'',PcD:al.pcd||false,aluno_id:m.aluno_id};}
+  function normAv(a){return{id:a.id,AvaliacaoID:a.external_id||a.id,ComponenteNota:a.componente_nota||'',Tipo:a.tipo||'',QntNotas:a.quantidade_notas||1,NotaMinima:a.nota_minima,NotaMaxima:a.nota_maxima,NotaAprovacao:a.nota_aprovacao};}
+  function normNota(n){return{id:n.id,MatriculaID:n.matricula_id,ComponenteNota:n.componente_nota||'',SubcomponenteNota:n.subcomponente_nota||'',ValorNota:n.valor_nota};}
+  function normCom(c){return{id:c.id,MatriculaID:c.matricula_id,Etapa:c.etapa||'',Comentario:c.comentario||''};}
 
-  var state = {
-    turmas:       [],
-    turmaSel:     null,
-    matriculas:   [],
-    avaliacoes:   [],   // sistemas de avaliação do curso
-    notas:        {},   // { MatriculaID: { 'Oral|Oral 1': valor, ... } }
-    notasSalvas:  {},   // snapshot do que está salvo
-    comentarios:  {},   // { MatriculaID: { 1: texto, 2: texto } }
-    medias:       {},   // { MatriculaID: resultado de m5_calcularMedia }
-    comMatricula: null, // matrícula sendo editada no modal de comentário
-    comEtapa:     1,
-    papel:        '',  // papel do usuário logado
-    usuarioId:    '',
-  };
-
-  // =========================================================
-  // postApi
-  // =========================================================
-  function postApi(acao, dados) {
-    return window.postApi(acao, dados);
+  function init(){
+    var u=(typeof App!=='undefined'&&App.usuario)?App.usuario:null;
+    if(u){S.papel=u.papel||u.Papel||'';S.usuarioId=u.id||'';}
+    carregarTurmas();
+    registrarEventos();
   }
 
-  function el(id) { return document.getElementById(id); }
+  function corComponente(idx){return['#E63946','#185FA5','#2A9D8F','#D4A843'][idx%4];}
 
-  // =========================================================
-  // CORES POR COMPONENTE
-  // =========================================================
-  var CORES = ['#457B9D','#2A9D8F','#E9C46A','#E76F51','#8338EC','#FB8500'];
-  function corComponente(idx) { return CORES[idx % CORES.length]; }
-
-  // =========================================================
-  // INIT
-  // =========================================================
-  function init() {
-    // Obtém sessão antes de carregar para garantir token disponível
-    // (sem isso, professor recebe tela em branco pois a 1ª requisição falha)
-    var _u = (typeof App !== 'undefined' && App.usuario) ? App.usuario : null;
-    (function(sessao) {
-        if (sessao && sessao.usuario) {
-          state.papel     = sessao.usuario.Papel     || '';
-          state.usuarioId = sessao.usuario.UsuarioID || '';
-        }
-        registrarEventos();
-        carregarTurmas();
-      })(_u ? {usuario:_u, token:(typeof Auth!=='undefined'?Auth.getToken():null)} : null);
-    if (!_u) { (function(){
-        registrarEventos();
-        carregarTurmas();
-      })(); }
-  }
-
-  // =========================================================
-  // PASSO 1 — TURMAS
-  // =========================================================
-  function carregarTurmas() {
-    postApi('turmas.listar', { tamanhoPagina: 300 })
-      .then(function(res) {
-        el('n7-turmas-loading').style.display = 'none';
-        if (!res.sucesso || !res.dados || !res.dados.dados || res.dados.dados.length === 0) {
-          el('n7-turma-grid').style.display = 'grid';
-          el('n7-turma-grid').innerHTML = '<p style="color:var(--c-text-3);font-size:13px;grid-column:1/-1;">Nenhuma turma encontrada.</p>';
-          return;
-        }
-        state.turmas = res.dados.dados;
-        renderizarTurmas();
-      })
-      .catch(function(e) {
-        el('n7-turmas-loading').innerHTML = '<span style="color:#E63946;">Erro ao carregar turmas: ' + (e.message||'') + '</span>';
+  function carregarTurmas(){
+    var cont=el('n7-turmas-lista');if(cont)cont.innerHTML='<div class="n7-spinner"></div>';
+    var filtros={};
+    if(S.papel==='professor') filtros.professor_id=S.usuarioId;
+    postApi('turmas.listar',filtros).then(function(res){
+      if(!res.sucesso){if(cont)cont.innerHTML='<p>Erro.</p>';return;}
+      S.turmas=(res.dados||[]).filter(function(t){return t.situacao==='ATIVA';}).map(normT);
+      if(!cont)return;
+      cont.innerHTML='';
+      S.turmas.forEach(function(t){
+        var card=document.createElement('div');card.className='n7-turma-card';
+        card.innerHTML='<div class="n7-turma-id">'+t.TurmaID+'</div><div class="n7-turma-estagio">'+(t.Estagio||t.CursoSigla||'—')+'</div>';
+        card.addEventListener('click',function(){selecionarTurma(t);});
+        cont.appendChild(card);
       });
-  }
-
-  function renderizarTurmas() {
-    var grid = el('n7-turma-grid'); grid.innerHTML = '';
-    state.turmas.forEach(function(t) {
-      var card = document.createElement('div'); card.className = 'n7-turma-card';
-      card.innerHTML =
-        '<div class="n7-turma-id">' + t.TurmaID + '</div>' +
-        '<div class="n7-turma-estagio">' + (t.Estagio||t.CursoID) + '</div>' +
-        '<div class="n7-turma-det">' + (t.DiaSemana||'') + (t.Horario ? ' · ' + t.Horario : '') + '</div>' +
-        '<div class="n7-turma-det">' + (t.Modalidade||'') + '</div>';
-      card.addEventListener('click', function() { selecionarTurma(t); });
-      grid.appendChild(card);
     });
-    grid.style.display = 'grid';
   }
 
-  function selecionarTurma(turma) {
-    state.turmaSel  = turma;
-    state.notas     = {};
-    state.notasSalvas = {};
-    state.comentarios = {};
-    state.medias    = {};
-
-    el('n7-step-turma').style.display = 'none';
-    el('n7-step-notas').style.display = 'block';
-    el('n7-header-id').textContent    = turma.TurmaID;
-    el('n7-header-titulo').textContent = turma.Estagio || turma.CursoID;
-    el('n7-estado').style.display = 'block';
-    el('n7-estado').innerHTML = '<div class="n7-spinner"></div><p>Carregando alunos e notas…</p>';
-    el('n7-tabela').style.display = 'none';
-    el('n7-rodape').style.display = 'none';
-
-    carregarDadosNotas(turma);
+  function selecionarTurma(t){
+    S.turmaSel=t;S.matriculas=[];S.notas={};S.notasSalvas={};S.comentarios={};S.medias={};S.avaliacoes=[];
+    document.querySelectorAll('.n7-turma-card').forEach(function(c){c.classList.toggle('selecionada',c.querySelector('.n7-turma-id')&&c.querySelector('.n7-turma-id').textContent===t.TurmaID);});
+    if(el('n7-header-id'))el('n7-header-id').textContent=t.TurmaID;
+    if(el('n7-header-titulo'))el('n7-header-titulo').textContent=t.Estagio||t.CursoSigla||'—';
+    if(el('n7-painel-wrap'))el('n7-painel-wrap').style.display='none';
+    if(el('n7-carregando'))el('n7-carregando').style.display='block';
+    carregarDadosTurma(t);
   }
 
-  // =========================================================
-  // PASSO 2 — DADOS DAS NOTAS
-  // =========================================================
-  function carregarDadosNotas(turma) {
-    // Busca: matrículas ativas + cursos (para avaliação) em paralelo
+  function carregarDadosTurma(t){
     Promise.all([
-      postApi('matriculas.listar', { turmaId: turma.TurmaID, situacao: 'ATIVA', tamanhoPagina: 300 }),
-      postApi('cursos.listar', {}),
-      postApi('avaliacoes.listar', {}),
-    ])
-    .then(function(res) {
-      var resMatriculas = res[0];
-      var resCursos     = res[1];
-      var resAvaliacoes = res[2];
-
-      state.matriculas = (resMatriculas.sucesso && resMatriculas.dados && resMatriculas.dados.dados)
-        ? resMatriculas.dados.dados : [];
-
-      if (state.matriculas.length === 0) {
-        el('n7-estado').style.display = 'block';
-        el('n7-estado').innerHTML = '<span class="material-icons-round">people</span><p>Nenhum aluno matriculado nesta turma.</p>';
-        return;
-      }
-
-      // Determina os sistemas de avaliação do curso desta turma
-      var cursos     = (resCursos.sucesso && resCursos.dados) ? resCursos.dados : [];
-      var avaliacoes = (resAvaliacoes.sucesso && resAvaliacoes.dados) ? resAvaliacoes.dados : [];
-      var curso = cursos.find(function(c) { return c.CursoID === turma.CursoID; });
-      var idsAv = curso && curso.AvaliacaoID ? String(curso.AvaliacaoID).split(',').map(function(s){return s.trim();}) : [];
-      state.avaliacoes = avaliacoes.filter(function(a) { return idsAv.indexOf(a.AvaliacaoID) !== -1; });
-
-      // Carrega notas e comentários de todos os alunos
-      var promises = state.matriculas.map(function(m) {
-        return Promise.all([
-          postApi('notas.listar', { matriculaId: m.MatriculaID }),
-          postApi('comentarios.listar', { matriculaId: m.MatriculaID }),
-        ]).then(function(r) {
-          // Notas
-          if (r[0].sucesso && r[0].dados) {
-            r[0].dados.forEach(function(n) {
-              var chave = n.ComponenteNota + '|' + n.SubcomponenteNota;
-              if (!state.notas[m.MatriculaID]) state.notas[m.MatriculaID] = {};
-              state.notas[m.MatriculaID][chave] = n.ValorNota !== null && n.ValorNota !== undefined ? String(n.ValorNota) : '';
-            });
-          }
-          state.notasSalvas[m.MatriculaID] = JSON.parse(JSON.stringify(state.notas[m.MatriculaID] || {}));
-          // Comentários
-          if (r[1].sucesso && r[1].dados) {
-            state.comentarios[m.MatriculaID] = {};
-            r[1].dados.forEach(function(c) {
-              state.comentarios[m.MatriculaID][c.Etapa] = c.Comentario || '';
-            });
-          }
-        }).catch(function() {});
+      postApi('matriculas.listar',{turma_id:t.id,situacao:'ATIVA'}),
+      postApi('cursos.listar',{}),
+      postApi('avaliacoes.listar',{}),
+    ]).then(function(results){
+      S.matriculas=(results[0].sucesso&&results[0].dados)?results[0].dados.map(normM):[];
+      var cursos=(results[1].sucesso&&results[1].dados)?results[1].dados:[];
+      var todasAv=(results[2].sucesso&&results[2].dados)?results[2].dados.map(normAv):[];
+      // Encontrar avaliações do curso desta turma
+      var cursoRaw=cursos.find(function(c){return c.id===t.curso_id;});
+      var idsAvCurso=cursoRaw&&cursoRaw.curso_avaliacoes?(cursoRaw.curso_avaliacoes.map(function(ca){return ca.avaliacao_id;})):[];
+      S.avaliacoes=todasAv.filter(function(a){return idsAvCurso.indexOf(a.id)!==-1;});
+      if(!S.avaliacoes.length) S.avaliacoes=todasAv; // fallback: mostrar todas
+      // Carregar notas e comentários de cada matrícula
+      var promises=S.matriculas.map(function(m){
+        return Promise.all([postApi('notas.listar',{matricula_id:m.id}),postApi('comentarios.listar',{matricula_id:m.id})]);
       });
-
-      return Promise.all(promises);
-    })
-    .then(function() {
-      calcularTodasMedias();
-      renderizarTabela();
-    })
-    .catch(function(e) {
-      el('n7-estado').style.display = 'block';
-      el('n7-estado').innerHTML = '<span class="material-icons-round">error_outline</span><p>Erro ao carregar dados: ' + (e.message||'') + '</p>';
+      Promise.all(promises).then(function(resultados){
+        resultados.forEach(function(r,idx){
+          var m=S.matriculas[idx];
+          S.notas[m.id]={};
+          if(r[0].sucesso&&r[0].dados){r[0].dados.map(normNota).forEach(function(n){S.notas[m.id][n.ComponenteNota+'|'+n.SubcomponenteNota]=n.ValorNota!==null&&n.ValorNota!==undefined?String(n.ValorNota):'';});}
+          S.notasSalvas[m.id]=JSON.parse(JSON.stringify(S.notas[m.id]||{}));
+          S.comentarios[m.id]={};
+          if(r[1].sucesso&&r[1].dados){r[1].dados.map(normCom).forEach(function(c){S.comentarios[m.id][c.Etapa]=c.Comentario||'';});}
+          S.medias[m.id]=calcularMedia(m.id);
+        });
+        if(el('n7-carregando'))el('n7-carregando').style.display='none';
+        if(el('n7-painel-wrap'))el('n7-painel-wrap').style.display='';
+        renderizarGrid();
+      });
     });
   }
 
-  // =========================================================
-  // CÁLCULO DE MÉDIAS
-  // =========================================================
-  function calcularMedia(matriculaId) {
-    var notas = state.notas[matriculaId] || {};
-    var resultado = { componentes: [], situacaoGeral: 'PENDENTE' };
-    var todasAprovadas = true;
-    var algumaPendente = false;
-
-    state.avaliacoes.forEach(function(av) {
-      var valores = [];
-      for (var i = 1; i <= av.QntNotas; i++) {
-        var sub = av.ComponenteNota + ' ' + i;
-        var chave = av.ComponenteNota + '|' + sub;
-        var v = notas[chave];
-        if (v !== '' && v !== null && v !== undefined) {
-          valores.push(parseFloat(v));
-        }
+  function calcularMedia(matId){
+    var resultado={aprovado:true,componentes:[]};
+    S.avaliacoes.forEach(function(av){
+      var vals=[];
+      for(var i=1;i<=av.QntNotas;i++){
+        var sub=av.ComponenteNota+' '+i;
+        var v=(S.notas[matId]||{})[av.ComponenteNota+'|'+sub];
+        if(v!==''&&v!==undefined&&v!==null)vals.push(parseFloat(v));
       }
-
-      var media = null; var sit = 'PENDENTE';
-      if (valores.length === Number(av.QntNotas)) {
-        if (av.Tipo === 'Média simples') {
-          media = valores.reduce(function(a,b){return a+b;},0) / valores.length;
-        } else {
-          media = valores[0];
-        }
-        sit = media >= Number(av.NotaAprovacao) ? 'APROVADO' : 'REPROVADO';
-      } else {
-        algumaPendente = true;
-      }
-
-      if (sit !== 'APROVADO') todasAprovadas = false;
-      resultado.componentes.push({ AvaliacaoID: av.AvaliacaoID, ComponenteNota: av.ComponenteNota, Media: media !== null ? parseFloat(media.toFixed(1)) : null, Situacao: sit, NotaAprovacao: av.NotaAprovacao });
+      var media=vals.length===av.QntNotas?(vals.reduce(function(a,b){return a+b;},0)/vals.length):null;
+      var sit=media===null?'—':media>=av.NotaAprovacao?'AP':'RE';
+      if(sit==='RE')resultado.aprovado=false;
+      resultado.componentes.push({AvaliacaoID:av.id,ComponenteNota:av.ComponenteNota,Media:media!==null?parseFloat(media.toFixed(1)):null,Situacao:sit,NotaAprovacao:av.NotaAprovacao});
     });
-
-    resultado.situacaoGeral = algumaPendente ? 'PENDENTE' : (todasAprovadas ? 'APROVADO' : 'REPROVADO');
     return resultado;
   }
 
-  function calcularTodasMedias() {
-    state.matriculas.forEach(function(m) {
-      state.medias[m.MatriculaID] = calcularMedia(m.MatriculaID);
-    });
-  }
-
-  // =========================================================
-  // RENDERIZAÇÃO DA TABELA
-  // =========================================================
-  function renderizarTabela() {
-    el('n7-estado').style.display = 'none';
-    el('n7-tabela').style.display = 'table';
-    el('n7-rodape').style.display = 'flex';
-
-    // Constrói colunas: para cada avaliação, QntNotas subcomponentes
-    var colunas = []; // { componente, subcomponente, chave, avIdx }
-    state.avaliacoes.forEach(function(av, idx) {
-      for (var i = 1; i <= Number(av.QntNotas); i++) {
-        var sub = av.ComponenteNota + ' ' + i;
-        colunas.push({ componente: av.ComponenteNota, subcomponente: sub, chave: av.ComponenteNota + '|' + sub, avIdx: idx, av: av });
+  function renderizarGrid(){
+    var thead=el('n7-thead-row'),tbody=el('n7-tbody');if(!thead||!tbody)return;
+    // Colunas
+    thead.innerHTML='<th class="n7-th-nome">Aluno</th>';
+    var colunas=[];
+    S.avaliacoes.forEach(function(av,avIdx){
+      var thGrp=document.createElement('th');thGrp.colSpan=av.QntNotas;thGrp.textContent=av.ComponenteNota;thGrp.style.background=corComponente(avIdx)+'22';
+      thead.appendChild(thGrp);
+      for(var i=1;i<=av.QntNotas;i++){
+        var sub=av.ComponenteNota+' '+i;
+        colunas.push({componente:av.ComponenteNota,subcomponente:sub,chave:av.ComponenteNota+'|'+sub,av:av,avIdx:avIdx});
       }
     });
-
-    // Legenda
-    var legenda = el('n7-legenda'); legenda.innerHTML = '';
-    state.avaliacoes.forEach(function(av, idx) {
-      var item = document.createElement('div'); item.className = 'n7-legenda-item';
-      item.innerHTML = '<div class="n7-legenda-dot" style="background:' + corComponente(idx) + ';"></div>' + av.ComponenteNota + ' (aprova em ' + av.NotaAprovacao + ')';
-      legenda.appendChild(item);
-    });
-
-    // Cabeçalho
-    var thead = el('n7-thead'); thead.innerHTML = '';
-
-    // Linha 1: grupos de componentes
-    var tr1 = document.createElement('tr');
-    var th0 = document.createElement('th'); th0.rowSpan = 2; th0.style.textAlign = 'left'; th0.textContent = 'Aluno'; tr1.appendChild(th0);
-
-    state.avaliacoes.forEach(function(av, idx) {
-      // colSpan = QntNotas + 1 para incluir a coluna de Méd. dentro do grupo
-      var th = document.createElement('th');
-      th.colSpan = Number(av.QntNotas) + 1;
-      th.className = 'grupo';
-      th.style.color = corComponente(idx);
-      th.style.borderLeft = '2px solid ' + corComponente(idx);
-      th.textContent = av.ComponenteNota;
-      tr1.appendChild(th);
-    });
-
-    var thSit = document.createElement('th'); thSit.rowSpan = 2; thSit.className = 'grupo'; thSit.textContent = 'Resultado'; tr1.appendChild(thSit);
-    var thCom = document.createElement('th'); thCom.rowSpan = 2; thCom.className = 'grupo'; thCom.textContent = 'Com.'; tr1.appendChild(thCom);
-    thead.appendChild(tr1);
-
-    // Linha 2: subcomponentes + Méd. ao final de cada grupo
-    var tr2 = document.createElement('tr');
-    state.avaliacoes.forEach(function(av, idx) {
-      // Subcomponentes numerados
-      for (var i = 1; i <= Number(av.QntNotas); i++) {
-        var th = document.createElement('th');
-        th.textContent = String(i);
-        th.style.borderLeft = i === 1 ? '2px solid ' + corComponente(idx) : '1px solid ' + corComponente(idx) + '44';
-        tr2.appendChild(th);
-      }
-      // Célula Méd. ao final do grupo
-      var thM = document.createElement('th');
-      thM.className = 'grupo';
-      thM.textContent = 'Méd.';
-      thM.style.borderLeft = '1px solid ' + corComponente(idx) + '44';
-      tr2.appendChild(thM);
-    });
-    thead.appendChild(tr2);
-
-    // Corpo
-    var tbody = el('n7-tbody'); tbody.innerHTML = '';
-    state.matriculas.forEach(function(m) {
-      var tr = document.createElement('tr');
-      var nome = m.NomeExibicao || m.AlunoID || m.MatriculaID;
-
-      // Célula do aluno
-      var tdNome = document.createElement('td');
-      tdNome.innerHTML = '<div class="n7-nome">' + nome + '</div><div class="n7-mat-id">' + m.MatriculaID + '</div>';
+    thead.innerHTML+='<th>Média</th><th>Situação</th><th>Obs.</th>';
+    tbody.innerHTML='';
+    S.matriculas.forEach(function(m){
+      var tr=document.createElement('tr');
+      var tdNome=document.createElement('td');
+      tdNome.innerHTML='<div class="n7-nome">'+(m.NomeExibicao||m.AlunoID||'—')+'</div><div class="n7-mat-id">'+(m.MatriculaID||'—')+'</div>';
       tr.appendChild(tdNome);
-
-      // Células de nota intercaladas com médias por grupo
-      // Estrutura espelha o thead: [input1][input2][Méd.] para cada componente
-      var media = state.medias[m.MatriculaID];
-      state.avaliacoes.forEach(function(av, avIdx) {
-        // Inputs de nota deste componente
-        for (var i = 1; i <= Number(av.QntNotas); i++) {
-          var sub    = av.ComponenteNota + ' ' + i;
-          var chave  = av.ComponenteNota + '|' + sub;
-          var col    = { componente: av.ComponenteNota, subcomponente: sub, chave: chave, avIdx: avIdx, av: av };
-
-          var td = document.createElement('td');
-          td.style.borderLeft = i === 1
-            ? '2px solid ' + corComponente(avIdx)
-            : '1px solid ' + corComponente(avIdx) + '33';
-
-          var valorAtual = (state.notas[m.MatriculaID] || {})[chave];
-          var valorSalvo = (state.notasSalvas[m.MatriculaID] || {})[chave];
-          var modificado = valorAtual !== valorSalvo;
-
-          var input = document.createElement('input');
-          input.type = 'number';
-          input.min  = av.NotaMinima || 0;
-          input.max  = av.NotaMaxima || 10;
-          input.step = '0.5';
-          input.className = 'n7-nota-input' + (modificado ? ' modificado' : (valorAtual !== '' && valorAtual !== undefined ? ' salvo' : ''));
-          input.placeholder = '–';
-          input.value = (valorAtual !== '' && valorAtual !== undefined && valorAtual !== null) ? valorAtual : '';
-          input.dataset.mat   = m.MatriculaID;
-          input.dataset.chave = chave;
-          input.dataset.comp  = av.ComponenteNota;
-          input.dataset.sub   = sub;
-          input.dataset.avIdx = avIdx;
-
-          (function(capturedCol) {
-            input.addEventListener('input', function() {
-              if (!state.notas[m.MatriculaID]) state.notas[m.MatriculaID] = {};
-              state.notas[m.MatriculaID][capturedCol.chave] = this.value;
-              this.className = 'n7-nota-input modificado';
-              state.medias[m.MatriculaID] = calcularMedia(m.MatriculaID);
-              atualizarLinhaMedias(m.MatriculaID, tr);
-            });
-          }(col));
-
-          td.appendChild(input);
-          tr.appendChild(td);
-        }
-
-        // Célula de média deste componente (somente leitura, logo após os inputs)
-        var tdM = document.createElement('td');
-        tdM.dataset.mediaComp = m.MatriculaID + '|' + av.ComponenteNota;
-        tdM.style.borderLeft  = '1px solid ' + corComponente(avIdx) + '33';
-        var comp = media ? media.componentes.find(function(c){ return c.ComponenteNota === av.ComponenteNota; }) : null;
-        tdM.innerHTML = renderizarMedia(comp);
-        tr.appendChild(tdM);
+      colunas.forEach(function(col){
+        var td=document.createElement('td');
+        var valorAtual=(S.notas[m.id]||{})[col.chave];
+        var valorSalvo=(S.notasSalvas[m.id]||{})[col.chave];
+        var input=document.createElement('input');
+        input.type='number';input.className='n7-nota-input';
+        input.min=col.av.NotaMinima;input.max=col.av.NotaMaxima;input.step='0.1';
+        input.value=valorAtual!==undefined?valorAtual:'';
+        if(valorAtual!==valorSalvo)input.classList.add('alterado');
+        input.dataset.mat=m.id;input.dataset.comp=col.componente;input.dataset.sub=col.subcomponente;input.dataset.chave=col.chave;
+        input.addEventListener('change',function(){
+          S.notas[m.id]=S.notas[m.id]||{};
+          S.notas[m.id][col.chave]=this.value;
+          this.classList.toggle('alterado',this.value!==(S.notasSalvas[m.id]||{})[col.chave]);
+          S.medias[m.id]=calcularMedia(m.id);
+          atualizarMediaTr(tr,m.id);
+        });
+        td.appendChild(input);tr.appendChild(td);
       });
-
-      // Situação geral
-      var tdSit = document.createElement('td');
-      tdSit.dataset.sitGeral = m.MatriculaID;
-      tdSit.innerHTML = media ? '<span class="badge-n7 ' + media.situacaoGeral + '">' + media.situacaoGeral + '</span>' : '';
-      tr.appendChild(tdSit);
-
+      // Média e situação
+      var tdM=document.createElement('td');tdM.dataset.mediaComp=m.id;
+      var tdS=document.createElement('td');tdS.dataset.sitMat=m.id;
+      atualizarMediaCells(tdM,tdS,m.id);
+      tr.appendChild(tdM);tr.appendChild(tdS);
       // Botão comentário
-      var tdCom = document.createElement('td');
-      var temCom = state.comentarios[m.MatriculaID] && Object.values(state.comentarios[m.MatriculaID]).some(function(v){return v;});
-      var btnCom = document.createElement('button');
-      btnCom.className = 'btn-n7-com' + (temCom ? ' tem-com' : '');
-      btnCom.dataset.mat = m.MatriculaID;
-      btnCom.innerHTML = '<span class="material-icons-round">comment</span>';
-      btnCom.title = 'Comentários por etapa';
-      btnCom.addEventListener('click', function() { abrirModalComentario(m); });
-      tdCom.appendChild(btnCom);
-      tr.appendChild(tdCom);
-
+      var tdCom=document.createElement('td');
+      var btnCom=document.createElement('button');btnCom.className='btn-n7-com';
+      btnCom.innerHTML='<span class="material-icons-round">comment</span>';
+      btnCom.addEventListener('click',function(){abrirModalComentario(m);});
+      tdCom.appendChild(btnCom);tr.appendChild(tdCom);
       tbody.appendChild(tr);
     });
   }
 
-  function renderizarMedia(comp) {
-    if (!comp || comp.Situacao === 'PENDENTE') return '<span class="n7-media pend">–</span>';
-    var cls = comp.Situacao === 'APROVADO' ? 'ap' : 'rep';
-    return '<span class="n7-media ' + cls + '">' + (comp.Media !== null ? comp.Media : '–') + '</span>';
+  function atualizarMediaTr(tr,matId){
+    var tdM=tr.querySelector('[data-media-comp]'),tdS=tr.querySelector('[data-sit-mat]');
+    if(tdM&&tdS)atualizarMediaCells(tdM,tdS,matId);
   }
 
-  function atualizarLinhaMedias(matId, tr) {
-    var media = state.medias[matId];
-    // Atualiza células de média por componente
-    state.avaliacoes.forEach(function(av) {
-      var cell = tr.querySelector('[data-media-comp="' + matId + '|' + av.ComponenteNota + '"]');
-      if (cell) {
-        var comp = media ? media.componentes.find(function(c){return c.ComponenteNota===av.ComponenteNota;}) : null;
-        cell.innerHTML = renderizarMedia(comp);
-      }
-    });
-    // Atualiza situação geral
-    var sitCell = tr.querySelector('[data-sit-geral="' + matId + '"]');
-    if (sitCell && media) sitCell.innerHTML = '<span class="badge-n7 ' + media.situacaoGeral + '">' + media.situacaoGeral + '</span>';
+  function atualizarMediaCells(tdM,tdS,matId){
+    var media=S.medias[matId];
+    if(!media){tdM.textContent='—';tdS.innerHTML='';return;}
+    var medias=media.componentes.map(function(c){return c.Media!==null?c.Media:'—';}).join(' / ');
+    tdM.textContent=medias;
+    var sit=media.aprovado?'AP':'RE';
+    tdS.innerHTML='<span class="badge-sit-nota '+(sit==='AP'?'ap':'re')+'">'+sit+'</span>';
   }
 
-  // =========================================================
-  // SALVAR NOTAS
-  // =========================================================
-  function salvarNotas() {
-    var btn = el('btn-n7-salvar'); btn.disabled = true; btn.classList.add('loading');
-
-    // Coleta todas as notas modificadas
-    var promises = [];
-    state.matriculas.forEach(function(m) {
-      var notas = state.notas[m.MatriculaID] || {};
-      var salvas = state.notasSalvas[m.MatriculaID] || {};
-
-      Object.keys(notas).forEach(function(chave) {
-        var partes = chave.split('|');
-        var comp = partes[0]; var sub = partes[1];
-        var valor = notas[chave];
-        var valorSalvo = salvas[chave];
-
-        // Salva se foi modificado (incluindo apagado → '')
-        if (valor !== valorSalvo) {
-          promises.push(
-            postApi('notas.lancar', {
-              MatriculaID:       m.MatriculaID,
-              ComponenteNota:    comp,
-              SubcomponenteNota: sub,
-              ValorNota:         valor === '' ? null : parseFloat(valor),
-            })
-          );
-        }
+  function salvarNotas(){
+    if(!S.turmaSel){if(typeof toast==='function')toast('Selecione uma turma.','error');return;}
+    var notas=[];
+    S.matriculas.forEach(function(m){
+      Object.keys(S.notas[m.id]||{}).forEach(function(chave){
+        var valor=S.notas[m.id][chave];
+        var partes=chave.split('|');
+        var comp=partes[0],sub=partes.slice(1).join('|');
+        var av=S.avaliacoes.find(function(a){return a.ComponenteNota===comp;});
+        if(!av)return;
+        notas.push({matricula_id:m.id,semestre_id:S.turmaSel.semestre_id,avaliacao_id:av.id,componente_nota:comp,subcomponente_nota:sub,valor_nota:valor===''||valor===null?null:parseFloat(valor)});
       });
     });
-
-    if (promises.length === 0) {
-      btn.disabled = false; btn.classList.remove('loading');
-      if (typeof toast === 'function') toast('Nenhuma alteração para salvar.', 'info');
-      return;
-    }
-
-    Promise.all(promises)
-      .then(function(resultados) {
-        btn.disabled = false; btn.classList.remove('loading');
-        var erros = resultados.filter(function(r) { return !r.sucesso; });
-        if (erros.length > 0) {
-          if (typeof toast === 'function') toast(erros.length + ' nota(s) com erro ao salvar.', 'error');
-        } else {
-          if (typeof toast === 'function') toast('Todas as notas salvas com sucesso!', 'success');
-          // Atualiza snapshot e estilo dos inputs
-          state.matriculas.forEach(function(m) {
-            state.notasSalvas[m.MatriculaID] = JSON.parse(JSON.stringify(state.notas[m.MatriculaID] || {}));
-          });
-          // Atualiza estilo visual dos inputs
-          el('n7-tabela') && el('n7-tabela').querySelectorAll('.n7-nota-input').forEach(function(inp) {
-            if (inp.value !== '') {
-              inp.className = 'n7-nota-input salvo';
-            } else {
-              inp.className = 'n7-nota-input';
-            }
-          });
-        }
-      })
-      .catch(function() {
-        btn.disabled = false; btn.classList.remove('loading');
-        if (typeof toast === 'function') toast('Erro de comunicação ao salvar.', 'error');
-      });
-  }
-
-  // =========================================================
-  // MODAL DE COMENTÁRIO
-  // =========================================================
-  function abrirModalComentario(m) {
-    state.comMatricula = m;
-    state.comEtapa = 1;
-    el('n7-com-titulo').textContent = 'Comentários';
-    el('n7-com-aluno').textContent = 'Aluno: ' + (m.NomeExibicao || m.AlunoID || m.MatriculaID);
-
-    // Sempre 2 etapas de comentário, independente da configuração de avaliações
-    var etapasWrap = el('n7-com-etapas'); etapasWrap.innerHTML = '';
-    [1, 2].forEach(function(num) {
-      var btn = document.createElement('button');
-      btn.className = 'n7-etapa-btn' + (num === 1 ? ' ativa' : '');
-      btn.textContent = 'Etapa ' + num;
-      btn.dataset.etapa = num;
-      btn.addEventListener('click', function() {
-        salvarTextoEtapaLocal();
-        document.querySelectorAll('.n7-etapa-btn').forEach(function(b){b.classList.remove('ativa');});
-        btn.classList.add('ativa');
-        state.comEtapa = num;
-        carregarTextoEtapa();
-      });
-      etapasWrap.appendChild(btn);
-    });
-
-    carregarTextoEtapa();
-    el('n7-modal-com').style.display = 'flex';
-  }
-
-  function salvarTextoEtapaLocal() {
-    if (!state.comMatricula) return;
-    if (!state.comentarios[state.comMatricula.MatriculaID]) state.comentarios[state.comMatricula.MatriculaID] = {};
-    state.comentarios[state.comMatricula.MatriculaID][state.comEtapa] = el('n7-com-texto').value;
-  }
-
-  function carregarTextoEtapa() {
-    var m = state.comMatricula;
-    if (!m) return;
-    var texto = (state.comentarios[m.MatriculaID] || {})[state.comEtapa] || '';
-    el('n7-com-texto').value = texto;
-  }
-
-  function fecharModalComentario() {
-    el('n7-modal-com').style.display = 'none';
-    state.comMatricula = null;
-  }
-
-  function salvarComentario() {
-    var m = state.comMatricula;
-    if (!m) return;
-
-    salvarTextoEtapaLocal();
-
-    var btn = el('btn-salvar-n7-com'); btn.disabled = true; btn.classList.add('loading');
-
-    postApi('comentarios.salvar', {
-      MatriculaID: m.MatriculaID,
-      TurmaID:     state.turmaSel.TurmaID,
-      Etapa:       state.comEtapa,
-      Comentario:  el('n7-com-texto').value,
-    })
-      .then(function(res) {
-        btn.disabled = false; btn.classList.remove('loading');
-        if (!res.sucesso) { if(typeof toast==='function') toast(res.mensagem||'Erro.','error'); return; }
-        if (typeof toast === 'function') toast('Comentário salvo!', 'success');
-        fecharModalComentario();
-        // Atualiza ícone do botão de comentário na tabela
-        var btnCom = el('n7-tabela') && el('n7-tabela').querySelector('[data-mat="' + m.MatriculaID + '"].btn-n7-com');
-        if (btnCom) btnCom.classList.add('tem-com');
-      })
-      .catch(function() {
-        btn.disabled = false; btn.classList.remove('loading');
-        if (typeof toast === 'function') toast('Erro de comunicação.', 'error');
-      });
-  }
-
-  // =========================================================
-  // EVENTOS
-  // =========================================================
-  function registrarEventos() {
-    el('btn-n7-trocar') && el('btn-n7-trocar').addEventListener('click', function() {
-      el('n7-step-notas').style.display = 'none';
-      el('n7-step-turma').style.display = 'block';
-      state.turmaSel = null;
-    });
-
-    el('btn-n7-salvar')     && el('btn-n7-salvar').addEventListener('click', salvarNotas);
-    el('btn-fechar-n7-com') && el('btn-fechar-n7-com').addEventListener('click', fecharModalComentario);
-    el('btn-cancelar-n7-com') && el('btn-cancelar-n7-com').addEventListener('click', fecharModalComentario);
-    el('btn-salvar-n7-com') && el('btn-salvar-n7-com').addEventListener('click', salvarComentario);
-    el('n7-modal-com') && el('n7-modal-com').addEventListener('click', function(e) {
-      if (e.target === this) fecharModalComentario();
+    if(!notas.length){if(typeof toast==='function')toast('Nenhuma nota para salvar.','error');return;}
+    postApi('notas.salvar',{notas:notas}).then(function(res){
+      if(typeof toast==='function')toast(res.sucesso?'Notas salvas.':res.mensagem,res.sucesso?'success':'error');
+      if(res.sucesso){S.notasSalvas=JSON.parse(JSON.stringify(S.notas));document.querySelectorAll('.n7-nota-input.alterado').forEach(function(i){i.classList.remove('alterado');});}
     });
   }
 
-  if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', init); }
-  else { init(); }
+  function abrirModalComentario(m){
+    S.matComentario=m;
+    if(el('n7-com-titulo'))el('n7-com-titulo').textContent='Observações — '+(m.NomeExibicao||m.AlunoID||'—');
+    if(el('n7-com-overlay'))el('n7-com-overlay').style.display='flex';
+    // Preencher campos de etapa
+    ['1','2','F'].forEach(function(etapa){
+      var label='Etapa '+(etapa==='F'?'Final':etapa);
+      if(el('n7-com-etapa-'+etapa))el('n7-com-etapa-'+etapa).value=(S.comentarios[m.id]||{})[label]||'';
+    });
+  }
+
+  function fecharModalComentario(){if(el('n7-com-overlay'))el('n7-com-overlay').style.display='none';}
+
+  function salvarComentario(){
+    if(!S.matComentario||!S.turmaSel)return;
+    var m=S.matComentario;
+    var promessas=[];
+    ['1','2','F'].forEach(function(e){
+      var label='Etapa '+(e==='F'?'Final':e);
+      var texto=el('n7-com-etapa-'+e)?el('n7-com-etapa-'+e).value.trim():'';
+      if(!texto)return;
+      promessas.push(postApi('comentarios.salvar',{matricula_id:m.id,semestre_id:S.turmaSel.semestre_id,turma_id:S.turmaSel.id,etapa:label,comentario:texto}));
+      S.comentarios[m.id]=S.comentarios[m.id]||{};
+      S.comentarios[m.id][label]=texto;
+    });
+    Promise.all(promessas).then(function(){
+      if(typeof toast==='function')toast('Observações salvas.','success');
+      fecharModalComentario();
+    });
+  }
+
+  function registrarEventos(){
+    el('btn-salvar-notas')&&el('btn-salvar-notas').addEventListener('click',salvarNotas);
+    el('btn-fechar-n7-com')&&el('btn-fechar-n7-com').addEventListener('click',fecharModalComentario);
+    el('btn-cancelar-n7-com')&&el('btn-cancelar-n7-com').addEventListener('click',fecharModalComentario);
+    el('btn-salvar-n7-com')&&el('btn-salvar-n7-com').addEventListener('click',salvarComentario);
+    el('n7-com-overlay')&&el('n7-com-overlay').addEventListener('click',function(e){if(e.target===this)fecharModalComentario();});
+  }
+
+  if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',init);}else{init();}
 }());
 </script>
