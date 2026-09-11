@@ -656,28 +656,35 @@
 (function () {
   'use strict';
 
-
+  // =========================================================
+  // ESTADO
+  // =========================================================
   var state = {
-    alunos:[], paginaAtual:1, totalPaginas:1, totalRegistros:0,
-    tamanhoPagina:20, busca:'', exibirInativos:false,
-    alunoSelecionado:null, modoModal:'novo',
-    papel:'', podeEditar:false, podeCadastrar:false,
+    alunos:          [],
+    alunoSelecionado: null,
+    busca:           '',
+    paginaAtual:     1,
+    tamanhoPagina:   50,
+    totalRegistros:  0,
+    totalPaginas:    1,
+    exibirInativos:  false,
+    papel:           '',
+    podeEditar:      false,
+    podeCadastrar:   false,
+    modoModal:       'novo',
+    // Ocorrências
+    ocoLista:        [],
+    ocoSelecionada:  null,
+    ocoFiltroTipo:   '',
+    ocoFiltroStatus: '',
+    ocoPainelAtivo:  'ficha',
+    _usuarioId:      '',
+    ocoAlunoId:      null,
   };
-
-  // Estado de ocorrencias
-  state.ocoAlunoId      = null;
-  state.ocoLista        = [];
-  state.ocoSelecionada  = null;
-  state.ocoFiltroTipo   = '';
-  state.ocoFiltroStatus = '';
-  state.ocoPainelAtivo  = 'ficha';
-  state._usuarioId      = '';
 
   var buscarTimer = null;
 
-function postApi(acao, dados) {
-    return window.postApi(acao, dados);
-  }
+  function postApi(acao, dados) { return window.postApi(acao, dados); }
 
   // =========================================================
   // UTILITÁRIOS
@@ -710,10 +717,106 @@ function postApi(acao, dados) {
     return '<div class="ficha-campo"><span class="ficha-campo-label">'+label+'</span><span class="ficha-campo-valor'+(v?'':' vazio')+'">'+(v||'—')+'</span></div>';
   }
 
-  // =========================================================
-  // INIT
-  // =========================================================
+  // Converte registro do banco (snake_case) para o formato usado no módulo
+  function normalizar(a) {
+    if (!a) return a;
+    var nomeSocial  = a.nome_social || '';
+    var nomeExibicao = nomeSocial || a.nome_completo || '';
+    return {
+      // Identificação
+      id:               a.id,
+      external_id:      a.external_id,
+      AlunoID:          a.external_id || a.id,
+      // Nomes
+      NomeCompleto:     a.nome_completo || '',
+      NomeSocial:       nomeSocial,
+      NomeSocialBoolean: !!nomeSocial,
+      NomeExibicao:     nomeExibicao,
+      // Pessoais
+      Nascimento:       a.nascimento || '',
+      NascimentoUF:     a.nascimento_uf || '',
+      NascimentoMunicipio: a.nascimento_municipio || '',
+      Genero:           a.genero || '',
+      Raca:             a.raca || '',
+      EstadoCivil:      a.estado_civil || '',
+      Estrangeiro:      a.estrangeiro || false,
+      // Contato
+      Telefone:         a.telefone || '',
+      email:            a.email || '',
+      // Endereço público
+      Municipio:        a.municipio || '',
+      UF:               a.uf || '',
+      Bairro:           a.bairro || '',
+      // PcD pedagógico (disponível para professor também)
+      PcDBoolean:       a.pcd || false,
+      PcDTipo:          a.pcd_tipo || '',
+      // Situação
+      SituacaoAluno:    a.situacao_ativo !== false,
+      InscricaoDataHora: a.inscricao_data_hora || '',
+      // Campos sensíveis (vindos de alunos_sensiveis via Edge Function — por ora vazios)
+      CPFouCIN:         a.cpf_ou_cin || '',
+      CEP:              a.cep || '',
+      Endereco:         a.endereco || '',
+      Numero:           a.numero || '',
+      Complemento:      a.complemento || '',
+      PcDLaudoURL:      a.pcd_laudo_url || '',
+      MenorBoolean:     a.menor || false,
+      Responsavel1Nome: a.responsavel1_nome || '',
+      Responsavel1CPF:  a.responsavel1_cpf  || '',
+      Responsavel1Parentesco: a.responsavel1_parentesco || '',
+      Responsavel1Telefone:   a.responsavel1_telefone || '',
+      'Responsavel1e-mail':   a.responsavel1_email || '',
+      Responsavel2Nome: a.responsavel2_nome || '',
+      Responsavel2Parentesco: a.responsavel2_parentesco || '',
+      Responsavel2Telefone:   a.responsavel2_telefone || '',
+      PublicoAluno:     a.publico_alvo || '',
+    };
+  }
 
+  // Converte dados do formulário (PascalCase) para o formato do banco (snake_case)
+  function coletarDados() {
+    var nascRaw = val('f-nascimento');
+    var nascFmt = nascRaw ? nascRaw.split('/').reverse().join('-') : null;
+    return {
+      nome_completo:         val('f-nome').toUpperCase(),
+      nome_social:           checked('f-nome-social-bool') ? val('f-nome-social') : null,
+      nascimento:            nascFmt,
+      nascimento_uf:         val('f-nasc-uf').toUpperCase(),
+      nascimento_municipio:  val('f-nasc-municipio').toUpperCase(),
+      raca:                  val('f-raca'),
+      estado_civil:          val('f-estado-civil'),
+      genero:                val('f-genero'),
+      estrangeiro:           val('f-estrangeiro') === 'true',
+      passaporte:            val('f-passaporte'),
+      telefone:              val('f-telefone').replace(/\D/g,''),
+      email:                 val('f-email'),
+      pcd:                   checked('f-pcd'),
+      pcd_tipo:              checked('f-pcd') ? val('f-pcd-tipo') : null,
+      // Campos sensíveis (alunos_sensiveis)
+      cpf_ou_cin:            val('f-cpf'),
+      cep:                   val('f-cep').replace(/\D/g,''),
+      endereco:              val('f-endereco').toUpperCase(),
+      numero:                val('f-numero'),
+      complemento:           val('f-complemento'),
+      bairro:                val('f-bairro').toUpperCase(),
+      municipio:             val('f-municipio').toUpperCase(),
+      uf:                    val('f-uf').toUpperCase(),
+      pcd_laudo_url:         checked('f-pcd') ? val('f-pcd-laudo') : null,
+      povo_tradicional:      checked('f-povo'),
+      povo_tradicional_nome: checked('f-povo') ? val('f-povo-tipo') : null,
+      menor:                 checked('f-menor'),
+      responsavel1_nome:     checked('f-menor') ? val('f-resp1-nome').toUpperCase() : null,
+      responsavel1_cpf:      checked('f-menor') ? val('f-resp1-cpf') : null,
+      responsavel1_parentesco: checked('f-menor') ? val('f-resp1-parentesco') : null,
+      responsavel1_telefone: checked('f-menor') ? val('f-resp1-tel').replace(/\D/g,'') : null,
+      responsavel1_email:    checked('f-menor') ? val('f-resp1-email') : null,
+      responsavel2_nome:     checked('f-menor') ? val('f-resp2-nome').toUpperCase() : null,
+      responsavel2_parentesco: checked('f-menor') ? val('f-resp2-parentesco') : null,
+      responsavel2_telefone: checked('f-menor') ? val('f-resp2-tel').replace(/\D/g,'') : null,
+      publico_alvo:          val('f-publico'),
+      publico_comprovante_url: val('f-comprovante'),
+    };
+  }
 
   // =========================================================
   // LISTAGEM
@@ -724,16 +827,18 @@ function postApi(acao, dados) {
     el('alunos-tabela').style.display='none';
     el('alunos-paginacao').style.display='none';
 
-    postApi('alunos.listar', { busca:state.busca, pagina:state.paginaAtual, tamanhoPagina:state.tamanhoPagina })
+    var filtros = {};
+    if (!state.exibirInativos) filtros.somenteAtivos = true;
+    if (state.busca) filtros.termo = state.busca;
+
+    var acao = state.busca ? 'alunos.buscar' : 'alunos.listar';
+    postApi(acao, filtros)
       .then(function(res) {
         if (!res.sucesso) { mostrarEstadoTabela('error_outline', res.mensagem||'Erro ao carregar alunos.'); return; }
-        var lista = (res.dados && res.dados.dados) ? res.dados.dados : [];
-        if (!state.exibirInativos) {
-          lista = lista.filter(function(a){ return a.SituacaoAluno !== false && a.SituacaoAluno !== 'false' && a.SituacaoAluno !== ''; });
-        }
+        var lista = (res.dados || []).map(normalizar);
         state.alunos         = lista;
-        state.totalRegistros = (res.dados && res.dados.totalRegistros) ? res.dados.totalRegistros : lista.length;
-        state.totalPaginas   = (res.dados && res.dados.totalPaginas)   ? res.dados.totalPaginas   : 1;
+        state.totalRegistros = lista.length;
+        state.totalPaginas   = 1;
         if (lista.length===0) { mostrarEstadoTabela('person_search', state.busca?'Nenhum aluno encontrado para "'+state.busca+'".':'Nenhum aluno cadastrado.'); return; }
         renderizarTabela(lista);
         renderizarPaginacao();
@@ -753,16 +858,15 @@ function postApi(acao, dados) {
     el('alunos-tabela').style.display='table';
     var tbody=el('alunos-tbody'); tbody.innerHTML='';
     lista.forEach(function(a) {
-      var ativo = a.SituacaoAluno!==false && a.SituacaoAluno!=='false' && a.SituacaoAluno!=='';
-      var email = a.email || a.Email || '—';
+      var ativo = a.SituacaoAluno;
       var tr=document.createElement('tr');
-      tr.dataset.id=a.AlunoID;
+      tr.dataset.id = a.AlunoID;
       if (state.alunoSelecionado && state.alunoSelecionado.AlunoID===a.AlunoID) tr.classList.add('selecionado');
       tr.innerHTML=
-        '<td class="aluno-nome-cel">'+(a.NomeExibicao||a.NomeCompleto||'—')+'</td>'+
+        '<td class="aluno-nome-cel">'+(a.NomeExibicao||'—')+'</td>'+
         '<td class="aluno-id-cel">'+(a.AlunoID||'—')+'</td>'+
         '<td>'+fmtTel(a.Telefone)+'</td>'+
-        '<td>'+email+'</td>'+
+        '<td>'+(a.email||'—')+'</td>'+
         '<td><span class="badge-situacao '+(ativo?'ativo':'inativo')+'">'+
           '<span class="material-icons-round">'+(ativo?'check_circle':'cancel')+'</span>'+(ativo?'Ativo':'Inativo')+
         '</span></td>';
@@ -773,39 +877,16 @@ function postApi(acao, dados) {
 
   function renderizarPaginacao() {
     var pag=el('alunos-paginacao'); pag.style.display='flex';
-    var ini=(state.paginaAtual-1)*state.tamanhoPagina+1;
-    var fim=Math.min(state.paginaAtual*state.tamanhoPagina, state.totalRegistros);
-    el('pag-info').textContent=ini+'–'+fim+' de '+state.totalRegistros+' aluno(s)';
-    var btns=el('pag-btns'); btns.innerHTML='';
-    var prev=document.createElement('button'); prev.className='btn-pag';
-    prev.innerHTML='<span class="material-icons-round">chevron_left</span>'; prev.disabled=state.paginaAtual<=1;
-    prev.addEventListener('click',function(){if(state.paginaAtual>1){state.paginaAtual--;carregarAlunos();}});
-    btns.appendChild(prev);
-    var ini2=Math.max(1,state.paginaAtual-2), fim2=Math.min(state.totalPaginas,ini2+4);
-    for(var i=ini2;i<=fim2;i++){
-      (function(pg){
-        var b=document.createElement('button'); b.className='btn-pag'+(pg===state.paginaAtual?' ativa':'');
-        b.textContent=pg; b.addEventListener('click',function(){state.paginaAtual=pg;carregarAlunos();});
-        btns.appendChild(b);
-      })(i);
-    }
-    var next=document.createElement('button'); next.className='btn-pag';
-    next.innerHTML='<span class="material-icons-round">chevron_right</span>'; next.disabled=state.paginaAtual>=state.totalPaginas;
-    next.addEventListener('click',function(){if(state.paginaAtual<state.totalPaginas){state.paginaAtual++;carregarAlunos();}});
-    btns.appendChild(next);
+    el('pag-info').textContent='1–'+state.totalRegistros+' de '+state.totalRegistros+' aluno(s)';
+    el('pag-btns').innerHTML='';
   }
 
   // =========================================================
   // PAINEL LATERAL
   // =========================================================
-
-
-  // =========================================================
-  // ABAS DO PAINEL LATERAL
-  // =========================================================
   function selecionarAluno(aluno) {
     state.alunoSelecionado = aluno;
-    state.ocoAlunoId       = aluno.AlunoID;
+    state.ocoAlunoId       = aluno.id;  // UUID real do banco
     state.ocoPainelAtivo   = 'ficha';
     document.querySelectorAll('#alunos-tbody tr').forEach(function(tr) {
       tr.classList.toggle('selecionado', tr.dataset.id === aluno.AlunoID);
@@ -824,9 +905,7 @@ function postApi(acao, dados) {
     el('painel-abas-topo').style.display = 'none';
     state.alunoSelecionado = null;
     state.ocoAlunoId       = null;
-    document.querySelectorAll('#alunos-tbody tr').forEach(function(tr) {
-      tr.classList.remove('selecionado');
-    });
+    document.querySelectorAll('#alunos-tbody tr').forEach(function(tr) { tr.classList.remove('selecionado'); });
   }
 
   function mostrarAbaPainel(aba) {
@@ -839,471 +918,30 @@ function postApi(acao, dados) {
   }
 
   // =========================================================
-  // OCORRENCIAS — utilitarios
+  // FICHA DO ALUNO
   // =========================================================
-  function ocoBadgeTipo(tipo) {
-    var mapaClass = {
-      'Ausencia avisada':       'ausencia',
-      'Contato com responsavel':'contato',
-      'Observacao pedagogica':  'pedagogica',
-      'Ocorrencia disciplinar': 'disciplinar',
-      'Comunicado interno':     'comunicado',
-      'Outro':                  'outro'
-    };
-    var cls = mapaClass[tipo] || 'outro';
-    return '<span class="oco-badge-tipo ' + cls + '">' + tipo + '</span>';
-  }
-
-  function ocoBadgeStatus(status) {
-    var ic = status === 'RESOLVIDA' ? 'check_circle' : 'schedule';
-    return '<span class="oco-badge-status ' + status + '">' +
-      '<span class="material-icons-round">' + ic + '</span>' + status + '</span>';
-  }
-
-  function ocoFmtData(d) {
-    if (!d) return '---';
-    var dt = (d instanceof Date) ? d : new Date(d);
-    if (isNaN(dt.getTime())) return String(d).substring(0, 10);
-    var pad = function(n) { return String(n).padStart(2, '0'); };
-    return pad(dt.getDate()) + '/' + pad(dt.getMonth() + 1) + '/' + dt.getFullYear() +
-           ' ' + pad(dt.getHours()) + ':' + pad(dt.getMinutes());
-  }
-
-  // =========================================================
-  // OCORRENCIAS — carregar lista
-  // =========================================================
-  function carregarOcorrencias() {
-    if (!state.ocoAlunoId) return;
-    var cont = el('painel-ocorrencias');
-    cont.innerHTML = '<div class="oco-spinner"></div>';
-    postApi('ocorrencias.listar', {
-      alunoId: state.ocoAlunoId,
-      tipo:    state.ocoFiltroTipo   || '',
-      status:  state.ocoFiltroStatus || ''
-    }).then(function(res) {
-      state.ocoLista = (res.sucesso && res.dados) ? res.dados : [];
-      renderOcoLista();
-    }).catch(function() {
-      state.ocoLista = [];
-      renderOcoLista();
-    });
-  }
-
-  function renderOcoLista() {
-    var cont = el('painel-ocorrencias');
-    var html = '';
-
-    html += '<button class="btn-nova-oco" id="btn-nova-oco">' +
-              '<span class="material-icons-round">add</span>Nova ocorrencia</button>';
-
-    html += '<div class="oco-filtros">' +
-      '<select class="oco-filtro-sel" id="oco-filtro-tipo">' +
-        '<option value="">Todos os tipos</option>' +
-        '<option value="Ausencia avisada">Ausencia avisada</option>' +
-        '<option value="Contato com responsavel">Contato com responsavel</option>' +
-        '<option value="Observacao pedagogica">Obs. pedagogica</option>' +
-        '<option value="Ocorrencia disciplinar">Ocorrencia disciplinar</option>' +
-        '<option value="Comunicado interno">Comunicado interno</option>' +
-        '<option value="Outro">Outro</option>' +
-      '</select>' +
-      '<select class="oco-filtro-sel" id="oco-filtro-status">' +
-        '<option value="">Todos os status</option>' +
-        '<option value="PENDENTE">Pendente</option>' +
-        '<option value="RESOLVIDA">Resolvida</option>' +
-      '</select>' +
-    '</div>';
-
-    html += '<div id="oco-lista-corpo">';
-    if (state.ocoLista.length === 0) {
-      html += '<div class="oco-vazio">' +
-                '<span class="material-icons-round">forum</span>' +
-                'Nenhuma ocorrencia registrada.</div>';
-    } else {
-      var i;
-      for (i = 0; i < state.ocoLista.length; i++) {
-        var o = state.ocoLista[i];
-        html += '<div class="oco-card" data-oco-id="' + o.OcorrenciaID + '">' +
-          '<div class="oco-card-header">' +
-            '<span class="oco-card-titulo">' + o.Titulo + '</span>' +
-            ocoBadgeTipo(o.Tipo) +
-          '</div>' +
-          '<div class="oco-card-meta">' +
-            ocoBadgeStatus(o.Status) +
-            '<span>' + ocoFmtData(o.DataCriacao) + '</span>' +
-            (o.SemestreRef ? '<span>Sem. ' + o.SemestreRef + '</span>' : '') +
-          '</div>' +
-        '</div>';
-      }
-    }
-    html += '</div>';
-    html += '<div class="oco-detalhe" id="oco-detalhe"></div>';
-
-    cont.innerHTML = html;
-
-    if (el('oco-filtro-tipo'))   el('oco-filtro-tipo').value   = state.ocoFiltroTipo;
-    if (el('oco-filtro-status')) el('oco-filtro-status').value = state.ocoFiltroStatus;
-
-    el('oco-filtro-tipo') && el('oco-filtro-tipo').addEventListener('change', function() {
-      state.ocoFiltroTipo = this.value; carregarOcorrencias();
-    });
-    el('oco-filtro-status') && el('oco-filtro-status').addEventListener('change', function() {
-      state.ocoFiltroStatus = this.value; carregarOcorrencias();
-    });
-    el('btn-nova-oco') && el('btn-nova-oco').addEventListener('click', abrirModalNovaOco);
-
-    cont.querySelectorAll('.oco-card').forEach(function(card) {
-      card.addEventListener('click', function() {
-        var ocoId = this.dataset.ocoId;
-        var oco = null;
-        var j;
-        for (j = 0; j < state.ocoLista.length; j++) {
-          if (state.ocoLista[j].OcorrenciaID === ocoId) { oco = state.ocoLista[j]; break; }
-        }
-        if (oco) abrirDetalheOco(oco);
-      });
-    });
-  }
-
-  // =========================================================
-  // OCORRENCIAS — detalhe + thread
-  // =========================================================
-  function abrirDetalheOco(oco) {
-    state.ocoSelecionada = oco;
-    el('oco-lista-corpo').style.display  = 'none';
-    el('btn-nova-oco').style.display     = 'none';
-    var filtrosEl = el('painel-ocorrencias').querySelector('.oco-filtros');
-    if (filtrosEl) filtrosEl.style.display = 'none';
-
-    var detalhe = el('oco-detalhe');
-    detalhe.classList.add('show');
-
-    var ehCriador   = oco.CriadoPor === state._usuarioId;
-    var temPrivil   = state.papel === 'admin' || state.papel === 'coordenacao';
-    var podeAlterar = ehCriador || temPrivil;
-    var resolvida   = oco.Status === 'RESOLVIDA';
-
-    var acoesHtml = '';
-    if (podeAlterar) {
-      if (!resolvida) {
-        acoesHtml += '<button class="btn-oco-acao resolver" id="btn-oco-resolver">' +
-          '<span class="material-icons-round">check_circle</span>Marcar resolvida</button>';
-      } else {
-        acoesHtml += '<button class="btn-oco-acao reabrir" id="btn-oco-reabrir">' +
-          '<span class="material-icons-round">restart_alt</span>Reabrir</button>';
-      }
-      acoesHtml += '<button class="btn-oco-acao excluir" id="btn-oco-excluir">' +
-        '<span class="material-icons-round">delete</span>Excluir</button>';
-    }
-
-    detalhe.innerHTML =
-      '<div class="oco-detalhe-header">' +
-        '<button class="btn-oco-voltar" id="btn-oco-voltar">' +
-          '<span class="material-icons-round">arrow_back</span>Voltar</button>' +
-        '<span class="oco-detalhe-titulo">' + oco.Titulo + '</span>' +
-      '</div>' +
-      '<div class="oco-detalhe-meta">' +
-        ocoBadgeTipo(oco.Tipo) +
-        ocoBadgeStatus(oco.Status) +
-        '<span>' + ocoFmtData(oco.DataCriacao) + '</span>' +
-        (oco.SemestreRef ? '<span>Sem. ' + oco.SemestreRef + '</span>' : '') +
-      '</div>' +
-      '<div class="oco-detalhe-desc">' + oco.Descricao + '</div>' +
-      (acoesHtml ? '<div class="oco-acoes-detalhe">' + acoesHtml + '</div>' : '') +
-      '<div class="oco-thread-titulo">Respostas</div>' +
-      '<div id="oco-thread-corpo"><div class="oco-spinner"></div></div>' +
-      '<div class="oco-reply-wrap">' +
-        '<textarea class="oco-reply-input" id="oco-reply-input" placeholder="Escreva uma resposta..." rows="2"></textarea>' +
-        '<button class="btn-oco-reply" id="btn-oco-reply" title="Enviar">' +
-          '<span class="material-icons-round">send</span></button>' +
-      '</div>';
-
-    el('btn-oco-voltar').addEventListener('click', voltarListaOco);
-    el('btn-oco-resolver') && el('btn-oco-resolver').addEventListener('click', function() {
-      alterarStatusOco(oco.OcorrenciaID, 'RESOLVIDA');
-    });
-    el('btn-oco-reabrir') && el('btn-oco-reabrir').addEventListener('click', function() {
-      alterarStatusOco(oco.OcorrenciaID, 'PENDENTE');
-    });
-    el('btn-oco-excluir') && el('btn-oco-excluir').addEventListener('click', function() {
-      excluirOco(oco.OcorrenciaID);
-    });
-    el('btn-oco-reply').addEventListener('click', enviarResposta);
-    el('oco-reply-input').addEventListener('keydown', function(e) {
-      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) enviarResposta();
-    });
-
-    carregarRespostas(oco.OcorrenciaID);
-  }
-
-  function voltarListaOco() {
-    state.ocoSelecionada = null;
-    el('oco-detalhe').classList.remove('show');
-    el('oco-detalhe').innerHTML = '';
-    el('oco-lista-corpo').style.display = 'block';
-    el('btn-nova-oco').style.display    = 'flex';
-    var filtrosEl = el('painel-ocorrencias').querySelector('.oco-filtros');
-    if (filtrosEl) filtrosEl.style.display = 'flex';
-  }
-
-  function carregarRespostas(ocoId) {
-    postApi('ocorrencias.listarRespostas', { ocorrenciaId: ocoId })
-      .then(function(res) {
-        renderThread((res.sucesso && res.dados) ? res.dados : []);
-      })
-      .catch(function() { renderThread([]); });
-  }
-
-  function renderThread(respostas) {
-    var corpo = el('oco-thread-corpo');
-    if (!corpo) return;
-    if (respostas.length === 0) {
-      corpo.innerHTML = '<p style="font-size:12.5px;color:var(--c-text-3,#9898B0);text-align:center;padding:12px 0;">' +
-        'Nenhuma resposta ainda.</p>';
-      return;
-    }
-    var html = '';
-    var i;
-    for (i = 0; i < respostas.length; i++) {
-      var r = respostas[i];
-      var minha = r.EhMinha === true || r.EhMinha === 'true';
-      html += '<div class="oco-msg' + (minha ? ' minha' : '') + '">' +
-        '<div class="oco-msg-bubble">' + r.Texto + '</div>' +
-        '<div class="oco-msg-autor">' + (minha ? 'Voce' : r.AutorNome) + ' - ' + ocoFmtData(r.DataCriacao) + '</div>' +
-      '</div>';
-    }
-    corpo.innerHTML = html;
-    corpo.scrollTop = corpo.scrollHeight;
-  }
-
-  function enviarResposta() {
-    var input = el('oco-reply-input');
-    var texto = (input ? input.value : '').trim();
-    if (!texto || !state.ocoSelecionada) return;
-    var btn = el('btn-oco-reply');
-    if (btn) btn.disabled = true;
-    postApi('ocorrencias.adicionarResposta', {
-      ocorrenciaId: state.ocoSelecionada.OcorrenciaID,
-      texto:        texto
-    }).then(function(res) {
-      if (btn) btn.disabled = false;
-      if (!res.sucesso) { if (typeof toast === 'function') toast(res.mensagem || 'Erro.', 'error'); return; }
-      if (input) input.value = '';
-      carregarRespostas(state.ocoSelecionada.OcorrenciaID);
-    }).catch(function() {
-      if (btn) btn.disabled = false;
-      if (typeof toast === 'function') toast('Erro de comunicacao.', 'error');
-    });
-  }
-
-  function alterarStatusOco(ocoId, novoStatus) {
-    postApi('ocorrencias.atualizarStatus', { ocorrenciaId: ocoId, novoStatus: novoStatus })
-      .then(function(res) {
-        if (!res.sucesso) { if (typeof toast === 'function') toast(res.mensagem || 'Erro.', 'error'); return; }
-        if (typeof toast === 'function') toast('Status atualizado para ' + novoStatus + '.', 'success');
-        var i;
-        for (i = 0; i < state.ocoLista.length; i++) {
-          if (state.ocoLista[i].OcorrenciaID === ocoId) {
-            state.ocoLista[i].Status = novoStatus;
-            abrirDetalheOco(state.ocoLista[i]);
-            break;
-          }
-        }
-      })
-      .catch(function() { if (typeof toast === 'function') toast('Erro de comunicacao.', 'error'); });
-  }
-
-  function excluirOco(ocoId) {
-    if (!confirm('Excluir esta ocorrencia e todas as suas respostas?')) return;
-    postApi('ocorrencias.excluir', { ocorrenciaId: ocoId })
-      .then(function(res) {
-        if (!res.sucesso) { if (typeof toast === 'function') toast(res.mensagem || 'Erro.', 'error'); return; }
-        if (typeof toast === 'function') toast('Ocorrencia excluida.', 'success');
-        voltarListaOco();
-        carregarOcorrencias();
-      })
-      .catch(function() { if (typeof toast === 'function') toast('Erro de comunicacao.', 'error'); });
-  }
-
-  // =========================================================
-  // OCORRENCIAS — modal nova ocorrencia
-  // =========================================================
-  function abrirModalNovaOco() {
-    if (!state.ocoAlunoId) return;
-    var ids = ['oco-tipo', 'oco-titulo', 'oco-descricao', 'oco-semestre-ref'];
-    var i;
-    for (i = 0; i < ids.length; i++) {
-      var e = el(ids[i]); if (e) e.value = '';
-    }
-    var cbs = ['oco-dest-coord', 'oco-dest-sec'];
-    for (i = 0; i < cbs.length; i++) {
-      var cb = el(cbs[i]); if (cb) cb.checked = false;
-    }
-    // Carrega as turmas ativas do aluno para o seletor de turma relacionada
-    carregarTurmasOco();
-    // Carrega professores das turmas ativas do aluno
-    var sel = el('oco-dest-prof-sel');
-    if (sel) {
-      sel.innerHTML = '<option value="" disabled>Carregando...</option>';
-      postApi('ocorrencias.professoresDasTurmas', { alunoId: state.ocoAlunoId })
-        .then(function(res) {
-          sel.innerHTML = '';
-          if (res.sucesso && res.dados && res.dados.length > 0) {
-            res.dados.forEach(function(p) {
-              var opt = document.createElement('option');
-              opt.value       = p.UsuarioID;
-              opt.textContent = p.Label || p.Nome;
-              sel.appendChild(opt);
-            });
-          } else {
-            sel.innerHTML = '<option value="" disabled>Nenhum professor encontrado</option>';
-          }
-        })
-        .catch(function() {
-          sel.innerHTML = '<option value="" disabled>Erro ao carregar</option>';
-        });
-    }
-    el('oco-modal-alerta').classList.remove('show');
-    el('oco-modal-overlay').style.display = 'flex';
-  }
-
-  function fecharModalNovaOco() {
-    el('oco-modal-overlay').style.display = 'none';
-  }
-
-  // =========================================================
-  // OCORRENCIAS — seletor de turma relacionada
-  // =========================================================
-  function carregarTurmasOco() {
-    var sel  = el('oco-turma');
-    var hint = el('oco-turma-hint');
-    if (!sel) return;
-    sel.innerHTML = '<option value="">Carregando turmas...</option>';
-    if (hint) hint.textContent = '';
-
-    postApi('ocorrencias.turmasAtivasDoAluno', { alunoId: state.ocoAlunoId })
-      .then(function(res) {
-        var turmas = (res.sucesso && res.dados) ? res.dados : [];
-        sel.innerHTML = '';
-
-        if (turmas.length === 0) {
-          sel.innerHTML = '<option value="">Nenhuma turma ativa encontrada</option>';
-          if (hint) hint.textContent = 'A ocorrencia sera registrada sem turma associada.';
-          return;
-        }
-
-        var optVazia = document.createElement('option');
-        optVazia.value = '';
-        optVazia.textContent = 'Nao associar a uma turma especifica';
-        sel.appendChild(optVazia);
-
-        turmas.forEach(function(t) {
-          var opt = document.createElement('option');
-          opt.value       = t.TurmaID;
-          opt.textContent = t.Label || t.TurmaID;
-          sel.appendChild(opt);
-        });
-
-        if (turmas.length === 1) {
-          // Sem ambiguidade: pre-seleciona a unica turma encontrada.
-          sel.value = turmas[0].TurmaID;
-          if (hint) hint.textContent = 'Turma preenchida automaticamente.';
-        } else {
-          if (hint) hint.textContent = 'O aluno esta em mais de uma turma ativa — selecione a turma correta.';
-        }
-      })
-      .catch(function() {
-        sel.innerHTML = '<option value="">Erro ao carregar turmas</option>';
-        if (hint) hint.textContent = '';
-      });
-  }
-
-  function salvarNovaOco() {
-    var tipo      = el('oco-tipo')      ? el('oco-tipo').value      : '';
-    var titulo    = el('oco-titulo')    ? el('oco-titulo').value.trim()    : '';
-    var descricao = el('oco-descricao') ? el('oco-descricao').value.trim() : '';
-    var turmaId   = el('oco-turma')     ? el('oco-turma').value     : '';
-
-    var ok = true;
-    if (!tipo)     { el('err-oco-tipo').classList.add('show');  ok = false; }
-    else           { el('err-oco-tipo').classList.remove('show'); }
-    if (!titulo)   { el('err-oco-titulo').classList.add('show');ok = false; }
-    else           { el('err-oco-titulo').classList.remove('show'); }
-    if (!descricao){ el('err-oco-desc').classList.add('show');  ok = false; }
-    else           { el('err-oco-desc').classList.remove('show'); }
-    if (!ok) return;
-
-    var dests = [];
-    if (el('oco-dest-coord') && el('oco-dest-coord').checked) dests.push('coordenacao');
-    if (el('oco-dest-sec')   && el('oco-dest-sec').checked)   dests.push('secretaria');
-    // Coleta UsuarioIDs dos professores selecionados no select múltiplo
-    var profSel = el('oco-dest-prof-sel');
-    if (profSel) {
-      Array.from(profSel.options).forEach(function(opt) {
-        if (opt.selected && opt.value) dests.push(opt.value);
-      });
-    }
-
-    var btn = el('oco-btn-salvar');
-    if (btn) { btn.disabled = true; btn.classList.add('loading'); }
-
-    postApi('ocorrencias.criar', {
-      AlunoID:       state.ocoAlunoId,
-      TurmaID:       turmaId,
-      Tipo:          tipo,
-      Titulo:        titulo,
-      Descricao:     descricao,
-      Destinatarios: dests.join(','),
-      SemestreRef:   el('oco-semestre-ref') ? el('oco-semestre-ref').value.trim() : ''
-    }).then(function(res) {
-      if (btn) { btn.disabled = false; btn.classList.remove('loading'); }
-      if (!res.sucesso) {
-        var a = el('oco-modal-alerta'); var m = el('oco-modal-alerta-msg');
-        if (a) a.className = 'oco-alerta show erro';
-        if (m) m.textContent = res.mensagem || 'Erro ao registrar.';
-        return;
-      }
-      fecharModalNovaOco();
-      if (typeof toast === 'function') toast('Ocorrencia registrada!', 'success');
-      carregarOcorrencias();
-    }).catch(function() {
-      if (btn) { btn.disabled = false; btn.classList.remove('loading'); }
-      var a = el('oco-modal-alerta'); var m = el('oco-modal-alerta-msg');
-      if (a) a.className = 'oco-alerta show erro';
-      if (m) m.textContent = 'Erro de comunicacao. Tente novamente.';
-    });
-  }
-
-
   function renderizarFicha(a) {
-    // Professor: mostra apenas campos liberados pelo back-end (contato, PcD, etc.)
-    var modoRestrito = state.papel === 'professor';
     var acoes=el('painel-acoes'); acoes.innerHTML='';
     if (state.podeEditar) {
       var btnEdit=document.createElement('button'); btnEdit.className='btn-painel-acao btn-painel-editar';
       btnEdit.innerHTML='<span class="material-icons-round">edit</span> Editar';
       btnEdit.addEventListener('click',function(){abrirModalEditar(a);}); acoes.appendChild(btnEdit);
-      var ativo = a.SituacaoAluno!==false && a.SituacaoAluno!=='false';
-      if (ativo) {
+      if (a.SituacaoAluno) {
         var btnInativar=document.createElement('button'); btnInativar.className='btn-painel-acao btn-painel-inativar';
         btnInativar.innerHTML='<span class="material-icons-round">person_off</span> Inativar';
         btnInativar.addEventListener('click',function(){ abrirModalMotivo('inativar', a); });
         acoes.appendChild(btnInativar);
-      } else {
-        // Botão Ativar — visível para admin, coordenação e secretaria
-        var podeAtivar = ['admin','coordenacao','secretaria'].indexOf(state.papel) !== -1;
-        if (podeAtivar) {
-          var btnAtivar=document.createElement('button'); btnAtivar.className='btn-painel-acao btn-painel-ativar';
-          btnAtivar.innerHTML='<span class="material-icons-round">person</span> Ativar';
-          btnAtivar.addEventListener('click',function(){ abrirModalMotivo('ativar', a); });
-          acoes.appendChild(btnAtivar);
-        }
+      } else if (['admin','coordenacao','secretaria'].indexOf(state.papel) !== -1) {
+        var btnAtivar=document.createElement('button'); btnAtivar.className='btn-painel-acao btn-painel-ativar';
+        btnAtivar.innerHTML='<span class="material-icons-round">person</span> Ativar';
+        btnAtivar.addEventListener('click',function(){ abrirModalMotivo('ativar', a); });
+        acoes.appendChild(btnAtivar);
       }
     }
     var nomeExib=a.NomeExibicao||a.NomeCompleto||'—';
     var temNomeSocial=a.NomeSocialBoolean&&a.NomeSocial;
     var cores=['#1A1A2E','#E63946','#2A9D8F','#457B9D'];
     var cor=cores[nomeExib.charCodeAt(0)%cores.length];
-    var email = a.email || a.Email || null;
     var html='<div class="painel-avatar-wrap">'+
       '<div class="painel-avatar" style="background:'+cor+'">'+iniciais(nomeExib)+'</div>'+
       '<div class="painel-avatar-info">'+
@@ -1312,12 +950,13 @@ function postApi(acao, dados) {
         '<div class="painel-id">'+(a.AlunoID||'')+'</div>'+
       '</div></div>';
     html+='<div class="ficha-secao"><div class="ficha-secao-titulo">Dados pessoais</div>';
-    html+=campo('CPF/CIN',a.CPFouCIN)+campo('Nascimento',fmtData(a.Nascimento))+campo('Gênero',a.Genero)+campo('Raça/Cor',a.Raca)+campo('Estado civil',a.EstadoCivil)+campo('Estrangeiro',a.Estrangeiro?'Sim':'Não')+'</div>';
-    html+='<div class="ficha-secao"><div class="ficha-secao-titulo">Contato</div>'+campo('Telefone',fmtTel(a.Telefone))+campo('E-mail',email)+'</div>';
-    if (state.papel==='admin'||state.papel==='coordenacao'||state.papel==='secretaria') {
+    html+=campo('Nascimento',fmtData(a.Nascimento))+campo('Gênero',a.Genero)+campo('Raça/Cor',a.Raca)+campo('Estado civil',a.EstadoCivil)+campo('Estrangeiro',a.Estrangeiro?'Sim':'Não')+'</div>';
+    html+='<div class="ficha-secao"><div class="ficha-secao-titulo">Contato</div>'+campo('Telefone',fmtTel(a.Telefone))+campo('E-mail',a.email)+'</div>';
+    if (['admin','coordenacao','secretaria'].indexOf(state.papel) !== -1) {
       html+='<div class="ficha-secao"><div class="ficha-secao-titulo">Endereço</div>';
-      var end=[a.Endereco,a.Numero,a.Complemento].filter(Boolean).join(', ');
-      html+=campo('Logradouro',end)+campo('Bairro',a.Bairro)+campo('Município',a.Municipio)+campo('UF',a.UF)+campo('CEP',a.CEP)+'</div>';
+      html+=campo('Município',a.Municipio)+campo('UF',a.UF)+campo('Bairro',a.Bairro)+'</div>';
+      html+='<div class="ficha-secao ficha-secao-sensivel"><div class="ficha-secao-titulo">Dados protegidos (LGPD)</div>';
+      html+=campo('CPF/CIN',a.CPFouCIN||'[carregar via Edge Function]')+campo('CEP',a.CEP)+campo('Endereço',a.Endereco)+campo('Número',a.Numero)+campo('Complemento',a.Complemento)+'</div>';
     }
     if (a.PcDBoolean) {
       html+='<div class="ficha-secao"><div class="ficha-secao-titulo">Acessibilidade</div>'+campo('Deficiência',a.PcDTipo||'Não especificado');
@@ -1326,225 +965,446 @@ function postApi(acao, dados) {
     }
     if (a.MenorBoolean) {
       html+='<div class="ficha-secao"><div class="ficha-secao-titulo">Responsável 1</div>';
-      html+=campo('Nome',a.Responsavel1Nome)+campo('CPF',a.Responsavel1CPF)+campo('Parentesco',a.Responsavel1Parentesco)+
-            campo('Telefone',a.Responsavel1Telefone?fmtTel(a.Responsavel1Telefone):null)+
-            campo('E-mail',a['Responsavel1e-mail']);
+      html+=campo('Nome',a.Responsavel1Nome)+campo('Parentesco',a.Responsavel1Parentesco)+
+            campo('Telefone',fmtTel(a.Responsavel1Telefone))+campo('E-mail',a['Responsavel1e-mail']);
       html+='</div>';
       if (a.Responsavel2Nome) {
         html+='<div class="ficha-secao"><div class="ficha-secao-titulo">Responsável 2</div>';
         html+=campo('Nome',a.Responsavel2Nome)+campo('Parentesco',a.Responsavel2Parentesco)+
-              campo('Telefone',a.Responsavel2Telefone?fmtTel(a.Responsavel2Telefone):null);
+              campo('Telefone',fmtTel(a.Responsavel2Telefone));
         html+='</div>';
       }
     }
-    if (a.PublicoAluno) html+='<div class="ficha-secao"><div class="ficha-secao-titulo">Público-alvo</div>'+campo('Categoria',a.PublicoAluno)+'</div>';
-    html+='<div class="ficha-secao"><div class="ficha-secao-titulo">Situação</div>'+campo('Status',(a.SituacaoAluno!==false&&a.SituacaoAluno!=='false')?'Ativo':'Inativo')+campo('Cadastro',fmtData(a.InscricaoDataHora))+'</div>';
+    html+='<div class="ficha-secao"><div class="ficha-secao-titulo">Situação</div>'+
+      campo('Status',a.SituacaoAluno?'Ativo':'Inativo')+campo('Cadastro',fmtData(a.InscricaoDataHora))+'</div>';
     el('painel-corpo').innerHTML=html;
   }
 
   // =========================================================
-  // MODAL DE MOTIVO (inativar / ativar)
+  // MODAL EDITAR / NOVO
   // =========================================================
-  var _motivoAcao   = null; // 'inativar' | 'ativar'
-  var _motivoAluno  = null; // objeto aluno
-
-  function abrirModalMotivo(acao, aluno) {
-    _motivoAcao  = acao;
-    _motivoAluno = aluno;
-    var inativando = acao === 'inativar';
-    el('motivo-modal-titulo').textContent = inativando ? 'Inativar aluno' : 'Reativar aluno';
-    el('motivo-modal-descricao').textContent = inativando
-      ? 'Informe o motivo da inativação de ' + (aluno.NomeExibicao || aluno.NomeCompleto || aluno.AlunoID) + '. O cadastro será mantido.'
-      : 'Informe o motivo da reativação de ' + (aluno.NomeExibicao || aluno.NomeCompleto || aluno.AlunoID) + '.';
-    el('motivo-texto').value = '';
-    el('motivo-erro').classList.remove('show');
-    var btnConf = el('motivo-btn-confirmar');
-    btnConf.className = 'btn-motivo btn-motivo-primario' + (inativando ? '' : ' ativar');
-    el('motivo-btn-txt').textContent = inativando ? 'Inativar' : 'Reativar';
-    el('motivo-modal-overlay').style.display = 'flex';
-    setTimeout(function(){ el('motivo-texto').focus(); }, 100);
+  function abrirModalNovo() {
+    state.modoModal = 'novo';
+    state.alunoSelecionado = null;
+    document.querySelectorAll('#modal-aluno input, #modal-aluno select, #modal-aluno textarea').forEach(function(e){ e.value=''; if(e.type==='checkbox')e.checked=false; });
+    el('modal-aluno').style.display='flex';
+    el('modal-titulo').textContent='Novo aluno';
+    mostrarAba('identificacao');
   }
 
-  function fecharModalMotivo() {
-    el('motivo-modal-overlay').style.display = 'none';
-    _motivoAcao  = null;
-    _motivoAluno = null;
-  }
-
-  function confirmarMotivo() {
-    var motivo = el('motivo-texto').value.trim();
-    if (!motivo) {
-      el('motivo-erro').classList.add('show');
-      el('motivo-texto').focus();
-      return;
+  function abrirModalEditar(a) {
+    state.modoModal = 'editar';
+    el('modal-aluno').style.display='flex';
+    el('modal-titulo').textContent='Editar aluno';
+    mostrarAba('identificacao');
+    // Preencher campos com dados normalizados
+    function set(id, v) { if(el(id)) el(id).value = v||''; }
+    function setC(id, v) { if(el(id)) el(id).checked = !!v; }
+    set('f-nome', a.NomeCompleto);
+    setC('f-nome-social-bool', a.NomeSocialBoolean);
+    set('f-nome-social', a.NomeSocial);
+    if(el('campo-nome-social')) el('campo-nome-social').style.display = a.NomeSocialBoolean ? 'block':'none';
+    // Nascimento: YYYY-MM-DD → DD/MM/YYYY para o campo
+    if (a.Nascimento) {
+      var pts = a.Nascimento.substring(0,10).split('-');
+      set('f-nascimento', pts[2]+'/'+pts[1]+'/'+pts[0]);
     }
-    el('motivo-erro').classList.remove('show');
-    var btn = el('motivo-btn-confirmar');
-    btn.disabled = true; btn.classList.add('loading');
-
-    var acao  = _motivoAcao === 'inativar' ? 'alunos.inativar' : 'alunos.ativar';
-    var alunoId = _motivoAluno.AlunoID;
-
-    postApi(acao, { alunoId: alunoId, motivo: motivo })
-      .then(function(res) {
-        btn.disabled = false; btn.classList.remove('loading');
-        if (!res.sucesso) {
-          if (typeof toast === 'function') toast(res.mensagem || 'Erro.', 'error');
-          return;
-        }
-        var msg = _motivoAcao === 'inativar' ? 'Aluno inativado.' : 'Cadastro do aluno reativado.';
-        if (typeof toast === 'function') toast(msg, 'success');
-        fecharModalMotivo();
-        fecharPainel();
-        carregarAlunos();
-      })
-      .catch(function() {
-        btn.disabled = false; btn.classList.remove('loading');
-        if (typeof toast === 'function') toast('Erro de comunicação.', 'error');
-      });
+    set('f-nasc-uf', a.NascimentoUF); set('f-nasc-municipio', a.NascimentoMunicipio);
+    set('f-raca', a.Raca); set('f-estado-civil', a.EstadoCivil); set('f-genero', a.Genero);
+    set('f-estrangeiro', a.Estrangeiro ? 'true' : 'false');
+    if(el('campo-passaporte')) el('campo-passaporte').style.display = a.Estrangeiro ? 'block':'none';
+    set('f-telefone', fmtTel(a.Telefone)); set('f-email', a.email);
+    setC('f-pcd', a.PcDBoolean); set('f-pcd-tipo', a.PcDTipo); set('f-pcd-laudo', a.PcDLaudoURL);
+    if(el('campo-pcd-tipo')) el('campo-pcd-tipo').style.display = a.PcDBoolean ? 'block':'none';
+    if(el('campo-pcd-laudo')) el('campo-pcd-laudo').style.display = a.PcDBoolean ? 'block':'none';
+    setC('f-povo', a.PovoTradicionalBoolean); set('f-povo-tipo', a.PovoTradicional);
+    if(el('campo-povo-tipo')) el('campo-povo-tipo').style.display = a.PovoTradicionalBoolean ? 'block':'none';
+    setC('f-menor', a.MenorBoolean);
+    if(el('campos-responsaveis')) el('campos-responsaveis').style.display = a.MenorBoolean ? 'block':'none';
+    set('f-resp1-nome', a.Responsavel1Nome); set('f-resp1-cpf', a.Responsavel1CPF);
+    set('f-resp1-parentesco', a.Responsavel1Parentesco); set('f-resp1-tel', a.Responsavel1Telefone);
+    set('f-resp1-email', a['Responsavel1e-mail']);
+    set('f-resp2-nome', a.Responsavel2Nome); set('f-resp2-parentesco', a.Responsavel2Parentesco);
+    set('f-resp2-tel', a.Responsavel2Telefone);
+    set('f-cpf', a.CPFouCIN); set('f-cep', a.CEP); set('f-endereco', a.Endereco);
+    set('f-numero', a.Numero); set('f-complemento', a.Complemento);
+    set('f-bairro', a.Bairro); set('f-municipio', a.Municipio); set('f-uf', a.UF);
+    set('f-publico', a.PublicoAluno); set('f-comprovante', a.PublicoComprovanteURL);
   }
 
-  // =========================================================
-  // MODAL
-  // =========================================================
-  function abrirModalNovo() { state.modoModal='novo'; el('modal-titulo').textContent='Novo aluno'; limparModal(); mostrarAba('pessoal'); el('modal-overlay').style.display='flex'; }
-  function abrirModalEditar(aluno) { state.modoModal='editar'; el('modal-titulo').textContent='Editar aluno'; limparModal(); preencherModal(aluno); mostrarAba('pessoal'); el('modal-overlay').style.display='flex'; }
-  function fecharModal() { el('modal-overlay').style.display='none'; el('modal-alerta').classList.remove('show'); }
-
-  function limparModal() {
-    el('modal-aluno').querySelectorAll('input,select,textarea').forEach(function(inp){
-      if(inp.type==='checkbox')inp.checked=false; else inp.value='';
-    });
-    ['campo-nome-social','campo-passaporte','campos-responsaveis','campo-pcd-tipo','campo-pcd-laudo','campo-povo-tipo'].forEach(function(id){
-      if(el(id))el(id).style.display='none';
-    });
-    document.querySelectorAll('.form-erro-msg').forEach(function(e){e.classList.remove('show');});
-    el('modal-alerta').classList.remove('show');
+  function fecharModal() {
+    if(el('modal-aluno')) el('modal-aluno').style.display='none';
   }
 
-  function preencherModal(a) {
-    function set(id,v){if(el(id))el(id).value=v||'';}
-    function setC(id,v){if(el(id))el(id).checked=!!v;}
-    set('f-nome',a.NomeCompleto); setC('f-nome-social-bool',a.NomeSocialBoolean); set('f-nome-social',a.NomeSocial);
-    if(a.NomeSocialBoolean)el('campo-nome-social').style.display='block';
-    set('f-cpf',a.CPFouCIN);
-    if(a.Nascimento){var dt=fmtData(a.Nascimento);if(dt&&dt!=='—'){var p=dt.split('/');if(p.length===3)el('f-nascimento').value=p[2]+'-'+p[1]+'-'+p[0];}}
-    set('f-genero',a.Genero); set('f-raca',a.Raca); set('f-estado-civil',a.EstadoCivil);
-    set('f-nasc-uf',a.NascimentoUF); set('f-nasc-municipio',a.NascimentoMunicipio);
-    var estrang=a.Estrangeiro===true||a.Estrangeiro==='true';
-    set('f-estrangeiro',estrang?'true':'false'); set('f-passaporte',a.Passaporte);
-    if(estrang)el('campo-passaporte').style.display='block';
-    set('f-telefone',a.Telefone); set('f-email',a['e-mail']||a.Email); setC('f-cpf-resp',a.CPFRespBoolean);
-    set('f-cep',a.CEP); set('f-endereco',a.Endereco); set('f-numero',a.Numero);
-    set('f-complemento',a.Complemento); set('f-bairro',a.Bairro); set('f-municipio',a.Municipio); set('f-uf',a.UF);
-    setC('f-pcd',a.PcDBoolean); set('f-pcd-tipo',a.PcDTipo); set('f-pcd-laudo',a.PcDLaudoURL);
-    if(a.PcDBoolean){el('campo-pcd-tipo').style.display='block';el('campo-pcd-laudo').style.display='block';}
-    setC('f-povo',a.PovoTradicionalBoolean); set('f-povo-tipo',a.PovoTradicional);
-    if(a.PovoTradicionalBoolean)el('campo-povo-tipo').style.display='block';
-    setC('f-menor',a.MenorBoolean);
-    if(a.MenorBoolean)el('campos-responsaveis').style.display='block';
-    set('f-resp1-nome',a.Responsavel1Nome); set('f-resp1-cpf',a.Responsavel1CPF);
-    set('f-resp1-parentesco',a.Responsavel1Parentesco); set('f-resp1-tel',a.Responsavel1Telefone);
-    set('f-resp1-email',a['Responsavel1e-mail']); set('f-resp2-nome',a.Responsavel2Nome);
-    set('f-resp2-parentesco',a.Responsavel2Parentesco); set('f-resp2-tel',a.Responsavel2Telefone);
-    set('f-publico',a.PublicoAluno); set('f-comprovante',a.PublicoComprovanteURL);
-  }
-
-  function mostrarAba(id) {
-    document.querySelectorAll('.modal-aba').forEach(function(b){b.classList.toggle('ativa',b.dataset.aba===id);});
-    document.querySelectorAll('.modal-secao').forEach(function(s){s.classList.toggle('ativa',s.id==='secao-'+id);});
+  function mostrarAba(aba) {
+    document.querySelectorAll('.modal-aba').forEach(function(b){ b.classList.toggle('ativa', b.dataset.aba===aba); });
+    document.querySelectorAll('.modal-secao').forEach(function(s){ s.style.display = s.dataset.secao===aba ? 'block':'none'; });
   }
 
   function validarModal() {
-    var ok=true;
-    el('modal-aluno').querySelectorAll('.form-input').forEach(function(i){i.classList.remove('erro');});
-    el('modal-aluno').querySelectorAll('.form-erro-msg').forEach(function(e){e.classList.remove('show');});
-    function marcarErro(c,m){if(el(c))el(c).classList.add('erro');if(el(m))el(m).classList.add('show');ok=false;}
-    if(!val('f-nome'))marcarErro('f-nome','err-nome');
-    if(!val('f-nascimento'))marcarErro('f-nascimento','err-nasc');
-    if(!val('f-publico'))marcarErro('f-publico','err-publico');
-    if(val('f-cpf')&&val('f-cpf').replace(/\D/g,'').length!==11)marcarErro('f-cpf','err-cpf');
-    if(val('f-email')&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val('f-email')))marcarErro('f-email','err-email');
-    if(val('f-telefone')&&val('f-telefone').replace(/\D/g,'').length<10)marcarErro('f-telefone','err-tel');
-    if(!ok)mostrarAlertaModal('Verifique os campos obrigatórios antes de salvar.','erro');
-    return ok;
-  }
-
-  function coletarDados() {
-    var nascRaw=val('f-nascimento'), nascFmt='';
-    if(nascRaw){var p=nascRaw.split('-');if(p.length===3)nascFmt=p[2]+'/'+p[1]+'/'+p[0];}
-    return {
-      NomeCompleto:val('f-nome').toUpperCase(), NomeSocialBoolean:checked('f-nome-social-bool'),
-      NomeSocial:checked('f-nome-social-bool')?val('f-nome-social').toUpperCase():'',
-      CPFouCIN:val('f-cpf'), CPFRespBoolean:checked('f-cpf-resp'),
-      Nascimento:nascFmt, NascimentoUF:val('f-nasc-uf').toUpperCase(),
-      NascimentoMunicipio:val('f-nasc-municipio').toUpperCase(),
-      Raca:val('f-raca'), EstadoCivil:val('f-estado-civil'), Genero:val('f-genero'),
-      Estrangeiro:val('f-estrangeiro')==='true', Passaporte:val('f-passaporte'),
-      Telefone:val('f-telefone').replace(/\D/g,''),
-      'e-mail':val('f-email'), Email:val('f-email'),
-      PcDBoolean:checked('f-pcd'), PcDTipo:checked('f-pcd')?val('f-pcd-tipo'):'',
-      PcDLaudoURL:checked('f-pcd')?val('f-pcd-laudo'):'',
-      PovoTradicionalBoolean:checked('f-povo'), PovoTradicional:checked('f-povo')?val('f-povo-tipo'):'',
-      MenorBoolean:checked('f-menor'),
-      Responsavel1Nome:checked('f-menor')?val('f-resp1-nome').toUpperCase():'',
-      Responsavel1CPF:checked('f-menor')?val('f-resp1-cpf'):'',
-      Responsavel1Parentesco:checked('f-menor')?val('f-resp1-parentesco'):'',
-      Responsavel1Telefone:checked('f-menor')?val('f-resp1-tel').replace(/\D/g,''):'',
-      'Responsavel1e-mail':checked('f-menor')?val('f-resp1-email'):'',
-      Responsavel2Nome:checked('f-menor')?val('f-resp2-nome').toUpperCase():'',
-      Responsavel2Parentesco:checked('f-menor')?val('f-resp2-parentesco'):'',
-      Responsavel2Telefone:checked('f-menor')?val('f-resp2-tel').replace(/\D/g,''):'',
-      CEP:val('f-cep').replace(/\D/g,''), Endereco:val('f-endereco').toUpperCase(),
-      Numero:val('f-numero'), Complemento:val('f-complemento'),
-      Bairro:val('f-bairro').toUpperCase(), Municipio:val('f-municipio').toUpperCase(),
-      UF:val('f-uf').toUpperCase(), PublicoAluno:val('f-publico'),
-      PublicoComprovanteURL:val('f-comprovante'),
-    };
+    var nome = val('f-nome');
+    if (!nome) { mostrarAlertaModal('Nome completo é obrigatório.','erro'); return false; }
+    return true;
   }
 
   function salvarModal() {
-    if(!validarModal())return;
+    if(!validarModal()) return;
     var btn=el('btn-salvar-modal'); btn.disabled=true; btn.classList.add('loading');
-    var dados=coletarDados();
-    var acao=state.modoModal==='novo'?'alunos.criar':'alunos.atualizar';
-    if(state.modoModal==='novo'){
-      // Obtém semestreId via postApi (sem google.script.run no GitHub Pages)
-      postApi('sistema.semestreAtual',{}).then(function(res){
-        var semId = (res.sucesso&&res.dados) ? (res.dados.SemestreID||'') : '';
-        dados.semestreId = semId;
-        _executarSalvar(acao,dados,btn);
-      }).catch(function(){dados.semestreId='';_executarSalvar(acao,dados,btn);});
+    var dados = coletarDados();
+    if (state.modoModal === 'editar') {
+      dados.id = state.alunoSelecionado ? state.alunoSelecionado.id : '';
+      postApi('alunos.atualizar', dados).then(function(res) {
+        btn.disabled=false; btn.classList.remove('loading');
+        if(!res.sucesso){ mostrarAlertaModal(res.mensagem||'Erro ao salvar.','erro'); return; }
+        fecharModal(); fecharPainel();
+        if(typeof toast==='function') toast('Aluno atualizado!','success');
+        carregarAlunos();
+      }).catch(function(){ btn.disabled=false; btn.classList.remove('loading'); mostrarAlertaModal('Erro de comunicação.','erro'); });
     } else {
-      dados.alunoId=state.alunoSelecionado?state.alunoSelecionado.AlunoID:'';
-      _executarSalvar(acao,dados,btn);
+      postApi('alunos.criar', dados).then(function(res) {
+        btn.disabled=false; btn.classList.remove('loading');
+        if(!res.sucesso){ mostrarAlertaModal(res.mensagem||'Erro ao salvar.','erro'); return; }
+        fecharModal();
+        if(typeof toast==='function') toast('Aluno cadastrado!','success');
+        carregarAlunos();
+      }).catch(function(){ btn.disabled=false; btn.classList.remove('loading'); mostrarAlertaModal('Erro de comunicação.','erro'); });
     }
-  }
-
-  function _executarSalvar(acao,dados,btn) {
-    postApi(acao,dados).then(function(res){
-      btn.disabled=false; btn.classList.remove('loading');
-      if(!res.sucesso){mostrarAlertaModal(res.mensagem||'Erro ao salvar. Tente novamente.','erro');return;}
-      fecharModal(); fecharPainel();
-      if(typeof toast==='function')toast(state.modoModal==='novo'?'Aluno cadastrado com sucesso!':'Aluno atualizado!','success');
-      state.paginaAtual=1; carregarAlunos();
-    }).catch(function(){
-      btn.disabled=false; btn.classList.remove('loading');
-      mostrarAlertaModal('Erro de comunicação. Tente novamente.','erro');
-    });
   }
 
   function mostrarAlertaModal(msg,tipo) {
     var a=el('modal-alerta'),m=el('modal-alerta-msg'); if(!a||!m)return;
     a.className='modal-alerta show '+(tipo||'erro'); m.textContent=msg;
-    var ic=a.querySelector('.material-icons-round');
-    if(ic)ic.textContent=tipo==='sucesso'?'check_circle':'error_outline';
   }
 
   // =========================================================
-  // EVENTOS
+  // MODAL MOTIVO (inativar / ativar)
   // =========================================================
+  var _motivoAluno = null;
+  var _motivoAcao  = null;
 
+  function abrirModalMotivo(acao, aluno) {
+    _motivoAluno = aluno;
+    _motivoAcao  = acao;
+    var label = acao === 'inativar'
+      ? 'Informe o motivo da inativação de ' + (aluno.NomeExibicao||aluno.NomeCompleto||aluno.AlunoID) + '.'
+      : 'Informe o motivo da reativação de '  + (aluno.NomeExibicao||aluno.NomeCompleto||aluno.AlunoID) + '.';
+    if(el('motivo-label'))  el('motivo-label').textContent  = label;
+    if(el('motivo-titulo')) el('motivo-titulo').textContent = acao === 'inativar' ? 'Inativar aluno' : 'Ativar aluno';
+    if(el('motivo-texto'))  el('motivo-texto').value = '';
+    if(el('motivo-modal-overlay')) el('motivo-modal-overlay').style.display = 'flex';
+  }
+
+  function fecharModalMotivo() {
+    if(el('motivo-modal-overlay')) el('motivo-modal-overlay').style.display = 'none';
+    _motivoAluno = null; _motivoAcao = null;
+  }
+
+  function confirmarMotivo() {
+    if (!_motivoAluno || !_motivoAcao) return;
+    var motivo = el('motivo-texto') ? el('motivo-texto').value.trim() : '';
+    if (!motivo) { if(typeof toast==='function') toast('Informe o motivo.','error'); return; }
+    var acao   = _motivoAcao === 'inativar' ? 'alunos.inativar' : 'alunos.ativar';
+    postApi(acao, { id: _motivoAluno.id, motivo: motivo }).then(function(res) {
+      fecharModalMotivo();
+      if (!res.sucesso) { if(typeof toast==='function') toast(res.mensagem||'Erro.','error'); return; }
+      if(typeof toast==='function') toast(_motivoAcao==='inativar'?'Aluno inativado.':'Aluno reativado.','success');
+      fecharPainel();
+      carregarAlunos();
+    }).catch(function(){ if(typeof toast==='function') toast('Erro de comunicação.','error'); });
+  }
+
+  // =========================================================
+  // OCORRÊNCIAS
+  // =========================================================
+  function ocoBadgeTipo(tipo) {
+    var mapaClass = { 'Ausencia avisada':'ausencia','Contato com responsavel':'contato','Observacao pedagogica':'pedagogica','Ocorrencia disciplinar':'disciplinar','Comunicado interno':'comunicado','Outro':'outro' };
+    return '<span class="oco-badge-tipo '+(mapaClass[tipo]||'outro')+'">'+tipo+'</span>';
+  }
+  function ocoBadgeStatus(status) {
+    var ic = status === 'RESOLVIDA' ? 'check_circle' : 'schedule';
+    return '<span class="oco-badge-status '+status+'"><span class="material-icons-round">'+ic+'</span>'+status+'</span>';
+  }
+  function ocoFmtData(d) {
+    if (!d) return '---';
+    var dt = (d instanceof Date) ? d : new Date(d);
+    if (isNaN(dt.getTime())) return String(d).substring(0,10);
+    var pad=function(n){return String(n).padStart(2,'0');};
+    return pad(dt.getDate())+'/'+pad(dt.getMonth()+1)+'/'+dt.getFullYear()+' '+pad(dt.getHours())+':'+pad(dt.getMinutes());
+  }
+
+  function carregarOcorrencias() {
+    if (!state.ocoAlunoId) return;
+    var cont = el('painel-ocorrencias');
+    cont.innerHTML = '<div class="oco-spinner"></div>';
+    postApi('ocorrencias.listar', {
+      aluno_id: state.ocoAlunoId,   // UUID real
+      status:   state.ocoFiltroStatus || undefined,
+    }).then(function(res) {
+      // Normalizar campos do banco para o formato usado no render
+      state.ocoLista = (res.sucesso && res.dados) ? res.dados.map(function(o) {
+        return {
+          OcorrenciaID: o.id,
+          Titulo:       o.titulo,
+          Tipo:         o.tipo,
+          Status:       o.status,
+          DataCriacao:  o.criado_em,
+          Descricao:    o.descricao,
+          CriadoPor:    o.criado_por_id,
+          SemestreRef:  o.semestre_ref_id || '',
+          TurmaID:      o.turma_id || '',
+        };
+      }) : [];
+      renderOcoLista();
+    }).catch(function() { state.ocoLista = []; renderOcoLista(); });
+  }
+
+  function renderOcoLista() {
+    var cont = el('painel-ocorrencias');
+    var html = '<button class="btn-nova-oco" id="btn-nova-oco"><span class="material-icons-round">add</span>Nova ocorrencia</button>';
+    html += '<div class="oco-filtros">'+
+      '<select class="oco-filtro-sel" id="oco-filtro-tipo">'+
+        '<option value="">Todos os tipos</option>'+
+        '<option value="Ausencia avisada">Ausencia avisada</option>'+
+        '<option value="Contato com responsavel">Contato com responsavel</option>'+
+        '<option value="Observacao pedagogica">Obs. pedagogica</option>'+
+        '<option value="Ocorrencia disciplinar">Ocorrencia disciplinar</option>'+
+        '<option value="Comunicado interno">Comunicado interno</option>'+
+        '<option value="Outro">Outro</option>'+
+      '</select>'+
+      '<select class="oco-filtro-sel" id="oco-filtro-status">'+
+        '<option value="">Todos os status</option>'+
+        '<option value="PENDENTE">Pendente</option>'+
+        '<option value="RESOLVIDA">Resolvida</option>'+
+      '</select></div>';
+    html += '<div id="oco-lista-corpo">';
+    if (state.ocoLista.length === 0) {
+      html += '<div class="oco-vazio"><span class="material-icons-round">forum</span>Nenhuma ocorrencia registrada.</div>';
+    } else {
+      state.ocoLista.forEach(function(o) {
+        html += '<div class="oco-card" data-oco-id="'+o.OcorrenciaID+'">'+
+          '<div class="oco-card-header"><span class="oco-card-titulo">'+o.Titulo+'</span>'+ocoBadgeTipo(o.Tipo)+'</div>'+
+          '<div class="oco-card-meta">'+ocoBadgeStatus(o.Status)+'<span>'+ocoFmtData(o.DataCriacao)+'</span></div>'+
+        '</div>';
+      });
+    }
+    html += '</div><div class="oco-detalhe" id="oco-detalhe"></div>';
+    cont.innerHTML = html;
+
+    if(el('oco-filtro-tipo'))   el('oco-filtro-tipo').value   = state.ocoFiltroTipo;
+    if(el('oco-filtro-status')) el('oco-filtro-status').value = state.ocoFiltroStatus;
+    el('oco-filtro-tipo')   && el('oco-filtro-tipo').addEventListener('change',   function(){ state.ocoFiltroTipo   = this.value; carregarOcorrencias(); });
+    el('oco-filtro-status') && el('oco-filtro-status').addEventListener('change', function(){ state.ocoFiltroStatus = this.value; carregarOcorrencias(); });
+    el('btn-nova-oco')      && el('btn-nova-oco').addEventListener('click', abrirModalNovaOco);
+    cont.querySelectorAll('.oco-card').forEach(function(card) {
+      card.addEventListener('click', function() {
+        var oco = state.ocoLista.find(function(o){ return o.OcorrenciaID === this.dataset.ocoId; }.bind(this));
+        if (oco) abrirDetalheOco(oco);
+      });
+    });
+  }
+
+  function abrirDetalheOco(oco) {
+    state.ocoSelecionada = oco;
+    el('oco-lista-corpo').style.display  = 'none';
+    el('btn-nova-oco').style.display     = 'none';
+    var filtrosEl = el('painel-ocorrencias').querySelector('.oco-filtros');
+    if(filtrosEl) filtrosEl.style.display = 'none';
+    var detalhe = el('oco-detalhe'); detalhe.classList.add('show');
+    var ehCriador = oco.CriadoPor === state._usuarioId;
+    var temPrivil = state.papel === 'admin' || state.papel === 'coordenacao';
+    var podeAlt   = ehCriador || temPrivil;
+    var resolvida = oco.Status === 'RESOLVIDA';
+    var acoesHtml = '';
+    if (podeAlt) {
+      acoesHtml += resolvida
+        ? '<button class="btn-oco-acao reabrir" id="btn-oco-reabrir"><span class="material-icons-round">restart_alt</span>Reabrir</button>'
+        : '<button class="btn-oco-acao resolver" id="btn-oco-resolver"><span class="material-icons-round">check_circle</span>Marcar resolvida</button>';
+      acoesHtml += '<button class="btn-oco-acao excluir" id="btn-oco-excluir"><span class="material-icons-round">delete</span>Excluir</button>';
+    }
+    detalhe.innerHTML =
+      '<div class="oco-detalhe-header"><button class="btn-oco-voltar" id="btn-oco-voltar"><span class="material-icons-round">arrow_back</span>Voltar</button><span class="oco-detalhe-titulo">'+oco.Titulo+'</span></div>'+
+      '<div class="oco-detalhe-meta">'+ocoBadgeTipo(oco.Tipo)+ocoBadgeStatus(oco.Status)+'<span>'+ocoFmtData(oco.DataCriacao)+'</span></div>'+
+      '<div class="oco-detalhe-desc">'+oco.Descricao+'</div>'+
+      (acoesHtml?'<div class="oco-acoes-detalhe">'+acoesHtml+'</div>':'')+
+      '<div class="oco-thread-titulo">Respostas</div>'+
+      '<div id="oco-thread-corpo"><div class="oco-spinner"></div></div>'+
+      '<div class="oco-reply-wrap"><textarea class="oco-reply-input" id="oco-reply-input" placeholder="Escreva uma resposta..." rows="2"></textarea>'+
+      '<button class="btn-oco-reply" id="btn-oco-reply" title="Enviar"><span class="material-icons-round">send</span></button></div>';
+
+    el('btn-oco-voltar').addEventListener('click', voltarListaOco);
+    el('btn-oco-resolver') && el('btn-oco-resolver').addEventListener('click', function(){ alterarStatusOco(oco.OcorrenciaID,'RESOLVIDA'); });
+    el('btn-oco-reabrir')  && el('btn-oco-reabrir').addEventListener('click',  function(){ alterarStatusOco(oco.OcorrenciaID,'PENDENTE'); });
+    el('btn-oco-excluir')  && el('btn-oco-excluir').addEventListener('click',  function(){ excluirOco(oco.OcorrenciaID); });
+    el('btn-oco-reply').addEventListener('click', enviarResposta);
+    el('oco-reply-input').addEventListener('keydown', function(e){ if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)) enviarResposta(); });
+    carregarRespostas(oco.OcorrenciaID);
+  }
+
+  function voltarListaOco() {
+    state.ocoSelecionada = null;
+    el('oco-detalhe').classList.remove('show'); el('oco-detalhe').innerHTML='';
+    el('oco-lista-corpo').style.display='block'; el('btn-nova-oco').style.display='flex';
+    var filtrosEl = el('painel-ocorrencias').querySelector('.oco-filtros');
+    if(filtrosEl) filtrosEl.style.display='flex';
+  }
+
+  function carregarRespostas(ocoId) {
+    postApi('ocorrencias.listarRespostas', { ocorrencia_id: ocoId })
+      .then(function(res) {
+        var raw = (res.sucesso && res.dados) ? res.dados : [];
+        var respostas = raw.map(function(r) {
+          return {
+            Texto:       r.texto,
+            AutorNome:   r.usuarios ? r.usuarios.nome : '—',
+            DataCriacao: r.criado_em,
+            EhMinha:     r.autor_id === state._usuarioId,
+          };
+        });
+        renderThread(respostas);
+      })
+      .catch(function(){ renderThread([]); });
+  }
+
+  function renderThread(respostas) {
+    var corpo = el('oco-thread-corpo'); if(!corpo) return;
+    if (!respostas.length) { corpo.innerHTML='<p style="font-size:12.5px;color:var(--c-text-3,#9898B0);text-align:center;padding:12px 0;">Nenhuma resposta ainda.</p>'; return; }
+    corpo.innerHTML = respostas.map(function(r) {
+      return '<div class="oco-msg'+(r.EhMinha?' minha':'')+'">'+
+        '<div class="oco-msg-bubble">'+r.Texto+'</div>'+
+        '<div class="oco-msg-autor">'+(r.EhMinha?'Você':r.AutorNome)+' - '+ocoFmtData(r.DataCriacao)+'</div>'+
+      '</div>';
+    }).join('');
+    corpo.scrollTop = corpo.scrollHeight;
+  }
+
+  function enviarResposta() {
+    var input = el('oco-reply-input');
+    var texto = (input?input.value:'').trim();
+    if(!texto||!state.ocoSelecionada) return;
+    var btn=el('btn-oco-reply'); if(btn) btn.disabled=true;
+    postApi('ocorrencias.responder', { ocorrencia_id: state.ocoSelecionada.OcorrenciaID, texto: texto })
+      .then(function(res){
+        if(btn) btn.disabled=false;
+        if(!res.sucesso){ if(typeof toast==='function') toast(res.mensagem||'Erro.','error'); return; }
+        if(input) input.value='';
+        carregarRespostas(state.ocoSelecionada.OcorrenciaID);
+      }).catch(function(){ if(btn) btn.disabled=false; if(typeof toast==='function') toast('Erro de comunicação.','error'); });
+  }
+
+  function alterarStatusOco(ocoId, novoStatus) {
+    postApi('ocorrencias.resolverStatus', { id: ocoId, status: novoStatus })
+      .then(function(res){
+        if(!res.sucesso){ if(typeof toast==='function') toast(res.mensagem||'Erro.','error'); return; }
+        if(typeof toast==='function') toast('Status atualizado.','success');
+        var oco = state.ocoLista.find(function(o){ return o.OcorrenciaID===ocoId; });
+        if(oco){ oco.Status=novoStatus; abrirDetalheOco(oco); }
+      }).catch(function(){ if(typeof toast==='function') toast('Erro de comunicação.','error'); });
+  }
+
+  function excluirOco(ocoId) {
+    if(!confirm('Excluir esta ocorrência e todas as suas respostas?')) return;
+    postApi('ocorrencias.excluir', { id: ocoId })
+      .then(function(res){
+        if(!res.sucesso){ if(typeof toast==='function') toast(res.mensagem||'Erro.','error'); return; }
+        if(typeof toast==='function') toast('Ocorrência excluída.','success');
+        voltarListaOco(); carregarOcorrencias();
+      }).catch(function(){ if(typeof toast==='function') toast('Erro de comunicação.','error'); });
+  }
+
+  // =========================================================
+  // MODAL NOVA OCORRÊNCIA
+  // =========================================================
+  function abrirModalNovaOco() {
+    if(!state.ocoAlunoId) return;
+    ['oco-tipo','oco-titulo','oco-descricao'].forEach(function(id){ var e=el(id); if(e) e.value=''; });
+    ['oco-dest-coord','oco-dest-sec'].forEach(function(id){ var e=el(id); if(e) e.checked=false; });
+    carregarTurmasOco();
+    var sel=el('oco-dest-prof-sel');
+    if(sel){
+      sel.innerHTML='<option value="" disabled>Carregando...</option>';
+      postApi('ocorrencias.professoresDasTurmas', { aluno_id: state.ocoAlunoId })
+        .then(function(res){
+          sel.innerHTML='';
+          var profs = (res.sucesso&&res.dados) ? res.dados : [];
+          if(profs.length){
+            profs.forEach(function(p){
+              var opt=document.createElement('option');
+              opt.value=p.UsuarioID||p.id;
+              opt.textContent=p.Nome||(p.usuarios&&p.usuarios.nome)||'—';
+              sel.appendChild(opt);
+            });
+          } else {
+            sel.innerHTML='<option value="" disabled>Nenhum professor encontrado</option>';
+          }
+        }).catch(function(){ sel.innerHTML='<option value="" disabled>Erro ao carregar</option>'; });
+    }
+    if(el('oco-modal-alerta')) el('oco-modal-alerta').classList.remove('show');
+    if(el('oco-modal-overlay')) el('oco-modal-overlay').style.display='flex';
+  }
+
+  function fecharModalNovaOco() { if(el('oco-modal-overlay')) el('oco-modal-overlay').style.display='none'; }
+
+  function carregarTurmasOco() {
+    var sel=el('oco-turma'), hint=el('oco-turma-hint'); if(!sel) return;
+    sel.innerHTML='<option value="">Carregando turmas...</option>';
+    postApi('ocorrencias.turmasAtivasDoAluno', { aluno_id: state.ocoAlunoId })
+      .then(function(res){
+        var turmas=(res.sucesso&&res.dados)?res.dados:[];
+        sel.innerHTML='';
+        if(!turmas.length){
+          sel.innerHTML='<option value="">Nenhuma turma ativa encontrada</option>';
+          if(hint) hint.textContent='A ocorrência será registrada sem turma associada.';
+          return;
+        }
+        var opt0=document.createElement('option'); opt0.value=''; opt0.textContent='Não associar a uma turma específica';
+        sel.appendChild(opt0);
+        turmas.forEach(function(t){
+          var opt=document.createElement('option');
+          opt.value=t.id||t.TurmaID;
+          opt.textContent=t.external_id||(t.cursos&&t.cursos.sigla)||t.TurmaID||'—';
+          if(t.estagio) opt.textContent+=' — '+t.estagio;
+          sel.appendChild(opt);
+        });
+        if(turmas.length===1){ sel.value=turmas[0].id||turmas[0].TurmaID; if(hint) hint.textContent='Turma preenchida automaticamente.'; }
+        else if(hint) hint.textContent='Selecione a turma correta.';
+      }).catch(function(){ sel.innerHTML='<option value="">Erro ao carregar turmas</option>'; });
+  }
+
+  function salvarNovaOco() {
+    var tipo=el('oco-tipo')?el('oco-tipo').value:'';
+    var titulo=el('oco-titulo')?el('oco-titulo').value.trim():'';
+    var descricao=el('oco-descricao')?el('oco-descricao').value.trim():'';
+    var turmaId=el('oco-turma')?el('oco-turma').value:'';
+    var ok=true;
+    if(!tipo)     { el('err-oco-tipo').classList.add('show');  ok=false; } else { el('err-oco-tipo').classList.remove('show'); }
+    if(!titulo)   { el('err-oco-titulo').classList.add('show');ok=false; } else { el('err-oco-titulo').classList.remove('show'); }
+    if(!descricao){ el('err-oco-desc').classList.add('show');  ok=false; } else { el('err-oco-desc').classList.remove('show'); }
+    if(!ok) return;
+    var dests=[];
+    if(el('oco-dest-coord')&&el('oco-dest-coord').checked) dests.push('coordenacao-role');
+    if(el('oco-dest-sec')  &&el('oco-dest-sec').checked)   dests.push('secretaria-role');
+    var profSel=el('oco-dest-prof-sel');
+    if(profSel) Array.from(profSel.options).forEach(function(opt){ if(opt.selected&&opt.value) dests.push(opt.value); });
+    var btn=el('oco-btn-salvar');
+    if(btn){ btn.disabled=true; btn.classList.add('loading'); }
+    postApi('ocorrencias.criar', {
+      aluno_id:      state.ocoAlunoId,
+      turma_id:      turmaId||null,
+      tipo:          tipo,
+      titulo:        titulo,
+      descricao:     descricao,
+      destinatarios: dests.filter(function(d){ return !d.includes('-role'); }),
+    }).then(function(res){
+      if(btn){ btn.disabled=false; btn.classList.remove('loading'); }
+      if(!res.sucesso){ var a=el('oco-modal-alerta'),m=el('oco-modal-alerta-msg'); if(a)a.className='oco-alerta show erro'; if(m)m.textContent=res.mensagem||'Erro.'; return; }
+      fecharModalNovaOco();
+      if(typeof toast==='function') toast('Ocorrência registrada!','success');
+      carregarOcorrencias();
+    }).catch(function(){
+      if(btn){ btn.disabled=false; btn.classList.remove('loading'); }
+      var a=el('oco-modal-alerta'),m=el('oco-modal-alerta-msg'); if(a)a.className='oco-alerta show erro'; if(m)m.textContent='Erro de comunicação.';
+    });
+  }
 
   // =========================================================
   // EVENTOS
@@ -1552,66 +1412,57 @@ function postApi(acao, dados) {
   function registrarEventos() {
     el('alunos-busca')&&el('alunos-busca').addEventListener('input',function(){
       clearTimeout(buscarTimer);
-      buscarTimer=setTimeout(function(){state.busca=el('alunos-busca').value.trim();state.paginaAtual=1;carregarAlunos();},380);
+      buscarTimer=setTimeout(function(){ state.busca=el('alunos-busca').value.trim(); state.paginaAtual=1; carregarAlunos(); },380);
     });
     el('btn-filtro-inativos')&&el('btn-filtro-inativos').addEventListener('click',function(){
       state.exibirInativos=!state.exibirInativos;
       this.textContent=state.exibirInativos?'Ocultar inativos':'Exibir inativos';
       carregarAlunos();
     });
-    el('btn-novo-aluno')&&el('btn-novo-aluno').addEventListener('click',abrirModalNovo);
-    el('btn-fechar-painel')&&el('btn-fechar-painel').addEventListener('click',fecharPainel);
-    el('btn-fechar-modal')&&el('btn-fechar-modal').addEventListener('click',fecharModal);
-    el('btn-cancelar-modal')&&el('btn-cancelar-modal').addEventListener('click',fecharModal);
-    el('modal-overlay')&&el('modal-overlay').addEventListener('click',function(e){if(e.target===this)fecharModal();});
-    document.querySelectorAll('.modal-aba').forEach(function(btn){btn.addEventListener('click',function(){mostrarAba(this.dataset.aba);});});
-    el('btn-salvar-modal')&&el('btn-salvar-modal').addEventListener('click',salvarModal);
-    el('f-nome-social-bool')&&el('f-nome-social-bool').addEventListener('change',function(){el('campo-nome-social').style.display=this.checked?'block':'none';});
-    el('f-estrangeiro')&&el('f-estrangeiro').addEventListener('change',function(){el('campo-passaporte').style.display=this.value==='true'?'block':'none';});
-    el('f-pcd')&&el('f-pcd').addEventListener('change',function(){var s=this.checked?'block':'none';el('campo-pcd-tipo').style.display=s;el('campo-pcd-laudo').style.display=s;});
-    el('f-povo')&&el('f-povo').addEventListener('change',function(){el('campo-povo-tipo').style.display=this.checked?'block':'none';});
-    el('f-menor')&&el('f-menor').addEventListener('change',function(){el('campos-responsaveis').style.display=this.checked?'block':'none';});
-    function mascaraCPF(input){input.addEventListener('input',function(){var v=this.value.replace(/\D/g,'').substring(0,11);if(v.length>9)v=v.replace(/(\d{3})(\d{3})(\d{3})(\d{0,2})/,'$1.$2.$3-$4');else if(v.length>6)v=v.replace(/(\d{3})(\d{3})(\d{0,3})/,'$1.$2.$3');else if(v.length>3)v=v.replace(/(\d{3})(\d{0,3})/,'$1.$2');this.value=v;});}
-    el('f-cpf')&&mascaraCPF(el('f-cpf'));
-    el('f-resp1-cpf')&&mascaraCPF(el('f-resp1-cpf'));
-    // Abas do painel lateral
-    el('painel-aba-ficha')&&el('painel-aba-ficha').addEventListener('click',function(){ mostrarAbaPainel('ficha'); });
-    el('painel-aba-ocorrencias')&&el('painel-aba-ocorrencias').addEventListener('click',function(){ mostrarAbaPainel('ocorrencias'); });
-    // Modal de nova ocorrencia
-    el('oco-btn-fechar-modal')&&el('oco-btn-fechar-modal').addEventListener('click',fecharModalNovaOco);
-    el('oco-btn-cancelar')&&el('oco-btn-cancelar').addEventListener('click',fecharModalNovaOco);
-    el('oco-btn-salvar')&&el('oco-btn-salvar').addEventListener('click',salvarNovaOco);
-    el('oco-modal-overlay')&&el('oco-modal-overlay').addEventListener('click',function(e){if(e.target===this)fecharModalNovaOco();});
-    // Modal de motivo (inativar / ativar)
-    el('motivo-btn-fechar')    && el('motivo-btn-fechar').addEventListener('click', fecharModalMotivo);
-    el('motivo-btn-cancelar')  && el('motivo-btn-cancelar').addEventListener('click', fecharModalMotivo);
-    el('motivo-btn-confirmar') && el('motivo-btn-confirmar').addEventListener('click', confirmarMotivo);
-    el('motivo-modal-overlay') && el('motivo-modal-overlay').addEventListener('click', function(e) {
-      if (e.target === this) fecharModalMotivo();
-    });
-    el('motivo-texto') && el('motivo-texto').addEventListener('keydown', function(e) {
-      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) confirmarMotivo();
-    });
+    el('btn-novo-aluno')      && el('btn-novo-aluno').addEventListener('click', abrirModalNovo);
+    el('btn-fechar-painel')   && el('btn-fechar-painel').addEventListener('click', fecharPainel);
+    el('btn-fechar-modal')    && el('btn-fechar-modal').addEventListener('click', fecharModal);
+    el('btn-cancelar-modal')  && el('btn-cancelar-modal').addEventListener('click', fecharModal);
+    el('modal-overlay')       && el('modal-overlay').addEventListener('click',function(e){ if(e.target===this) fecharModal(); });
+    document.querySelectorAll('.modal-aba').forEach(function(btn){ btn.addEventListener('click',function(){ mostrarAba(this.dataset.aba); }); });
+    el('btn-salvar-modal')    && el('btn-salvar-modal').addEventListener('click', salvarModal);
+    el('f-nome-social-bool')  && el('f-nome-social-bool').addEventListener('change',function(){ el('campo-nome-social').style.display=this.checked?'block':'none'; });
+    el('f-estrangeiro')       && el('f-estrangeiro').addEventListener('change',function(){ el('campo-passaporte').style.display=this.value==='true'?'block':'none'; });
+    el('f-pcd')               && el('f-pcd').addEventListener('change',function(){ var s=this.checked?'block':'none'; el('campo-pcd-tipo').style.display=s; el('campo-pcd-laudo').style.display=s; });
+    el('f-povo')              && el('f-povo').addEventListener('change',function(){ el('campo-povo-tipo').style.display=this.checked?'block':'none'; });
+    el('f-menor')             && el('f-menor').addEventListener('change',function(){ el('campos-responsaveis').style.display=this.checked?'block':'none'; });
+    function mascaraCPF(input){ input.addEventListener('input',function(){ var v=this.value.replace(/\D/g,'').substring(0,11); if(v.length>9)v=v.replace(/(\d{3})(\d{3})(\d{3})(\d{0,2})/,'$1.$2.$3-$4'); else if(v.length>6)v=v.replace(/(\d{3})(\d{3})(\d{0,3})/,'$1.$2.$3'); else if(v.length>3)v=v.replace(/(\d{3})(\d{0,3})/,'$1.$2'); this.value=v; }); }
+    el('f-cpf')      && mascaraCPF(el('f-cpf'));
+    el('f-resp1-cpf')&& mascaraCPF(el('f-resp1-cpf'));
+    el('painel-aba-ficha')       && el('painel-aba-ficha').addEventListener('click',function(){ mostrarAbaPainel('ficha'); });
+    el('painel-aba-ocorrencias') && el('painel-aba-ocorrencias').addEventListener('click',function(){ mostrarAbaPainel('ocorrencias'); });
+    el('oco-btn-fechar-modal')   && el('oco-btn-fechar-modal').addEventListener('click', fecharModalNovaOco);
+    el('oco-btn-cancelar')       && el('oco-btn-cancelar').addEventListener('click', fecharModalNovaOco);
+    el('oco-btn-salvar')         && el('oco-btn-salvar').addEventListener('click', salvarNovaOco);
+    el('oco-modal-overlay')      && el('oco-modal-overlay').addEventListener('click',function(e){ if(e.target===this) fecharModalNovaOco(); });
+    el('motivo-btn-fechar')      && el('motivo-btn-fechar').addEventListener('click', fecharModalMotivo);
+    el('motivo-btn-cancelar')    && el('motivo-btn-cancelar').addEventListener('click', fecharModalMotivo);
+    el('motivo-btn-confirmar')   && el('motivo-btn-confirmar').addEventListener('click', confirmarMotivo);
+    el('motivo-modal-overlay')   && el('motivo-modal-overlay').addEventListener('click',function(e){ if(e.target===this) fecharModalMotivo(); });
+    el('motivo-texto')           && el('motivo-texto').addEventListener('keydown',function(e){ if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)) confirmarMotivo(); });
   }
 
+  // =========================================================
+  // INIT
+  // =========================================================
   function init() {
-    var _sessao = (typeof App !== 'undefined' && App.usuario)
-      ? { usuario: App.usuario } : null;
-    (function(sessao) {
-        if (sessao && sessao.usuario) {
-          state.papel         = sessao.usuario.Papel     || '';
-          state._usuarioId    = sessao.usuario.UsuarioID || '';
-          state.podeEditar    = ['admin','coordenacao','secretaria'].indexOf(state.papel) !== -1;
-          state.podeCadastrar = ['admin','coordenacao','secretaria'].indexOf(state.papel) !== -1;
-          state.podeLer       = state.podeEditar || state.papel === 'professor';
-          if (state.podeCadastrar) el('btn-novo-aluno').style.display = 'inline-flex';
-        }
-        registrarEventos();
-        carregarAlunos();
-    })(_sessao);
-    if (!_sessao) { registrarEventos(); carregarAlunos(); }
+    var u = (typeof App !== 'undefined' && App.usuario) ? App.usuario : null;
+    if (u) {
+      state.papel      = u.papel || u.Papel || '';
+      state._usuarioId = u.id    || u.UsuarioID || '';
+      state.podeEditar    = ['admin','coordenacao','secretaria'].indexOf(state.papel) !== -1;
+      state.podeCadastrar = state.podeEditar;
+      if (state.podeCadastrar && el('btn-novo-aluno')) el('btn-novo-aluno').style.display='inline-flex';
+    }
+    registrarEventos();
+    carregarAlunos();
   }
 
-  if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',init);}else{init();}
+  if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded',init); } else { init(); }
 }());
 </script>
