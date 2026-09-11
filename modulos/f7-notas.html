@@ -1,0 +1,760 @@
+<!--
+  F7_Notas.html
+  Lançamento de notas: seleciona turma → tabela com todos os alunos,
+  campos por componente/subcomponente, média automática, situação e comentários.
+-->
+<style>
+  /* =========================================================
+     SELEÇÃO DE TURMA
+  ========================================================= */
+  .n7-turma-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px;margin-bottom:28px;}
+  .n7-turma-card{background:#fff;border:1.5px solid var(--c-border,#E8E7E2);border-radius:10px;padding:14px 16px;cursor:pointer;transition:border-color 150ms ease,box-shadow 150ms ease,transform 150ms ease;}
+  .n7-turma-card:hover{border-color:#C8C7C2;box-shadow:0 3px 10px rgba(26,26,46,0.08);transform:translateY(-1px);}
+  .n7-turma-card.sel{border-color:#E63946;background:rgba(230,57,70,0.03);box-shadow:0 0 0 3px rgba(230,57,70,0.10);}
+  .n7-turma-id{font-size:11px;font-family:var(--font-mono,monospace);color:var(--c-text-3,#9898B0);margin-bottom:3px;}
+  .n7-turma-estagio{font-size:14px;font-weight:600;color:var(--c-text-1,#1A1A2E);margin-bottom:2px;}
+  .n7-turma-det{font-size:12px;color:var(--c-text-2,#5C5C7A);}
+
+  /* =========================================================
+     CABEÇALHO DA TURMA SELECIONADA
+  ========================================================= */
+  .n7-header{background:#1A1A2E;border-radius:10px;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:12px;flex-wrap:wrap;}
+  .n7-header-info{}
+  .n7-header-sub{font-size:11.5px;color:rgba(255,255,255,0.40);font-family:var(--font-mono,monospace);margin-bottom:2px;}
+  .n7-header-titulo{font-size:17px;font-weight:600;color:#fff;}
+  .btn-n7-trocar{height:32px;padding:0 12px;border-radius:7px;border:1px solid rgba(255,255,255,0.18);background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.75);font-family:var(--font-sans,sans-serif);font-size:12.5px;cursor:pointer;display:inline-flex;align-items:center;gap:5px;transition:background 150ms ease;}
+  .btn-n7-trocar:hover{background:rgba(255,255,255,0.14);}
+  .btn-n7-trocar .material-icons-round{font-size:15px;}
+
+  /* =========================================================
+     LEGENDA DE COMPONENTES
+  ========================================================= */
+  .n7-legenda{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;}
+  .n7-legenda-item{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:6px;background:#F5F4F0;font-size:12px;color:var(--c-text-2,#5C5C7A);}
+  .n7-legenda-dot{width:8px;height:8px;border-radius:50%;}
+
+  /* =========================================================
+     TABELA DE NOTAS
+  ========================================================= */
+  .n7-card{background:#fff;border:1px solid var(--c-border,#E8E7E2);border-radius:10px;overflow:hidden;}
+  .n7-tabela-wrap{overflow-x:auto;}
+  .n7-tabela{width:100%;border-collapse:collapse;font-size:13px;}
+  .n7-tabela thead tr{background:#F8F7F3;border-bottom:1px solid var(--c-border,#E8E7E2);}
+  .n7-tabela th{padding:9px 12px;font-size:10.5px;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;color:var(--c-text-3,#9898B0);text-align:center;white-space:nowrap;border-right:1px solid var(--c-border,#E8E7E2);}
+  .n7-tabela th:first-child{text-align:left;min-width:180px;}
+  .n7-tabela th:last-child{border-right:none;}
+  .n7-tabela th.grupo{background:#F0EEE8;font-size:9.5px;letter-spacing:0.8px;}
+  .n7-tabela tbody tr{border-bottom:1px solid var(--c-border,#E8E7E2);transition:background 120ms ease;}
+  .n7-tabela tbody tr:last-child{border-bottom:none;}
+  .n7-tabela tbody tr:hover{background:#FAFAF8;}
+  .n7-tabela td{padding:8px 10px;vertical-align:middle;border-right:1px solid #F0EEE8;text-align:center;}
+  .n7-tabela td:first-child{text-align:left;padding:8px 14px;border-right:1px solid var(--c-border,#E8E7E2);}
+  .n7-tabela td:last-child{border-right:none;}
+  .n7-nome{font-weight:500;font-size:13px;color:var(--c-text-1,#1A1A2E);}
+  .n7-mat-id{font-size:10.5px;font-family:var(--font-mono,monospace);color:var(--c-text-3,#9898B0);}
+
+  /* Campo de nota */
+  .n7-nota-input{width:56px;height:32px;border:1.5px solid var(--c-border,#E8E7E2);border-radius:6px;text-align:center;font-family:var(--font-mono,monospace);font-size:13px;color:var(--c-text-1,#1A1A2E);background:#FAFAF8;outline:none;transition:border-color 150ms ease,background 150ms ease;}
+  .n7-nota-input:focus{border-color:#E63946;background:#fff;box-shadow:0 0 0 2px rgba(230,57,70,0.10);}
+  .n7-nota-input.modificado{border-color:#E9C46A;background:#FEFBF0;}
+  .n7-nota-input.salvo{border-color:#2A9D8F;background:rgba(42,157,143,0.05);}
+  .n7-nota-input::placeholder{color:var(--c-text-3,#9898B0);font-size:11px;}
+
+  /* Média e situação */
+  .n7-media{font-size:14px;font-weight:700;min-width:40px;display:inline-block;}
+  .n7-media.ap{color:#2A9D8F;}
+  .n7-media.rep{color:#E63946;}
+  .n7-media.pend{color:#9898B0;}
+
+  .badge-n7{display:inline-flex;align-items:center;padding:3px 8px;border-radius:5px;font-size:11px;font-weight:600;white-space:nowrap;}
+  .badge-n7.APROVADO{background:rgba(42,157,143,0.12);color:#1A6E65;}
+  .badge-n7.REPROVADO{background:rgba(230,57,70,0.10);color:#A32D2D;}
+  .badge-n7.PENDENTE{background:#F5F4F0;color:var(--c-text-3,#9898B0);}
+
+  /* Botão de comentário */
+  .btn-n7-com{width:28px;height:28px;border-radius:6px;border:1.5px solid var(--c-border,#E8E7E2);background:#fff;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;color:var(--c-text-3,#9898B0);transition:background 150ms ease,color 150ms ease;}
+  .btn-n7-com:hover{background:#F5F4F0;color:var(--c-text-1,#1A1A2E);}
+  .btn-n7-com.tem-com{border-color:#457B9D;color:#185FA5;background:rgba(69,123,157,0.07);}
+  .btn-n7-com .material-icons-round{font-size:15px;}
+
+  /* Rodapé de ações */
+  .n7-rodape{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-top:1px solid var(--c-border,#E8E7E2);background:#FAFAF8;gap:12px;flex-wrap:wrap;}
+  .n7-rodape-info{font-size:12.5px;color:var(--c-text-3,#9898B0);display:flex;align-items:center;gap:5px;}
+  .n7-rodape-info .material-icons-round{font-size:15px;}
+  .btn-n7-salvar{height:40px;padding:0 20px;border-radius:8px;background:#E63946;color:#fff;border:none;font-family:var(--font-sans,sans-serif);font-size:13.5px;font-weight:500;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:background 150ms ease,box-shadow 150ms ease;}
+  .btn-n7-salvar:hover:not(:disabled){background:#C1121F;box-shadow:0 3px 10px rgba(230,57,70,0.28);}
+  .btn-n7-salvar:disabled{opacity:0.55;cursor:not-allowed;}
+  .btn-n7-salvar .spinner-btn{width:15px;height:15px;border:2px solid rgba(255,255,255,0.35);border-top-color:#fff;border-radius:50%;animation:spin-n7 0.7s linear infinite;display:none;}
+  .btn-n7-salvar.loading .spinner-btn{display:block;}
+  .btn-n7-salvar.loading .btn-txt{display:none;}
+  @keyframes spin-n7{to{transform:rotate(360deg);}}
+
+  /* Estado */
+  .n7-estado{padding:48px 24px;text-align:center;color:var(--c-text-3,#9898B0);font-size:13.5px;}
+  .n7-estado .material-icons-round{font-size:36px;display:block;margin:0 auto 10px;}
+  .n7-spinner{width:24px;height:24px;border:2.5px solid var(--c-border,#E8E7E2);border-top-color:#E63946;border-radius:50%;animation:spin-n7 0.7s linear infinite;margin:0 auto 10px;}
+
+  /* =========================================================
+     MODAL DE COMENTÁRIO
+  ========================================================= */
+  .n7-modal-overlay{position:fixed;inset:0;background:rgba(26,26,46,0.45);z-index:200;display:flex;align-items:center;justify-content:center;padding:24px;backdrop-filter:blur(2px);}
+  .n7-modal{background:#fff;border-radius:12px;width:100%;max-width:480px;box-shadow:0 12px 48px rgba(26,26,46,0.18);animation:modal-n7 200ms cubic-bezier(0.34,1.3,0.64,1);overflow:hidden;}
+  @keyframes modal-n7{from{opacity:0;transform:scale(0.96);}to{opacity:1;transform:scale(1);}}
+  .n7-modal-header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--c-border,#E8E7E2);}
+  .n7-modal-titulo{font-size:14px;font-weight:600;color:var(--c-text-1,#1A1A2E);}
+  .btn-fechar-n7{width:28px;height:28px;border-radius:6px;border:none;background:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--c-text-3,#9898B0);transition:background 120ms ease;}
+  .btn-fechar-n7:hover{background:#F5F4F0;}
+  .btn-fechar-n7 .material-icons-round{font-size:18px;}
+  .n7-modal-corpo{padding:16px 18px;}
+  .n7-modal-corpo p{font-size:13px;color:var(--c-text-2,#5C5C7A);margin-bottom:12px;}
+  .n7-com-etapas{display:flex;gap:6px;margin-bottom:14px;}
+  .n7-etapa-btn{height:32px;padding:0 14px;border-radius:6px;border:1.5px solid var(--c-border,#E8E7E2);background:#fff;font-family:var(--font-sans,sans-serif);font-size:12.5px;cursor:pointer;transition:all 120ms ease;color:var(--c-text-2,#5C5C7A);}
+  .n7-etapa-btn.ativa{border-color:#E63946;background:rgba(230,57,70,0.07);color:#A32D2D;font-weight:500;}
+  .n7-com-textarea{width:100%;min-height:100px;border:1.5px solid var(--c-border,#E8E7E2);border-radius:8px;padding:10px 12px;font-family:var(--font-sans,sans-serif);font-size:13.5px;color:var(--c-text-1,#1A1A2E);background:#FAFAF8;outline:none;resize:vertical;transition:border-color 150ms ease;}
+  .n7-com-textarea:focus{border-color:#E63946;background:#fff;}
+  .n7-com-textarea::placeholder{color:var(--c-text-3,#9898B0);}
+  .n7-modal-footer{display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid var(--c-border,#E8E7E2);background:#FAFAF8;}
+  .btn-n7-modal{height:36px;padding:0 16px;border-radius:7px;font-family:var(--font-sans,sans-serif);font-size:13px;font-weight:500;cursor:pointer;border:none;display:inline-flex;align-items:center;gap:5px;transition:background 150ms ease;}
+  .btn-n7-modal .spinner-btn{width:14px;height:14px;border:2px solid rgba(255,255,255,0.35);border-top-color:#fff;border-radius:50%;animation:spin-n7 0.7s linear infinite;display:none;}
+  .btn-n7-modal.loading .spinner-btn{display:block;}
+  .btn-n7-modal.loading .btn-txt{display:none;}
+  .btn-n7-modal-primario{background:#E63946;color:#fff;}
+  .btn-n7-modal-primario:hover{background:#C1121F;}
+  .btn-n7-modal-sec{background:#fff;color:var(--c-text-1,#1A1A2E);border:1.5px solid var(--c-border,#E8E7E2);}
+  .btn-n7-modal-sec:hover{background:#F5F4F0;}
+</style>
+
+<!-- PASSO 1: SELEÇÃO DE TURMA -->
+<div id="n7-step-turma">
+  <div style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--c-text-3,#9898B0);margin-bottom:12px;">Selecione a turma</div>
+  <div id="n7-turmas-loading" style="display:flex;align-items:center;gap:10px;padding:32px 0;color:var(--c-text-3,#9898B0);font-size:13.5px;">
+    <div class="n7-spinner" style="margin:0;"></div><span>Carregando turmas…</span>
+  </div>
+  <div class="n7-turma-grid" id="n7-turma-grid" style="display:none;"></div>
+</div>
+
+<!-- PASSO 2: TABELA DE NOTAS -->
+<div id="n7-step-notas" style="display:none;">
+  <div class="n7-header">
+    <div class="n7-header-info">
+      <div class="n7-header-sub" id="n7-header-id">—</div>
+      <div class="n7-header-titulo" id="n7-header-titulo">—</div>
+    </div>
+    <button class="btn-n7-trocar" id="btn-n7-trocar">
+      <span class="material-icons-round">swap_horiz</span>Trocar turma
+    </button>
+  </div>
+
+  <div class="n7-legenda" id="n7-legenda"></div>
+
+  <div class="n7-card">
+    <div id="n7-estado" class="n7-estado" style="display:none;"></div>
+    <div class="n7-tabela-wrap">
+      <table class="n7-tabela" id="n7-tabela" style="display:none;">
+        <thead id="n7-thead"></thead>
+        <tbody id="n7-tbody"></tbody>
+      </table>
+    </div>
+    <div class="n7-rodape" id="n7-rodape" style="display:none;">
+      <div class="n7-rodape-info">
+        <span class="material-icons-round">info</span>
+        Clique em uma célula para editar. Salve ao terminar.
+      </div>
+      <button class="btn-n7-salvar" id="btn-n7-salvar">
+        <div class="spinner-btn"></div>
+        <span class="material-icons-round btn-txt" style="font-size:16px;">save</span>
+        <span class="btn-txt">Salvar todas as notas</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL DE COMENTÁRIO -->
+<div class="n7-modal-overlay" id="n7-modal-com" style="display:none;">
+  <div class="n7-modal">
+    <div class="n7-modal-header">
+      <span class="n7-modal-titulo" id="n7-com-titulo">Comentários</span>
+      <button class="btn-fechar-n7" id="btn-fechar-n7-com">
+        <span class="material-icons-round">close</span>
+      </button>
+    </div>
+    <div class="n7-modal-corpo">
+      <p id="n7-com-aluno"></p>
+      <div class="n7-com-etapas" id="n7-com-etapas"></div>
+      <textarea class="n7-com-textarea" id="n7-com-texto" placeholder="Escreva o comentário sobre esta etapa…" rows="4"></textarea>
+    </div>
+    <div class="n7-modal-footer">
+      <button class="btn-n7-modal btn-n7-modal-sec" id="btn-cancelar-n7-com">Cancelar</button>
+      <button class="btn-n7-modal btn-n7-modal-primario" id="btn-salvar-n7-com">
+        <div class="spinner-btn"></div>
+        <span class="btn-txt">Salvar comentário</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var state = {
+    turmas:       [],
+    turmaSel:     null,
+    matriculas:   [],
+    avaliacoes:   [],   // sistemas de avaliação do curso
+    notas:        {},   // { MatriculaID: { 'Oral|Oral 1': valor, ... } }
+    notasSalvas:  {},   // snapshot do que está salvo
+    comentarios:  {},   // { MatriculaID: { 1: texto, 2: texto } }
+    medias:       {},   // { MatriculaID: resultado de m5_calcularMedia }
+    comMatricula: null, // matrícula sendo editada no modal de comentário
+    comEtapa:     1,
+    papel:        '',  // papel do usuário logado
+    usuarioId:    '',
+  };
+
+  // =========================================================
+  // postApi
+  // =========================================================
+  function postApi(acao, dados) {
+    return window.postApi(acao, dados);
+  }
+
+  function el(id) { return document.getElementById(id); }
+
+  // =========================================================
+  // CORES POR COMPONENTE
+  // =========================================================
+  var CORES = ['#457B9D','#2A9D8F','#E9C46A','#E76F51','#8338EC','#FB8500'];
+  function corComponente(idx) { return CORES[idx % CORES.length]; }
+
+  // =========================================================
+  // INIT
+  // =========================================================
+  function init() {
+    // Obtém sessão antes de carregar para garantir token disponível
+    // (sem isso, professor recebe tela em branco pois a 1ª requisição falha)
+    var _u = (typeof App !== 'undefined' && App.usuario) ? App.usuario : null;
+    (function(sessao) {
+        if (sessao && sessao.usuario) {
+          state.papel     = sessao.usuario.Papel     || '';
+          state.usuarioId = sessao.usuario.UsuarioID || '';
+        }
+        registrarEventos();
+        carregarTurmas();
+      })(_u ? {usuario:_u, token:(typeof Auth!=='undefined'?Auth.getToken():null)} : null);
+    if (!_u) { (function(){
+        registrarEventos();
+        carregarTurmas();
+      })(); }
+  }
+
+  // =========================================================
+  // PASSO 1 — TURMAS
+  // =========================================================
+  function carregarTurmas() {
+    postApi('turmas.listar', { tamanhoPagina: 300 })
+      .then(function(res) {
+        el('n7-turmas-loading').style.display = 'none';
+        if (!res.sucesso || !res.dados || !res.dados.dados || res.dados.dados.length === 0) {
+          el('n7-turma-grid').style.display = 'grid';
+          el('n7-turma-grid').innerHTML = '<p style="color:var(--c-text-3);font-size:13px;grid-column:1/-1;">Nenhuma turma encontrada.</p>';
+          return;
+        }
+        state.turmas = res.dados.dados;
+        renderizarTurmas();
+      })
+      .catch(function(e) {
+        el('n7-turmas-loading').innerHTML = '<span style="color:#E63946;">Erro ao carregar turmas: ' + (e.message||'') + '</span>';
+      });
+  }
+
+  function renderizarTurmas() {
+    var grid = el('n7-turma-grid'); grid.innerHTML = '';
+    state.turmas.forEach(function(t) {
+      var card = document.createElement('div'); card.className = 'n7-turma-card';
+      card.innerHTML =
+        '<div class="n7-turma-id">' + t.TurmaID + '</div>' +
+        '<div class="n7-turma-estagio">' + (t.Estagio||t.CursoID) + '</div>' +
+        '<div class="n7-turma-det">' + (t.DiaSemana||'') + (t.Horario ? ' · ' + t.Horario : '') + '</div>' +
+        '<div class="n7-turma-det">' + (t.Modalidade||'') + '</div>';
+      card.addEventListener('click', function() { selecionarTurma(t); });
+      grid.appendChild(card);
+    });
+    grid.style.display = 'grid';
+  }
+
+  function selecionarTurma(turma) {
+    state.turmaSel  = turma;
+    state.notas     = {};
+    state.notasSalvas = {};
+    state.comentarios = {};
+    state.medias    = {};
+
+    el('n7-step-turma').style.display = 'none';
+    el('n7-step-notas').style.display = 'block';
+    el('n7-header-id').textContent    = turma.TurmaID;
+    el('n7-header-titulo').textContent = turma.Estagio || turma.CursoID;
+    el('n7-estado').style.display = 'block';
+    el('n7-estado').innerHTML = '<div class="n7-spinner"></div><p>Carregando alunos e notas…</p>';
+    el('n7-tabela').style.display = 'none';
+    el('n7-rodape').style.display = 'none';
+
+    carregarDadosNotas(turma);
+  }
+
+  // =========================================================
+  // PASSO 2 — DADOS DAS NOTAS
+  // =========================================================
+  function carregarDadosNotas(turma) {
+    // Busca: matrículas ativas + cursos (para avaliação) em paralelo
+    Promise.all([
+      postApi('matriculas.listar', { turmaId: turma.TurmaID, situacao: 'ATIVA', tamanhoPagina: 300 }),
+      postApi('cursos.listar', {}),
+      postApi('avaliacoes.listar', {}),
+    ])
+    .then(function(res) {
+      var resMatriculas = res[0];
+      var resCursos     = res[1];
+      var resAvaliacoes = res[2];
+
+      state.matriculas = (resMatriculas.sucesso && resMatriculas.dados && resMatriculas.dados.dados)
+        ? resMatriculas.dados.dados : [];
+
+      if (state.matriculas.length === 0) {
+        el('n7-estado').style.display = 'block';
+        el('n7-estado').innerHTML = '<span class="material-icons-round">people</span><p>Nenhum aluno matriculado nesta turma.</p>';
+        return;
+      }
+
+      // Determina os sistemas de avaliação do curso desta turma
+      var cursos     = (resCursos.sucesso && resCursos.dados) ? resCursos.dados : [];
+      var avaliacoes = (resAvaliacoes.sucesso && resAvaliacoes.dados) ? resAvaliacoes.dados : [];
+      var curso = cursos.find(function(c) { return c.CursoID === turma.CursoID; });
+      var idsAv = curso && curso.AvaliacaoID ? String(curso.AvaliacaoID).split(',').map(function(s){return s.trim();}) : [];
+      state.avaliacoes = avaliacoes.filter(function(a) { return idsAv.indexOf(a.AvaliacaoID) !== -1; });
+
+      // Carrega notas e comentários de todos os alunos
+      var promises = state.matriculas.map(function(m) {
+        return Promise.all([
+          postApi('notas.listar', { matriculaId: m.MatriculaID }),
+          postApi('comentarios.listar', { matriculaId: m.MatriculaID }),
+        ]).then(function(r) {
+          // Notas
+          if (r[0].sucesso && r[0].dados) {
+            r[0].dados.forEach(function(n) {
+              var chave = n.ComponenteNota + '|' + n.SubcomponenteNota;
+              if (!state.notas[m.MatriculaID]) state.notas[m.MatriculaID] = {};
+              state.notas[m.MatriculaID][chave] = n.ValorNota !== null && n.ValorNota !== undefined ? String(n.ValorNota) : '';
+            });
+          }
+          state.notasSalvas[m.MatriculaID] = JSON.parse(JSON.stringify(state.notas[m.MatriculaID] || {}));
+          // Comentários
+          if (r[1].sucesso && r[1].dados) {
+            state.comentarios[m.MatriculaID] = {};
+            r[1].dados.forEach(function(c) {
+              state.comentarios[m.MatriculaID][c.Etapa] = c.Comentario || '';
+            });
+          }
+        }).catch(function() {});
+      });
+
+      return Promise.all(promises);
+    })
+    .then(function() {
+      calcularTodasMedias();
+      renderizarTabela();
+    })
+    .catch(function(e) {
+      el('n7-estado').style.display = 'block';
+      el('n7-estado').innerHTML = '<span class="material-icons-round">error_outline</span><p>Erro ao carregar dados: ' + (e.message||'') + '</p>';
+    });
+  }
+
+  // =========================================================
+  // CÁLCULO DE MÉDIAS
+  // =========================================================
+  function calcularMedia(matriculaId) {
+    var notas = state.notas[matriculaId] || {};
+    var resultado = { componentes: [], situacaoGeral: 'PENDENTE' };
+    var todasAprovadas = true;
+    var algumaPendente = false;
+
+    state.avaliacoes.forEach(function(av) {
+      var valores = [];
+      for (var i = 1; i <= av.QntNotas; i++) {
+        var sub = av.ComponenteNota + ' ' + i;
+        var chave = av.ComponenteNota + '|' + sub;
+        var v = notas[chave];
+        if (v !== '' && v !== null && v !== undefined) {
+          valores.push(parseFloat(v));
+        }
+      }
+
+      var media = null; var sit = 'PENDENTE';
+      if (valores.length === Number(av.QntNotas)) {
+        if (av.Tipo === 'Média simples') {
+          media = valores.reduce(function(a,b){return a+b;},0) / valores.length;
+        } else {
+          media = valores[0];
+        }
+        sit = media >= Number(av.NotaAprovacao) ? 'APROVADO' : 'REPROVADO';
+      } else {
+        algumaPendente = true;
+      }
+
+      if (sit !== 'APROVADO') todasAprovadas = false;
+      resultado.componentes.push({ AvaliacaoID: av.AvaliacaoID, ComponenteNota: av.ComponenteNota, Media: media !== null ? parseFloat(media.toFixed(1)) : null, Situacao: sit, NotaAprovacao: av.NotaAprovacao });
+    });
+
+    resultado.situacaoGeral = algumaPendente ? 'PENDENTE' : (todasAprovadas ? 'APROVADO' : 'REPROVADO');
+    return resultado;
+  }
+
+  function calcularTodasMedias() {
+    state.matriculas.forEach(function(m) {
+      state.medias[m.MatriculaID] = calcularMedia(m.MatriculaID);
+    });
+  }
+
+  // =========================================================
+  // RENDERIZAÇÃO DA TABELA
+  // =========================================================
+  function renderizarTabela() {
+    el('n7-estado').style.display = 'none';
+    el('n7-tabela').style.display = 'table';
+    el('n7-rodape').style.display = 'flex';
+
+    // Constrói colunas: para cada avaliação, QntNotas subcomponentes
+    var colunas = []; // { componente, subcomponente, chave, avIdx }
+    state.avaliacoes.forEach(function(av, idx) {
+      for (var i = 1; i <= Number(av.QntNotas); i++) {
+        var sub = av.ComponenteNota + ' ' + i;
+        colunas.push({ componente: av.ComponenteNota, subcomponente: sub, chave: av.ComponenteNota + '|' + sub, avIdx: idx, av: av });
+      }
+    });
+
+    // Legenda
+    var legenda = el('n7-legenda'); legenda.innerHTML = '';
+    state.avaliacoes.forEach(function(av, idx) {
+      var item = document.createElement('div'); item.className = 'n7-legenda-item';
+      item.innerHTML = '<div class="n7-legenda-dot" style="background:' + corComponente(idx) + ';"></div>' + av.ComponenteNota + ' (aprova em ' + av.NotaAprovacao + ')';
+      legenda.appendChild(item);
+    });
+
+    // Cabeçalho
+    var thead = el('n7-thead'); thead.innerHTML = '';
+
+    // Linha 1: grupos de componentes
+    var tr1 = document.createElement('tr');
+    var th0 = document.createElement('th'); th0.rowSpan = 2; th0.style.textAlign = 'left'; th0.textContent = 'Aluno'; tr1.appendChild(th0);
+
+    state.avaliacoes.forEach(function(av, idx) {
+      // colSpan = QntNotas + 1 para incluir a coluna de Méd. dentro do grupo
+      var th = document.createElement('th');
+      th.colSpan = Number(av.QntNotas) + 1;
+      th.className = 'grupo';
+      th.style.color = corComponente(idx);
+      th.style.borderLeft = '2px solid ' + corComponente(idx);
+      th.textContent = av.ComponenteNota;
+      tr1.appendChild(th);
+    });
+
+    var thSit = document.createElement('th'); thSit.rowSpan = 2; thSit.className = 'grupo'; thSit.textContent = 'Resultado'; tr1.appendChild(thSit);
+    var thCom = document.createElement('th'); thCom.rowSpan = 2; thCom.className = 'grupo'; thCom.textContent = 'Com.'; tr1.appendChild(thCom);
+    thead.appendChild(tr1);
+
+    // Linha 2: subcomponentes + Méd. ao final de cada grupo
+    var tr2 = document.createElement('tr');
+    state.avaliacoes.forEach(function(av, idx) {
+      // Subcomponentes numerados
+      for (var i = 1; i <= Number(av.QntNotas); i++) {
+        var th = document.createElement('th');
+        th.textContent = String(i);
+        th.style.borderLeft = i === 1 ? '2px solid ' + corComponente(idx) : '1px solid ' + corComponente(idx) + '44';
+        tr2.appendChild(th);
+      }
+      // Célula Méd. ao final do grupo
+      var thM = document.createElement('th');
+      thM.className = 'grupo';
+      thM.textContent = 'Méd.';
+      thM.style.borderLeft = '1px solid ' + corComponente(idx) + '44';
+      tr2.appendChild(thM);
+    });
+    thead.appendChild(tr2);
+
+    // Corpo
+    var tbody = el('n7-tbody'); tbody.innerHTML = '';
+    state.matriculas.forEach(function(m) {
+      var tr = document.createElement('tr');
+      var nome = m.NomeExibicao || m.AlunoID || m.MatriculaID;
+
+      // Célula do aluno
+      var tdNome = document.createElement('td');
+      tdNome.innerHTML = '<div class="n7-nome">' + nome + '</div><div class="n7-mat-id">' + m.MatriculaID + '</div>';
+      tr.appendChild(tdNome);
+
+      // Células de nota intercaladas com médias por grupo
+      // Estrutura espelha o thead: [input1][input2][Méd.] para cada componente
+      var media = state.medias[m.MatriculaID];
+      state.avaliacoes.forEach(function(av, avIdx) {
+        // Inputs de nota deste componente
+        for (var i = 1; i <= Number(av.QntNotas); i++) {
+          var sub    = av.ComponenteNota + ' ' + i;
+          var chave  = av.ComponenteNota + '|' + sub;
+          var col    = { componente: av.ComponenteNota, subcomponente: sub, chave: chave, avIdx: avIdx, av: av };
+
+          var td = document.createElement('td');
+          td.style.borderLeft = i === 1
+            ? '2px solid ' + corComponente(avIdx)
+            : '1px solid ' + corComponente(avIdx) + '33';
+
+          var valorAtual = (state.notas[m.MatriculaID] || {})[chave];
+          var valorSalvo = (state.notasSalvas[m.MatriculaID] || {})[chave];
+          var modificado = valorAtual !== valorSalvo;
+
+          var input = document.createElement('input');
+          input.type = 'number';
+          input.min  = av.NotaMinima || 0;
+          input.max  = av.NotaMaxima || 10;
+          input.step = '0.5';
+          input.className = 'n7-nota-input' + (modificado ? ' modificado' : (valorAtual !== '' && valorAtual !== undefined ? ' salvo' : ''));
+          input.placeholder = '–';
+          input.value = (valorAtual !== '' && valorAtual !== undefined && valorAtual !== null) ? valorAtual : '';
+          input.dataset.mat   = m.MatriculaID;
+          input.dataset.chave = chave;
+          input.dataset.comp  = av.ComponenteNota;
+          input.dataset.sub   = sub;
+          input.dataset.avIdx = avIdx;
+
+          (function(capturedCol) {
+            input.addEventListener('input', function() {
+              if (!state.notas[m.MatriculaID]) state.notas[m.MatriculaID] = {};
+              state.notas[m.MatriculaID][capturedCol.chave] = this.value;
+              this.className = 'n7-nota-input modificado';
+              state.medias[m.MatriculaID] = calcularMedia(m.MatriculaID);
+              atualizarLinhaMedias(m.MatriculaID, tr);
+            });
+          }(col));
+
+          td.appendChild(input);
+          tr.appendChild(td);
+        }
+
+        // Célula de média deste componente (somente leitura, logo após os inputs)
+        var tdM = document.createElement('td');
+        tdM.dataset.mediaComp = m.MatriculaID + '|' + av.ComponenteNota;
+        tdM.style.borderLeft  = '1px solid ' + corComponente(avIdx) + '33';
+        var comp = media ? media.componentes.find(function(c){ return c.ComponenteNota === av.ComponenteNota; }) : null;
+        tdM.innerHTML = renderizarMedia(comp);
+        tr.appendChild(tdM);
+      });
+
+      // Situação geral
+      var tdSit = document.createElement('td');
+      tdSit.dataset.sitGeral = m.MatriculaID;
+      tdSit.innerHTML = media ? '<span class="badge-n7 ' + media.situacaoGeral + '">' + media.situacaoGeral + '</span>' : '';
+      tr.appendChild(tdSit);
+
+      // Botão comentário
+      var tdCom = document.createElement('td');
+      var temCom = state.comentarios[m.MatriculaID] && Object.values(state.comentarios[m.MatriculaID]).some(function(v){return v;});
+      var btnCom = document.createElement('button');
+      btnCom.className = 'btn-n7-com' + (temCom ? ' tem-com' : '');
+      btnCom.dataset.mat = m.MatriculaID;
+      btnCom.innerHTML = '<span class="material-icons-round">comment</span>';
+      btnCom.title = 'Comentários por etapa';
+      btnCom.addEventListener('click', function() { abrirModalComentario(m); });
+      tdCom.appendChild(btnCom);
+      tr.appendChild(tdCom);
+
+      tbody.appendChild(tr);
+    });
+  }
+
+  function renderizarMedia(comp) {
+    if (!comp || comp.Situacao === 'PENDENTE') return '<span class="n7-media pend">–</span>';
+    var cls = comp.Situacao === 'APROVADO' ? 'ap' : 'rep';
+    return '<span class="n7-media ' + cls + '">' + (comp.Media !== null ? comp.Media : '–') + '</span>';
+  }
+
+  function atualizarLinhaMedias(matId, tr) {
+    var media = state.medias[matId];
+    // Atualiza células de média por componente
+    state.avaliacoes.forEach(function(av) {
+      var cell = tr.querySelector('[data-media-comp="' + matId + '|' + av.ComponenteNota + '"]');
+      if (cell) {
+        var comp = media ? media.componentes.find(function(c){return c.ComponenteNota===av.ComponenteNota;}) : null;
+        cell.innerHTML = renderizarMedia(comp);
+      }
+    });
+    // Atualiza situação geral
+    var sitCell = tr.querySelector('[data-sit-geral="' + matId + '"]');
+    if (sitCell && media) sitCell.innerHTML = '<span class="badge-n7 ' + media.situacaoGeral + '">' + media.situacaoGeral + '</span>';
+  }
+
+  // =========================================================
+  // SALVAR NOTAS
+  // =========================================================
+  function salvarNotas() {
+    var btn = el('btn-n7-salvar'); btn.disabled = true; btn.classList.add('loading');
+
+    // Coleta todas as notas modificadas
+    var promises = [];
+    state.matriculas.forEach(function(m) {
+      var notas = state.notas[m.MatriculaID] || {};
+      var salvas = state.notasSalvas[m.MatriculaID] || {};
+
+      Object.keys(notas).forEach(function(chave) {
+        var partes = chave.split('|');
+        var comp = partes[0]; var sub = partes[1];
+        var valor = notas[chave];
+        var valorSalvo = salvas[chave];
+
+        // Salva se foi modificado (incluindo apagado → '')
+        if (valor !== valorSalvo) {
+          promises.push(
+            postApi('notas.lancar', {
+              MatriculaID:       m.MatriculaID,
+              ComponenteNota:    comp,
+              SubcomponenteNota: sub,
+              ValorNota:         valor === '' ? null : parseFloat(valor),
+            })
+          );
+        }
+      });
+    });
+
+    if (promises.length === 0) {
+      btn.disabled = false; btn.classList.remove('loading');
+      if (typeof toast === 'function') toast('Nenhuma alteração para salvar.', 'info');
+      return;
+    }
+
+    Promise.all(promises)
+      .then(function(resultados) {
+        btn.disabled = false; btn.classList.remove('loading');
+        var erros = resultados.filter(function(r) { return !r.sucesso; });
+        if (erros.length > 0) {
+          if (typeof toast === 'function') toast(erros.length + ' nota(s) com erro ao salvar.', 'error');
+        } else {
+          if (typeof toast === 'function') toast('Todas as notas salvas com sucesso!', 'success');
+          // Atualiza snapshot e estilo dos inputs
+          state.matriculas.forEach(function(m) {
+            state.notasSalvas[m.MatriculaID] = JSON.parse(JSON.stringify(state.notas[m.MatriculaID] || {}));
+          });
+          // Atualiza estilo visual dos inputs
+          el('n7-tabela') && el('n7-tabela').querySelectorAll('.n7-nota-input').forEach(function(inp) {
+            if (inp.value !== '') {
+              inp.className = 'n7-nota-input salvo';
+            } else {
+              inp.className = 'n7-nota-input';
+            }
+          });
+        }
+      })
+      .catch(function() {
+        btn.disabled = false; btn.classList.remove('loading');
+        if (typeof toast === 'function') toast('Erro de comunicação ao salvar.', 'error');
+      });
+  }
+
+  // =========================================================
+  // MODAL DE COMENTÁRIO
+  // =========================================================
+  function abrirModalComentario(m) {
+    state.comMatricula = m;
+    state.comEtapa = 1;
+    el('n7-com-titulo').textContent = 'Comentários';
+    el('n7-com-aluno').textContent = 'Aluno: ' + (m.NomeExibicao || m.AlunoID || m.MatriculaID);
+
+    // Sempre 2 etapas de comentário, independente da configuração de avaliações
+    var etapasWrap = el('n7-com-etapas'); etapasWrap.innerHTML = '';
+    [1, 2].forEach(function(num) {
+      var btn = document.createElement('button');
+      btn.className = 'n7-etapa-btn' + (num === 1 ? ' ativa' : '');
+      btn.textContent = 'Etapa ' + num;
+      btn.dataset.etapa = num;
+      btn.addEventListener('click', function() {
+        salvarTextoEtapaLocal();
+        document.querySelectorAll('.n7-etapa-btn').forEach(function(b){b.classList.remove('ativa');});
+        btn.classList.add('ativa');
+        state.comEtapa = num;
+        carregarTextoEtapa();
+      });
+      etapasWrap.appendChild(btn);
+    });
+
+    carregarTextoEtapa();
+    el('n7-modal-com').style.display = 'flex';
+  }
+
+  function salvarTextoEtapaLocal() {
+    if (!state.comMatricula) return;
+    if (!state.comentarios[state.comMatricula.MatriculaID]) state.comentarios[state.comMatricula.MatriculaID] = {};
+    state.comentarios[state.comMatricula.MatriculaID][state.comEtapa] = el('n7-com-texto').value;
+  }
+
+  function carregarTextoEtapa() {
+    var m = state.comMatricula;
+    if (!m) return;
+    var texto = (state.comentarios[m.MatriculaID] || {})[state.comEtapa] || '';
+    el('n7-com-texto').value = texto;
+  }
+
+  function fecharModalComentario() {
+    el('n7-modal-com').style.display = 'none';
+    state.comMatricula = null;
+  }
+
+  function salvarComentario() {
+    var m = state.comMatricula;
+    if (!m) return;
+
+    salvarTextoEtapaLocal();
+
+    var btn = el('btn-salvar-n7-com'); btn.disabled = true; btn.classList.add('loading');
+
+    postApi('comentarios.salvar', {
+      MatriculaID: m.MatriculaID,
+      TurmaID:     state.turmaSel.TurmaID,
+      Etapa:       state.comEtapa,
+      Comentario:  el('n7-com-texto').value,
+    })
+      .then(function(res) {
+        btn.disabled = false; btn.classList.remove('loading');
+        if (!res.sucesso) { if(typeof toast==='function') toast(res.mensagem||'Erro.','error'); return; }
+        if (typeof toast === 'function') toast('Comentário salvo!', 'success');
+        fecharModalComentario();
+        // Atualiza ícone do botão de comentário na tabela
+        var btnCom = el('n7-tabela') && el('n7-tabela').querySelector('[data-mat="' + m.MatriculaID + '"].btn-n7-com');
+        if (btnCom) btnCom.classList.add('tem-com');
+      })
+      .catch(function() {
+        btn.disabled = false; btn.classList.remove('loading');
+        if (typeof toast === 'function') toast('Erro de comunicação.', 'error');
+      });
+  }
+
+  // =========================================================
+  // EVENTOS
+  // =========================================================
+  function registrarEventos() {
+    el('btn-n7-trocar') && el('btn-n7-trocar').addEventListener('click', function() {
+      el('n7-step-notas').style.display = 'none';
+      el('n7-step-turma').style.display = 'block';
+      state.turmaSel = null;
+    });
+
+    el('btn-n7-salvar')     && el('btn-n7-salvar').addEventListener('click', salvarNotas);
+    el('btn-fechar-n7-com') && el('btn-fechar-n7-com').addEventListener('click', fecharModalComentario);
+    el('btn-cancelar-n7-com') && el('btn-cancelar-n7-com').addEventListener('click', fecharModalComentario);
+    el('btn-salvar-n7-com') && el('btn-salvar-n7-com').addEventListener('click', salvarComentario);
+    el('n7-modal-com') && el('n7-modal-com').addEventListener('click', function(e) {
+      if (e.target === this) fecharModalComentario();
+    });
+  }
+
+  if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', init); }
+  else { init(); }
+}());
+</script>

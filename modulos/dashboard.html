@@ -1,0 +1,478 @@
+<!--
+  F_Dashboard.html / dashboard.html
+  Tela inicial com atalhos rápidos e painel de ocorrências pendentes.
+-->
+<style>
+  .dash-boas-vindas{margin-bottom:28px;}
+  .dash-boas-vindas h2{font-size:22px;font-weight:600;color:var(--c-text-1,#1A1A2E);margin-bottom:4px;}
+  .dash-boas-vindas p{font-size:14px;color:var(--c-text-2,#5C5C7A);}
+  .dash-semestre-banner{background:#1A1A2E;border-radius:12px;padding:20px 24px;display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;gap:16px;flex-wrap:wrap;}
+  .dash-semestre-info{flex:1;}
+  .dash-semestre-label{font-size:10.5px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:rgba(255,255,255,0.40);margin-bottom:4px;}
+  .dash-semestre-valor{font-size:20px;font-weight:600;color:#FFFFFF;font-family:var(--font-mono,monospace);letter-spacing:0.5px;}
+  .dash-semestre-status{display:inline-flex;align-items:center;gap:5px;background:rgba(42,157,143,0.20);color:#5DCAA5;border:1px solid rgba(42,157,143,0.30);border-radius:20px;padding:4px 12px;font-size:11.5px;font-weight:500;}
+  .dash-semestre-status .material-icons-round{font-size:13px;}
+  .dash-atalhos-titulo{font-size:12px;font-weight:600;letter-spacing:0.8px;text-transform:uppercase;color:var(--c-text-3,#9898B0);margin-bottom:14px;}
+  .dash-atalhos{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;margin-bottom:32px;}
+  .dash-card{background:#FFFFFF;border:1px solid var(--c-border,#E8E7E2);border-radius:12px;padding:20px;cursor:pointer;transition:box-shadow 180ms ease,transform 180ms ease,border-color 180ms ease;display:flex;flex-direction:column;gap:10px;}
+  .dash-card:hover{box-shadow:0 4px 16px rgba(26,26,46,0.10);transform:translateY(-2px);border-color:#D0CFC9;}
+  .dash-card-icone{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:rgba(230,57,70,0.08);color:#E63946;}
+  .dash-card-icone .material-icons-round{font-size:20px;}
+  .dash-card-label{font-size:14px;font-weight:500;color:var(--c-text-1,#1A1A2E);}
+  .dash-card-desc{font-size:12px;color:var(--c-text-3,#9898B0);line-height:1.4;}
+  .dash-info-sistema{background:#F8F7F3;border:1px solid var(--c-border,#E8E7E2);border-radius:12px;padding:16px 20px;display:flex;align-items:center;gap:12px;font-size:13px;color:var(--c-text-2,#5C5C7A);}
+  .dash-info-sistema .material-icons-round{font-size:18px;color:var(--c-text-3,#9898B0);flex-shrink:0;}
+  .dash-info-sistema strong{color:var(--c-text-1,#1A1A2E);font-weight:500;}
+
+  /* ── Ocorrências pendentes ── */
+  .dash-oco-wrap{display:flex;gap:20px;align-items:flex-start;margin-bottom:32px;}
+  .dash-oco-lista-wrap{flex:1;min-width:0;}
+  .dash-secao-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+  .dash-secao-titulo{font-size:12px;font-weight:600;letter-spacing:0.8px;text-transform:uppercase;color:var(--c-text-3,#9898B0);}
+  .dash-oco-badge{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:#E63946;color:#fff;font-size:11px;font-weight:700;}
+  .dash-oco-card{background:#fff;border:1px solid var(--c-border,#E8E7E2);border-radius:10px;padding:13px 15px;margin-bottom:8px;cursor:pointer;transition:border-color 150ms ease,box-shadow 150ms ease;display:flex;align-items:flex-start;gap:12px;}
+  .dash-oco-card:hover{border-color:#C8C7C2;box-shadow:0 2px 10px rgba(26,26,46,0.07);}
+  .dash-oco-card.selecionado{border-color:#E63946;background:rgba(230,57,70,0.02);}
+  .dash-oco-icone{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px;}
+  .dash-oco-icone.ausencia{background:rgba(233,196,106,0.22);color:#7A5C00;}
+  .dash-oco-icone.contato{background:rgba(69,123,157,0.14);color:#185FA5;}
+  .dash-oco-icone.pedagogica{background:rgba(42,157,143,0.14);color:#1A6E65;}
+  .dash-oco-icone.disciplinar{background:rgba(230,57,70,0.12);color:#A32D2D;}
+  .dash-oco-icone.comunicado{background:rgba(26,26,46,0.08);color:#3A3A5C;}
+  .dash-oco-icone.outro{background:#F5F4F0;color:#5C5C7A;}
+  .dash-oco-corpo{flex:1;min-width:0;}
+  .dash-oco-titulo{font-size:13px;font-weight:600;color:var(--c-text-1,#1A1A2E);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .dash-oco-aluno{font-size:12px;color:var(--c-text-2,#5C5C7A);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .dash-oco-meta{font-size:11px;color:var(--c-text-3,#9898B0);margin-top:4px;display:flex;gap:8px;flex-wrap:wrap;}
+  .dash-oco-tipo{display:inline-flex;padding:1px 7px;border-radius:4px;font-size:10.5px;font-weight:600;}
+  .dash-oco-tipo.ausencia{background:rgba(233,196,106,0.22);color:#7A5C00;}
+  .dash-oco-tipo.contato{background:rgba(69,123,157,0.14);color:#185FA5;}
+  .dash-oco-tipo.pedagogica{background:rgba(42,157,143,0.14);color:#1A6E65;}
+  .dash-oco-tipo.disciplinar{background:rgba(230,57,70,0.12);color:#A32D2D;}
+  .dash-oco-tipo.comunicado{background:rgba(26,26,46,0.08);color:#3A3A5C;}
+  .dash-oco-tipo.outro{background:#F5F4F0;color:#5C5C7A;}
+  .dash-oco-vazio{background:#F8F7F3;border:1px dashed var(--c-border,#E8E7E2);border-radius:10px;padding:24px;text-align:center;color:var(--c-text-3,#9898B0);font-size:13px;}
+  .dash-oco-spinner{width:20px;height:20px;border:2.5px solid var(--c-border,#E8E7E2);border-top-color:#E63946;border-radius:50%;animation:dash-spin 0.7s linear infinite;margin:20px auto;}
+  @keyframes dash-spin{to{transform:rotate(360deg);}}
+  .dash-oco-lista-scroll{max-height:420px;overflow-y:auto;scrollbar-width:thin;padding-right:2px;}
+
+  /* ── Painel lateral de detalhe ── */
+  .dash-oco-detalhe{width:340px;flex-shrink:0;background:#fff;border:1px solid var(--c-border,#E8E7E2);border-radius:12px;overflow:hidden;display:none;flex-direction:column;}
+  .dash-oco-detalhe.aberto{display:flex;}
+  .dash-oco-det-header{padding:13px 15px;border-bottom:1px solid var(--c-border,#E8E7E2);display:flex;align-items:flex-start;justify-content:space-between;gap:8px;}
+  .dash-oco-det-titulo{font-size:13.5px;font-weight:600;color:var(--c-text-1,#1A1A2E);flex:1;min-width:0;word-break:break-word;}
+  .btn-fechar-det{width:26px;height:26px;border-radius:6px;border:none;background:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--c-text-3,#9898B0);flex-shrink:0;}
+  .btn-fechar-det:hover{background:#F5F4F0;}
+  .btn-fechar-det .material-icons-round{font-size:17px;}
+  .dash-oco-det-corpo{flex:1;overflow-y:auto;padding:13px 15px;display:flex;flex-direction:column;gap:10px;}
+  .dash-oco-det-meta{font-size:11.5px;color:var(--c-text-3,#9898B0);display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
+  .dash-oco-det-desc{font-size:12.5px;color:var(--c-text-1,#1A1A2E);line-height:1.6;background:#F8F7F3;border-radius:6px;padding:10px 12px;white-space:pre-wrap;word-break:break-word;}
+  .dash-oco-det-thread-titulo{font-size:10px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:var(--c-text-3,#9898B0);margin-top:4px;}
+  .dash-oco-msg{display:flex;flex-direction:column;gap:2px;margin-bottom:6px;}
+  .dash-oco-msg.minha{align-items:flex-end;}
+  .dash-oco-msg-bubble{max-width:92%;background:#F5F4F0;border-radius:8px 8px 8px 2px;padding:7px 10px;font-size:12px;color:var(--c-text-1,#1A1A2E);line-height:1.5;word-break:break-word;}
+  .dash-oco-msg.minha .dash-oco-msg-bubble{background:rgba(230,57,70,0.08);border-radius:8px 8px 2px 8px;}
+  .dash-oco-msg-autor{font-size:10px;color:var(--c-text-3,#9898B0);}
+  .dash-oco-reply-wrap{padding:10px 15px;border-top:1px solid var(--c-border,#E8E7E2);display:flex;gap:6px;align-items:flex-end;flex-shrink:0;}
+  .dash-oco-reply-input{flex:1;min-height:34px;max-height:80px;border:1.5px solid var(--c-border,#E8E7E2);border-radius:7px;padding:7px 10px;font-family:var(--font-sans,sans-serif);font-size:12.5px;color:var(--c-text-1,#1A1A2E);background:#FAFAF8;outline:none;resize:none;transition:border-color 150ms ease;}
+  .dash-oco-reply-input:focus{border-color:#E63946;background:#fff;}
+  .dash-oco-reply-input::placeholder{color:var(--c-text-3,#9898B0);}
+  .btn-oco-reply{height:34px;width:34px;border-radius:7px;border:none;background:#E63946;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background 150ms ease;}
+  .btn-oco-reply:hover{background:#C1121F;}
+  .btn-oco-reply:disabled{opacity:0.5;cursor:not-allowed;}
+  .btn-oco-reply .material-icons-round{font-size:17px;}
+  .dash-oco-det-acoes{padding:8px 15px;border-top:1px solid var(--c-border,#E8E7E2);display:flex;gap:6px;flex-shrink:0;}
+  .btn-oco-resolver{height:28px;padding:0 10px;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;border:1.5px solid #2A9D8F;background:rgba(42,157,143,0.08);color:#1A6E65;font-family:var(--font-sans,sans-serif);display:inline-flex;align-items:center;gap:4px;transition:background 120ms ease;}
+  .btn-oco-resolver:hover{background:rgba(42,157,143,0.18);}
+  .btn-oco-resolver .material-icons-round{font-size:14px;}
+  .btn-oco-ver-aluno{height:28px;padding:0 10px;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;border:1.5px solid var(--c-border,#E8E7E2);background:#fff;color:var(--c-text-2,#5C5C7A);font-family:var(--font-sans,sans-serif);display:inline-flex;align-items:center;gap:4px;transition:background 120ms ease;}
+  .btn-oco-ver-aluno:hover{background:#F5F4F0;}
+  .btn-oco-ver-aluno .material-icons-round{font-size:14px;}
+</style>
+
+<div class="dash-boas-vindas">
+  <h2 id="dash-titulo">Olá!</h2>
+  <p id="dash-subtitulo">Bem-vindo ao Sistema de Gestão Escolar do CELINPB.</p>
+</div>
+
+<!-- Banner do semestre -->
+<div class="dash-semestre-banner">
+  <div class="dash-semestre-info">
+    <div class="dash-semestre-label">Semestre em curso</div>
+    <div class="dash-semestre-valor" id="dash-semestre">—</div>
+  </div>
+  <div class="dash-semestre-status" id="dash-status-semestre">
+    <span class="material-icons-round">check_circle</span>
+    <span>Ativo</span>
+  </div>
+</div>
+
+<!-- Atalhos -->
+<div class="dash-atalhos-titulo">Acesso rápido</div>
+<div class="dash-atalhos" id="dash-atalhos"></div>
+
+<!-- Ocorrências pendentes -->
+<div class="dash-secao-header">
+  <span class="dash-secao-titulo">Ocorrências pendentes</span>
+  <span class="dash-oco-badge" id="dash-oco-badge" style="display:none;">0</span>
+</div>
+<div class="dash-oco-wrap" id="dash-oco-wrap">
+  <div class="dash-oco-lista-wrap">
+    <div class="dash-oco-lista-scroll" id="dash-oco-lista">
+      <div class="dash-oco-spinner"></div>
+    </div>
+  </div>
+  <!-- Painel lateral de detalhe -->
+  <div class="dash-oco-detalhe" id="dash-oco-detalhe">
+    <div class="dash-oco-det-header">
+      <span class="dash-oco-det-titulo" id="det-titulo">—</span>
+      <button class="btn-fechar-det" id="btn-fechar-det">
+        <span class="material-icons-round">close</span>
+      </button>
+    </div>
+    <div class="dash-oco-det-corpo" id="det-corpo">
+      <div class="dash-oco-det-meta" id="det-meta"></div>
+      <div class="dash-oco-det-desc" id="det-desc"></div>
+      <div class="dash-oco-det-thread-titulo">Respostas</div>
+      <div id="det-thread"></div>
+    </div>
+    <div class="dash-oco-det-acoes" id="det-acoes"></div>
+    <div class="dash-oco-reply-wrap">
+      <textarea class="dash-oco-reply-input" id="det-reply-input"
+        placeholder="Escreva uma resposta... (Ctrl+Enter para enviar)" rows="2"></textarea>
+      <button class="btn-oco-reply" id="btn-det-reply">
+        <span class="material-icons-round">send</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Info do sistema -->
+<div class="dash-info-sistema">
+  <span class="material-icons-round">info</span>
+  <span>SGE · CELINPB &nbsp;|&nbsp; Versão <strong id="dash-versao">1.0.0</strong> &nbsp;|&nbsp;
+  Em caso de dúvidas ou problemas, contate o administrador do sistema.</span>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var ATALHOS = {
+    admin: [
+      { id:'usuarios',   label:'Usuários',     desc:'Gerenciar usuários do sistema',   icone:'people'      },
+      { id:'alunos',     label:'Alunos',        desc:'Cadastro e histórico de alunos',  icone:'school'      },
+      { id:'turmas',     label:'Turmas',        desc:'Turmas do semestre atual',        icone:'groups'      },
+      { id:'matriculas', label:'Matrículas',    desc:'Matrículas e situações',          icone:'assignment'  },
+      { id:'relatorios', label:'Relatórios',    desc:'Boletins e listagens',            icone:'summarize'   },
+      { id:'config',     label:'Configurações', desc:'Dados e logo da escola',          icone:'settings'    },
+    ],
+    coordenacao: [
+      { id:'alunos',     label:'Alunos',        desc:'Cadastro e histórico de alunos',  icone:'school'      },
+      { id:'turmas',     label:'Turmas',        desc:'Turmas do semestre atual',        icone:'groups'      },
+      { id:'matriculas', label:'Matrículas',    desc:'Matrículas e situações',          icone:'assignment'  },
+      { id:'notas',      label:'Notas',         desc:'Lançamento de notas',             icone:'grade'       },
+      { id:'relatorios', label:'Relatórios',    desc:'Boletins e listagens',            icone:'summarize'   },
+    ],
+    professor: [
+      { id:'turmas',     label:'Minhas turmas', desc:'Turmas sob sua responsabilidade', icone:'groups'      },
+      { id:'diario',     label:'Diário de aula',desc:'Frequência e conteúdo',           icone:'menu_book'   },
+      { id:'notas',      label:'Notas',         desc:'Lançar notas dos alunos',         icone:'grade'       },
+    ],
+    secretaria: [
+      { id:'alunos',     label:'Alunos',        desc:'Cadastro de alunos',              icone:'school'      },
+      { id:'turmas',     label:'Turmas',        desc:'Consultar turmas',                icone:'groups'      },
+      { id:'matriculas', label:'Matrículas',    desc:'Realizar matrículas',             icone:'assignment'  },
+      { id:'relatorios', label:'Relatórios',    desc:'Boletins e listagens',            icone:'summarize'   },
+    ],
+  };
+
+  var TIPO_CLASS = {
+    'Ausencia avisada':'ausencia','Ausência avisada':'ausencia',
+    'Contato com responsavel':'contato','Contato com responsável':'contato',
+    'Observacao pedagogica':'pedagogica','Observação pedagógica':'pedagogica',
+    'Ocorrencia disciplinar':'disciplinar','Ocorrência disciplinar':'disciplinar',
+    'Comunicado interno':'comunicado',
+    'Outro':'outro',
+  };
+  var TIPO_ICONE = {
+    ausencia:'notifications_paused', contato:'phone', pedagogica:'psychology',
+    disciplinar:'warning', comunicado:'campaign', outro:'note',
+  };
+
+  var state = {
+    ocorrencias: [],
+    ocoSel: null,
+    usuarioId: '',
+    papel: '',
+  };
+
+  function el(id) { return document.getElementById(id); }
+
+  function postApiDash(acao, dados) {
+    if (typeof window.postApi === 'function') return window.postApi(acao, dados);
+    // Fallback Apps Script
+    return new Promise(function(resolve, reject) {
+      var token = null;
+      try {
+        google.script.run
+          .withSuccessHandler(function(s) {
+            token = s && s.token ? s.token : null;
+            google.script.run
+              .withSuccessHandler(resolve)
+              .withFailureHandler(reject)
+              .processarRequisicao(JSON.stringify({acao:acao, token:token, dados:dados||{}}));
+          })
+          .withFailureHandler(reject)
+          .getSessaoAtiva();
+      } catch(e) { reject(e); }
+    });
+  }
+
+  function fmtData(d) {
+    if (!d) return '—';
+    var dt = d instanceof Date ? d : new Date(d);
+    if (isNaN(dt.getTime())) return String(d).substring(0,10);
+    var pad = function(n){return String(n).padStart(2,'0');};
+    return pad(dt.getDate())+'/'+pad(dt.getMonth()+1)+'/'+dt.getFullYear()+
+           ' '+pad(dt.getHours())+':'+pad(dt.getMinutes());
+  }
+
+  // ── Atalhos ──────────────────────────────────────────────────────────────────
+  function renderAtalhos(papel) {
+    var atalhos = ATALHOS[papel] || ATALHOS['coordenacao'];
+    var grid = el('dash-atalhos');
+    if (!grid) return;
+    grid.innerHTML = '';
+    atalhos.forEach(function(item) {
+      var card = document.createElement('div');
+      card.className = 'dash-card';
+      card.innerHTML =
+        '<div class="dash-card-icone"><span class="material-icons-round">'+item.icone+'</span></div>'+
+        '<div><div class="dash-card-label">'+item.label+'</div>'+
+        '<div class="dash-card-desc">'+item.desc+'</div></div>';
+      card.addEventListener('click', function() {
+        if (typeof navegarPara === 'function') navegarPara(item.id, item.label);
+      });
+      grid.appendChild(card);
+    });
+  }
+
+  // ── Ocorrências ───────────────────────────────────────────────────────────────
+  function carregarOcorrencias() {
+    // Admin e coordenação: listagem geral via ocorrencias.listarPendentes
+    // Professor e secretaria: busca por usuarioId nos destinatários (back-end filtra)
+    postApiDash('ocorrencias.listarPendentes', {
+      papel:     state.papel,
+      usuarioId: state.usuarioId,
+    })
+    .then(function(res) {
+      state.ocorrencias = (res.sucesso && res.dados) ? res.dados : [];
+      renderOcorrencias();
+    })
+    .catch(function() {
+      state.ocorrencias = [];
+      renderOcorrencias();
+    });
+  }
+
+  function renderOcorrencias() {
+    var lista = el('dash-oco-lista');
+    var badge = el('dash-oco-badge');
+    if (!lista) return;
+
+    var total = state.ocorrencias.length;
+    if (badge) {
+      badge.textContent = total;
+      badge.style.display = total > 0 ? 'inline-flex' : 'none';
+    }
+
+    if (total === 0) {
+      lista.innerHTML = '<div class="dash-oco-vazio">'+
+        '<span class="material-icons-round" style="font-size:28px;display:block;margin:0 auto 8px;color:#C8C7C2;">check_circle</span>'+
+        'Nenhuma ocorrência pendente.</div>';
+      return;
+    }
+
+    lista.innerHTML = '';
+    state.ocorrencias.forEach(function(o) {
+      var cls = TIPO_CLASS[o.Tipo] || 'outro';
+      var icone = TIPO_ICONE[cls] || 'note';
+      var card = document.createElement('div');
+      card.className = 'dash-oco-card' + (state.ocoSel && state.ocoSel.OcorrenciaID === o.OcorrenciaID ? ' selecionado' : '');
+      card.innerHTML =
+        '<div class="dash-oco-icone '+cls+'"><span class="material-icons-round">'+icone+'</span></div>'+
+        '<div class="dash-oco-corpo">'+
+          '<div class="dash-oco-titulo">'+o.Titulo+'</div>'+
+          '<div class="dash-oco-aluno">Aluno: '+(o.AlunoNome||o.AlunoID||'—')+'</div>'+
+          '<div class="dash-oco-meta">'+
+            '<span class="dash-oco-tipo '+cls+'">'+o.Tipo+'</span>'+
+            '<span>'+fmtData(o.DataCriacao)+'</span>'+
+            '<span>Por: '+(o.CriadoPorNome||o.CriadoPor||'—')+'</span>'+
+            (o.TurmaAtual ? '<span>Turma: '+o.TurmaAtual+'</span>' : '')+
+          '</div>'+
+        '</div>';
+      card.addEventListener('click', function() { abrirDetalhe(o); });
+      lista.appendChild(card);
+    });
+  }
+
+  // ── Painel de detalhe ─────────────────────────────────────────────────────────
+  function abrirDetalhe(oco) {
+    state.ocoSel = oco;
+    renderOcorrencias(); // atualiza selecionado
+    var cls = TIPO_CLASS[oco.Tipo] || 'outro';
+
+    el('det-titulo').textContent = oco.Titulo;
+    el('det-meta').innerHTML =
+      '<span class="dash-oco-tipo '+cls+'">'+oco.Tipo+'</span>'+
+      '<span>'+fmtData(oco.DataCriacao)+'</span>'+
+      '<span>Aluno: '+(oco.AlunoNome||oco.AlunoID||'—')+'</span>'+
+      (oco.TurmaAtual ? '<span>Turma: '+oco.TurmaAtual+'</span>' : '')+
+      '<span>Por: '+(oco.CriadoPorNome||oco.CriadoPor||'—')+'</span>';
+    el('det-desc').textContent = oco.Descricao || '';
+    el('det-thread').innerHTML = '<div class="dash-oco-spinner"></div>';
+    el('det-reply-input').value = '';
+
+    // Botões de ação
+    var acoes = el('det-acoes');
+    acoes.innerHTML = '';
+    var ehCriador = oco.CriadoPor === state.usuarioId;
+    var temPrivil = state.papel === 'admin' || state.papel === 'coordenacao';
+    if (ehCriador || temPrivil) {
+      var btnRes = document.createElement('button');
+      btnRes.className = 'btn-oco-resolver';
+      btnRes.innerHTML = '<span class="material-icons-round">check_circle</span>Marcar resolvida';
+      btnRes.addEventListener('click', function() { resolverOco(oco.OcorrenciaID); });
+      acoes.appendChild(btnRes);
+    }
+    // Botão "Ver aluno" — navega para ficha do aluno
+    if (typeof navegarPara === 'function' && oco.AlunoID) {
+      var btnAluno = document.createElement('button');
+      btnAluno.className = 'btn-oco-ver-aluno';
+      btnAluno.innerHTML = '<span class="material-icons-round">person</span>Ver aluno';
+      btnAluno.addEventListener('click', function() { navegarPara('alunos','Alunos'); });
+      acoes.appendChild(btnAluno);
+    }
+
+    el('dash-oco-detalhe').classList.add('aberto');
+    carregarRespostas(oco.OcorrenciaID);
+  }
+
+  function fecharDetalhe() {
+    state.ocoSel = null;
+    el('dash-oco-detalhe').classList.remove('aberto');
+    renderOcorrencias();
+  }
+
+  function carregarRespostas(ocoId) {
+    postApiDash('ocorrencias.listarRespostas', { ocorrenciaId: ocoId })
+      .then(function(res) {
+        renderThread((res.sucesso && res.dados) ? res.dados : []);
+      })
+      .catch(function() { renderThread([]); });
+  }
+
+  function renderThread(respostas) {
+    var cont = el('det-thread');
+    if (!cont) return;
+    if (!respostas.length) {
+      cont.innerHTML = '<p style="font-size:12px;color:var(--c-text-3,#9898B0);text-align:center;padding:8px 0;">Nenhuma resposta ainda.</p>';
+      return;
+    }
+    cont.innerHTML = '';
+    respostas.forEach(function(r) {
+      var minha = r.EhMinha === true || r.EhMinha === 'true';
+      var div = document.createElement('div');
+      div.className = 'dash-oco-msg' + (minha ? ' minha' : '');
+      div.innerHTML =
+        '<div class="dash-oco-msg-bubble">'+r.Texto+'</div>'+
+        '<div class="dash-oco-msg-autor">'+(minha?'Você':r.AutorNome)+' · '+fmtData(r.DataCriacao)+'</div>';
+      cont.appendChild(div);
+    });
+    cont.scrollTop = cont.scrollHeight;
+  }
+
+  function enviarResposta() {
+    if (!state.ocoSel) return;
+    var input = el('det-reply-input');
+    var texto = (input ? input.value : '').trim();
+    if (!texto) return;
+    var btn = el('btn-det-reply');
+    if (btn) btn.disabled = true;
+    postApiDash('ocorrencias.adicionarResposta', {
+      ocorrenciaId: state.ocoSel.OcorrenciaID,
+      texto:        texto,
+    }).then(function(res) {
+      if (btn) btn.disabled = false;
+      if (!res.sucesso) { if(typeof toast==='function') toast(res.mensagem||'Erro.','error'); return; }
+      if (input) input.value = '';
+      carregarRespostas(state.ocoSel.OcorrenciaID);
+    }).catch(function() {
+      if (btn) btn.disabled = false;
+      if(typeof toast==='function') toast('Erro de comunicacao.','error');
+    });
+  }
+
+  function resolverOco(ocoId) {
+    postApiDash('ocorrencias.atualizarStatus', { ocorrenciaId: ocoId, novoStatus: 'RESOLVIDA' })
+      .then(function(res) {
+        if (!res.sucesso) { if(typeof toast==='function') toast(res.mensagem||'Erro.','error'); return; }
+        if(typeof toast==='function') toast('Ocorrencia marcada como resolvida.','success');
+        fecharDetalhe();
+        state.ocorrencias = state.ocorrencias.filter(function(o){ return o.OcorrenciaID !== ocoId; });
+        renderOcorrencias();
+      })
+      .catch(function() { if(typeof toast==='function') toast('Erro de comunicacao.','error'); });
+  }
+
+  // ── Rota back-end: ocorrencias.listarPendentes ──────────────────────────────
+  // Esta rota precisa existir no M6_Roteador.gs. Ela chama m4_listarOcorrenciasPendentes()
+  // que filtra por papel/usuarioId e retorna apenas PENDENTE, enriquecidas com
+  // AlunoNome e CriadoPorNome.
+
+  // ── Init ──────────────────────────────────────────────────────────────────────
+  function init() {
+    var usuario  = (typeof App !== 'undefined') ? App.usuario  : null;
+    var semestre = (typeof App !== 'undefined') ? App.semestre : null;
+
+    if (usuario) {
+      var primeiroNome = (usuario.Nome || '').split(' ')[0];
+      var tituloEl = el('dash-titulo');
+      if (tituloEl) tituloEl.textContent = 'Ola, ' + primeiroNome + '!';
+      state.usuarioId = usuario.UsuarioID || '';
+      state.papel     = usuario.Papel     || '';
+    }
+
+    var semestreEl = el('dash-semestre');
+    if (semestreEl && semestre) {
+      semestreEl.textContent = semestre.Semestre || '—';
+      var statusEl = el('dash-status-semestre');
+      if (statusEl && semestre.EdicaoAtiva === false) {
+        statusEl.style.background  = 'rgba(230,57,70,0.15)';
+        statusEl.style.color       = '#E63946';
+        statusEl.style.borderColor = 'rgba(230,57,70,0.25)';
+        statusEl.innerHTML = '<span class="material-icons-round">lock</span><span>Fechado para edicao</span>';
+      }
+    } else if (semestreEl) {
+      semestreEl.textContent = 'Nenhum semestre ativo';
+    }
+
+    renderAtalhos(state.papel);
+    carregarOcorrencias();
+
+    // Eventos
+    el('btn-fechar-det') && el('btn-fechar-det').addEventListener('click', fecharDetalhe);
+    el('btn-det-reply')  && el('btn-det-reply').addEventListener('click', enviarResposta);
+    el('det-reply-input') && el('det-reply-input').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) enviarResposta();
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+}());
+</script>

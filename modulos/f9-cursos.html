@@ -1,0 +1,1117 @@
+<!--
+  F9_Cursos.html
+  Módulo de Cursos e Avaliações com abas separadas.
+  postApi usa getSessaoAtiva() no back-end — sem dependência de variáveis globais.
+-->
+<style>
+  /* =========================================================
+     ABAS
+  ========================================================= */
+  .f9-abas {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--c-border, #E8E7E2);
+    margin-bottom: 20px;
+  }
+
+  .f9-aba {
+    padding: 9px 18px;
+    font-size: 13.5px;
+    font-weight: 500;
+    color: var(--c-text-2, #5C5C7A);
+    cursor: pointer;
+    border: none;
+    background: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    font-family: var(--font-sans, sans-serif);
+    transition: color 150ms ease, border-color 150ms ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .f9-aba .material-icons-round { font-size: 17px; }
+  .f9-aba:hover { color: var(--c-text-1, #1A1A2E); }
+  .f9-aba.ativa { color: #E63946; border-bottom-color: #E63946; }
+
+  .f9-secao { display: none; }
+  .f9-secao.ativa { display: block; }
+
+  /* =========================================================
+     TOOLBAR
+  ========================================================= */
+  .f9-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+
+  .f9-busca-wrap {
+    flex: 1;
+    min-width: 200px;
+    position: relative;
+  }
+
+  .f9-busca-wrap .material-icons-round {
+    position: absolute;
+    left: 11px; top: 50%;
+    transform: translateY(-50%);
+    font-size: 18px;
+    color: var(--c-text-3, #9898B0);
+    pointer-events: none;
+  }
+
+  .f9-busca {
+    width: 100%;
+    height: 38px;
+    border: 1.5px solid var(--c-border, #E8E7E2);
+    border-radius: 8px;
+    padding: 0 12px 0 36px;
+    font-family: var(--font-sans, sans-serif);
+    font-size: 13.5px;
+    color: var(--c-text-1, #1A1A2E);
+    background: #fff;
+    outline: none;
+    transition: border-color 150ms ease;
+  }
+
+  .f9-busca:focus {
+    border-color: #E63946;
+    box-shadow: 0 0 0 3px rgba(230,57,70,0.09);
+  }
+
+  .f9-busca::placeholder { color: var(--c-text-3, #9898B0); }
+
+  .btn-f9 {
+    height: 38px;
+    padding: 0 14px;
+    border-radius: 8px;
+    font-family: var(--font-sans, sans-serif);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    transition: background 150ms ease, box-shadow 150ms ease;
+  }
+
+  .btn-f9 .material-icons-round { font-size: 17px; }
+  .btn-f9-primario { background: #E63946; color: #fff; }
+  .btn-f9-primario:hover { background: #C1121F; box-shadow: 0 3px 10px rgba(230,57,70,0.25); }
+
+  /* =========================================================
+     TABELA
+  ========================================================= */
+  .f9-card {
+    background: #fff;
+    border: 1px solid var(--c-border, #E8E7E2);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  .f9-tabela {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+  }
+
+  .f9-tabela thead tr {
+    background: #F8F7F3;
+    border-bottom: 1px solid var(--c-border, #E8E7E2);
+  }
+
+  .f9-tabela th {
+    padding: 10px 16px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    color: var(--c-text-3, #9898B0);
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  .f9-tabela tbody tr {
+    border-bottom: 1px solid var(--c-border, #E8E7E2);
+    transition: background 120ms ease;
+  }
+
+  .f9-tabela tbody tr:last-child { border-bottom: none; }
+  .f9-tabela tbody tr:hover { background: #FAFAF8; }
+
+  .f9-tabela td {
+    padding: 11px 16px;
+    color: var(--c-text-1, #1A1A2E);
+    vertical-align: middle;
+  }
+
+  .f9-nome-cel { font-weight: 500; }
+
+  .badge-idioma {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+  }
+
+  .badge-idioma.english   { background: rgba(69,123,157,0.12); color: #185FA5; }
+  .badge-idioma.espanhol  { background: rgba(42,157,143,0.12); color: #1A6E65; }
+  .badge-idioma.frances   { background: rgba(230,57,70,0.10);  color: #A32D2D; }
+  .badge-idioma.alemao    { background: rgba(233,196,106,0.20); color: #5C4200; }
+  .badge-idioma.portugues { background: rgba(26,26,46,0.08);   color: #1A1A2E; }
+  .badge-idioma.outro     { background: #F5F4F0; color: var(--c-text-2, #5C5C7A); }
+
+  .badge-av {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 500;
+    background: #F5F4F0;
+    color: var(--c-text-2, #5C5C7A);
+    margin: 2px;
+  }
+
+  .f9-acoes-cel {
+    display: flex;
+    gap: 6px;
+    justify-content: flex-end;
+  }
+
+  .btn-linha {
+    height: 30px;
+    padding: 0 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1.5px solid var(--c-border, #E8E7E2);
+    background: #fff;
+    color: var(--c-text-1, #1A1A2E);
+    font-family: var(--font-sans, sans-serif);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: background 120ms ease;
+  }
+
+  .btn-linha .material-icons-round { font-size: 14px; }
+  .btn-linha:hover { background: #F5F4F0; }
+
+  /* Estado vazio / loading */
+  .f9-estado {
+    padding: 48px 24px;
+    text-align: center;
+    color: var(--c-text-3, #9898B0);
+    font-size: 13.5px;
+  }
+
+  .f9-estado .material-icons-round { font-size: 36px; display: block; margin: 0 auto 10px; }
+
+  .f9-spinner {
+    width: 24px; height: 24px;
+    border: 2.5px solid var(--c-border, #E8E7E2);
+    border-top-color: #E63946;
+    border-radius: 50%;
+    animation: spin-f9 0.7s linear infinite;
+    margin: 0 auto 10px;
+  }
+
+  @keyframes spin-f9 { to { transform: rotate(360deg); } }
+
+  /* =========================================================
+     MODAL
+  ========================================================= */
+  .f9-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(26,26,46,0.45);
+    z-index: 200;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 24px 16px;
+    overflow-y: auto;
+    backdrop-filter: blur(2px);
+    animation: fade-in-f9 180ms ease;
+  }
+
+  @keyframes fade-in-f9 { from { opacity: 0; } to { opacity: 1; } }
+
+  .f9-modal {
+    background: #fff;
+    border-radius: 14px;
+    width: 100%;
+    max-width: 520px;
+    box-shadow: 0 12px 48px rgba(26,26,46,0.18);
+    animation: modal-in-f9 220ms cubic-bezier(0.34,1.3,0.64,1);
+    overflow: hidden;
+  }
+
+  @keyframes modal-in-f9 {
+    from { opacity: 0; transform: translateY(16px) scale(0.97); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  .f9-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--c-border, #E8E7E2);
+  }
+
+  .f9-modal-titulo { font-size: 15px; font-weight: 600; color: var(--c-text-1, #1A1A2E); }
+
+  .btn-f9-fechar {
+    width: 30px; height: 30px;
+    border-radius: 6px; border: none;
+    background: none; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--c-text-3, #9898B0);
+    transition: background 120ms ease;
+  }
+
+  .btn-f9-fechar:hover { background: #F5F4F0; }
+  .btn-f9-fechar .material-icons-round { font-size: 18px; }
+
+  .f9-modal-corpo { padding: 20px; }
+
+  .f9-form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+
+  .f9-form-grid.col1 { grid-template-columns: 1fr; }
+
+  .f9-field { display: flex; flex-direction: column; gap: 5px; }
+  .f9-field.span2 { grid-column: span 2; }
+
+  .f9-field label {
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--c-text-2, #5C5C7A);
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+  }
+
+  .f9-field label .req { color: #E63946; margin-left: 2px; }
+
+  .f9-input {
+    height: 38px;
+    border: 1.5px solid var(--c-border, #E8E7E2);
+    border-radius: 7px;
+    padding: 0 11px;
+    font-family: var(--font-sans, sans-serif);
+    font-size: 13.5px;
+    color: var(--c-text-1, #1A1A2E);
+    background: #FAFAF8;
+    outline: none;
+    transition: border-color 150ms ease;
+    width: 100%;
+  }
+
+  .f9-input:focus {
+    border-color: #E63946;
+    box-shadow: 0 0 0 3px rgba(230,57,70,0.09);
+    background: #fff;
+  }
+
+  .f9-input.erro { border-color: #E63946; }
+  select.f9-input { cursor: pointer; }
+  .f9-input::placeholder { color: var(--c-text-3, #9898B0); }
+
+  .f9-erro-msg { font-size: 11.5px; color: #E63946; margin-top: 2px; display: none; }
+  .f9-erro-msg.show { display: block; }
+
+  .f9-hint { font-size: 11.5px; color: var(--c-text-3, #9898B0); margin-top: 2px; }
+
+  .f9-modal-alerta {
+    border-radius: 8px; padding: 10px 14px;
+    font-size: 13px; display: none;
+    align-items: center; gap: 8px; margin-bottom: 14px;
+  }
+
+  .f9-modal-alerta.show { display: flex; }
+  .f9-modal-alerta.erro { background: rgba(230,57,70,0.08); border: 1px solid rgba(230,57,70,0.20); color: #B01020; }
+  .f9-modal-alerta.sucesso { background: rgba(42,157,143,0.08); border: 1px solid rgba(42,157,143,0.20); color: #1A6E65; }
+  .f9-modal-alerta .material-icons-round { font-size: 16px; flex-shrink: 0; }
+
+  .f9-modal-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 14px 20px;
+    border-top: 1px solid var(--c-border, #E8E7E2);
+    background: #FAFAF8;
+  }
+
+  .btn-f9-modal {
+    height: 38px; padding: 0 18px;
+    border-radius: 8px;
+    font-family: var(--font-sans, sans-serif);
+    font-size: 13.5px; font-weight: 500;
+    cursor: pointer; border: none;
+    display: inline-flex; align-items: center; gap: 6px;
+    transition: background 150ms ease;
+  }
+
+  .btn-f9-modal .spinner-btn {
+    width: 15px; height: 15px;
+    border: 2px solid rgba(255,255,255,0.35);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin-f9 0.7s linear infinite;
+    display: none;
+  }
+
+  .btn-f9-modal.loading .spinner-btn { display: block; }
+  .btn-f9-modal.loading .btn-txt     { display: none; }
+
+  .btn-f9-primario-modal { background: #E63946; color: #fff; }
+  .btn-f9-primario-modal:hover { background: #C1121F; }
+  .btn-f9-primario-modal:disabled { opacity: 0.55; cursor: not-allowed; }
+  .btn-f9-secundario-modal { background: #fff; color: var(--c-text-1,#1A1A2E); border: 1.5px solid var(--c-border,#E8E7E2); }
+  .btn-f9-secundario-modal:hover { background: #F5F4F0; }
+
+  /* Avaliações vinculadas — card expandido */
+  .av-vinculadas {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--c-border, #E8E7E2);
+  }
+
+  .av-vinculadas-titulo {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    color: var(--c-text-3, #9898B0);
+    margin-bottom: 10px;
+  }
+
+  .av-card {
+    background: #F8F7F3;
+    border: 1px solid var(--c-border, #E8E7E2);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+  }
+
+  .av-card-titulo {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--c-text-1, #1A1A2E);
+    margin-bottom: 6px;
+  }
+
+  .av-card-detalhe {
+    font-size: 12px;
+    color: var(--c-text-2, #5C5C7A);
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .av-card-detalhe span { display: flex; align-items: center; gap: 4px; }
+</style>
+
+<!-- =========================================================
+     ABAS
+========================================================= -->
+<div class="f9-abas">
+  <button class="f9-aba ativa" data-aba="cursos">
+    <span class="material-icons-round">auto_stories</span>Cursos
+  </button>
+  <button class="f9-aba" data-aba="avaliacoes">
+    <span class="material-icons-round">assessment</span>Sistemas de avaliação
+  </button>
+</div>
+
+<!-- =========================================================
+     SEÇÃO: CURSOS
+========================================================= -->
+<div class="f9-secao ativa" id="secao-cursos">
+  <div class="f9-toolbar">
+    <div class="f9-busca-wrap">
+      <span class="material-icons-round">search</span>
+      <input type="text" class="f9-busca" id="cursos-busca" placeholder="Buscar por nome, sigla ou idioma…">
+    </div>
+    <button class="btn-f9 btn-f9-primario" id="btn-novo-curso">
+      <span class="material-icons-round">add</span>Novo curso
+    </button>
+  </div>
+
+  <div class="f9-card">
+    <div id="cursos-estado" class="f9-estado">
+      <div class="f9-spinner"></div><p>Carregando cursos…</p>
+    </div>
+    <table class="f9-tabela" id="cursos-tabela" style="display:none;">
+      <thead>
+        <tr>
+          <th>Idioma</th>
+          <th>Nome</th>
+          <th>Sigla</th>
+          <th>Avaliação vinculada</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="cursos-tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- =========================================================
+     SEÇÃO: AVALIAÇÕES
+========================================================= -->
+<div class="f9-secao" id="secao-avaliacoes">
+  <div class="f9-toolbar">
+    <div class="f9-busca-wrap">
+      <span class="material-icons-round">search</span>
+      <input type="text" class="f9-busca" id="av-busca" placeholder="Buscar por componente ou tipo…">
+    </div>
+    <button class="btn-f9 btn-f9-primario" id="btn-nova-av">
+      <span class="material-icons-round">add</span>Nova avaliação
+    </button>
+  </div>
+
+  <div class="f9-card">
+    <div id="av-estado" class="f9-estado">
+      <div class="f9-spinner"></div><p>Carregando avaliações…</p>
+    </div>
+    <table class="f9-tabela" id="av-tabela" style="display:none;">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Componente</th>
+          <th>Tipo de cálculo</th>
+          <th>Qtd. notas</th>
+          <th>Nota mínima</th>
+          <th>Aprovação</th>
+          <th>Obrigatória</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="av-tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- =========================================================
+     MODAL DE CURSO
+========================================================= -->
+<div class="f9-modal-overlay" id="modal-curso-overlay" style="display:none;">
+  <div class="f9-modal">
+    <div class="f9-modal-header">
+      <span class="f9-modal-titulo" id="modal-curso-titulo">Novo curso</span>
+      <button class="btn-f9-fechar" id="btn-fechar-modal-curso">
+        <span class="material-icons-round">close</span>
+      </button>
+    </div>
+    <div class="f9-modal-corpo">
+      <div class="f9-modal-alerta" id="modal-curso-alerta">
+        <span class="material-icons-round">error_outline</span>
+        <span id="modal-curso-alerta-msg"></span>
+      </div>
+      <div class="f9-form-grid">
+        <div class="f9-field">
+          <label>CursoID <span class="req">*</span></label>
+          <input type="text" class="f9-input" id="fc-id" placeholder="Ex: C01">
+          <span class="f9-erro-msg" id="err-fc-id">Informe o CursoID.</span>
+        </div>
+        <div class="f9-field">
+          <label>Idioma <span class="req">*</span></label>
+          <select class="f9-input" id="fc-idioma">
+            <option value="">Selecione…</option>
+            <option>English</option>
+            <option>Espanhol</option>
+            <option>Francês</option>
+            <option>Alemão</option>
+            <option>Português</option>
+            <option>Outro</option>
+          </select>
+          <span class="f9-erro-msg" id="err-fc-idioma">Selecione o idioma.</span>
+        </div>
+        <div class="f9-field span2">
+          <label>Nome do curso <span class="req">*</span></label>
+          <input type="text" class="f9-input" id="fc-nome" placeholder="Ex: English 1">
+          <span class="f9-erro-msg" id="err-fc-nome">Informe o nome do curso.</span>
+        </div>
+        <div class="f9-field">
+          <label>Sigla <span class="req">*</span></label>
+          <input type="text" class="f9-input" id="fc-sigla" placeholder="Ex: EN1" maxlength="6">
+          <span class="f9-erro-msg" id="err-fc-sigla">Informe a sigla.</span>
+        </div>
+        <div class="f9-field">
+          <label>Próximo curso (CursoID)</label>
+          <input type="text" class="f9-input" id="fc-proximo" placeholder="Ex: C02">
+          <span class="f9-hint">Deixe em branco se for o último curso.</span>
+        </div>
+        <div class="f9-field">
+          <label>Idade mínima (meses)</label>
+          <input type="number" class="f9-input" id="fc-idade-min" placeholder="Ex: 192" min="0">
+        </div>
+        <div class="f9-field">
+          <label>Idade máxima (meses)</label>
+          <input type="number" class="f9-input" id="fc-idade-max" placeholder="Ex: 1188" min="0">
+          <span class="f9-hint">192 meses = 16 anos. 1188 = 99 anos.</span>
+        </div>
+        <div class="f9-field span2">
+          <label>Sistemas de avaliação vinculados (AvaliacaoID)</label>
+          <input type="text" class="f9-input" id="fc-avaliacao"
+                 placeholder="Ex: AV-LE-Oral,AV-LE-Escrita (separados por vírgula)">
+          <span class="f9-hint">Informe os IDs separados por vírgula, sem espaços.</span>
+        </div>
+      </div>
+    </div>
+    <div class="f9-modal-footer">
+      <button class="btn-f9-modal btn-f9-secundario-modal" id="btn-cancelar-modal-curso">Cancelar</button>
+      <button class="btn-f9-modal btn-f9-primario-modal" id="btn-salvar-curso">
+        <div class="spinner-btn"></div>
+        <span class="material-icons-round btn-txt" style="font-size:16px;">save</span>
+        <span class="btn-txt">Salvar</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- =========================================================
+     MODAL DE AVALIAÇÃO
+========================================================= -->
+<div class="f9-modal-overlay" id="modal-av-overlay" style="display:none;">
+  <div class="f9-modal">
+    <div class="f9-modal-header">
+      <span class="f9-modal-titulo" id="modal-av-titulo">Nova avaliação</span>
+      <button class="btn-f9-fechar" id="btn-fechar-modal-av">
+        <span class="material-icons-round">close</span>
+      </button>
+    </div>
+    <div class="f9-modal-corpo">
+      <div class="f9-modal-alerta" id="modal-av-alerta">
+        <span class="material-icons-round">error_outline</span>
+        <span id="modal-av-alerta-msg"></span>
+      </div>
+      <div class="f9-form-grid">
+        <div class="f9-field span2">
+          <label>AvaliacaoID <span class="req">*</span></label>
+          <input type="text" class="f9-input" id="fa-id" placeholder="Ex: AV-LE-Oral">
+          <span class="f9-hint">Sugestão: AV-{Sigla do idioma}-{Componente}. Ex: AV-LE-Oral</span>
+          <span class="f9-erro-msg" id="err-fa-id">Informe o AvaliacaoID.</span>
+        </div>
+        <div class="f9-field">
+          <label>Componente de nota <span class="req">*</span></label>
+          <input type="text" class="f9-input" id="fa-componente" placeholder="Ex: Oral, Escrita">
+          <span class="f9-erro-msg" id="err-fa-componente">Informe o componente.</span>
+        </div>
+        <div class="f9-field">
+          <label>Tipo de cálculo <span class="req">*</span></label>
+          <select class="f9-input" id="fa-tipo">
+            <option value="">Selecione…</option>
+            <option>Média simples</option>
+            <option>Nota bruta</option>
+          </select>
+          <span class="f9-erro-msg" id="err-fa-tipo">Selecione o tipo.</span>
+        </div>
+        <div class="f9-field">
+          <label>Quantidade de notas <span class="req">*</span></label>
+          <input type="number" class="f9-input" id="fa-qnt" placeholder="Ex: 2" min="1" max="10">
+          <span class="f9-erro-msg" id="err-fa-qnt">Informe a quantidade.</span>
+        </div>
+        <div class="f9-field">
+          <label>Nota mínima</label>
+          <input type="number" class="f9-input" id="fa-min" value="0" min="0">
+        </div>
+        <div class="f9-field">
+          <label>Nota máxima</label>
+          <input type="number" class="f9-input" id="fa-max" value="100" min="0">
+        </div>
+        <div class="f9-field">
+          <label>Nota de aprovação <span class="req">*</span></label>
+          <input type="number" class="f9-input" id="fa-aprovacao" placeholder="Ex: 70" min="0">
+          <span class="f9-erro-msg" id="err-fa-aprov">Informe a nota de aprovação.</span>
+        </div>
+        <div class="f9-field" style="justify-content:flex-end;padding-top:18px;">
+          <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:13.5px;cursor:pointer;">
+            <input type="checkbox" id="fa-obrigatoria" checked style="width:16px;height:16px;accent-color:#E63946;">
+            Nota obrigatória
+          </label>
+        </div>
+      </div>
+    </div>
+    <div class="f9-modal-footer">
+      <button class="btn-f9-modal btn-f9-secundario-modal" id="btn-cancelar-modal-av">Cancelar</button>
+      <button class="btn-f9-modal btn-f9-primario-modal" id="btn-salvar-av">
+        <div class="spinner-btn"></div>
+        <span class="material-icons-round btn-txt" style="font-size:16px;">save</span>
+        <span class="btn-txt">Salvar</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // Cache de token
+
+  // Estado
+  var state = {
+    cursos:      [],
+    avaliacoes:  [],
+    cursoBusca:  '',
+    avBusca:     '',
+    modoCurso:   'novo',
+    modoAv:      'novo',
+    cursoSel:    null,
+    avSel:       null,
+    podeEditar:  false,
+  };
+
+  // =========================================================
+  // postApi
+  // =========================================================
+  function postApi(acao, dados) {
+    return window.postApi(acao, dados);
+  }
+
+  function el(id) { return document.getElementById(id); }
+  function val(id) { return el(id) ? el(id).value.trim() : ''; }
+
+  // =========================================================
+  // INIT
+  // =========================================================
+  function init() {
+    var _u = (typeof App !== 'undefined' && App.usuario) ? App.usuario : null;
+    (function(sessao) {
+        if (sessao && sessao.usuario) {
+          var papel = sessao.usuario.Papel || '';
+          state.podeEditar = ['admin','coordenacao'].indexOf(papel) !== -1;
+        }
+        registrarEventos();
+        carregarCursos();
+        carregarAvaliacoes();
+      })(_u ? {usuario:_u, token:(typeof Auth!=='undefined'?Auth.getToken():null)} : null);
+    if (!_u) { (function(){
+        registrarEventos();
+        carregarCursos();
+        carregarAvaliacoes();
+      })(); }
+  }
+
+  // =========================================================
+  // ABAS
+  // =========================================================
+  function mostrarAba(id) {
+    document.querySelectorAll('.f9-aba').forEach(function(b) {
+      b.classList.toggle('ativa', b.dataset.aba === id);
+    });
+    document.querySelectorAll('.f9-secao').forEach(function(s) {
+      s.classList.toggle('ativa', s.id === 'secao-' + id);
+    });
+  }
+
+  // =========================================================
+  // CURSOS
+  // =========================================================
+  function carregarCursos() {
+    el('cursos-estado').style.display = 'block';
+    el('cursos-estado').innerHTML = '<div class="f9-spinner"></div><p>Carregando cursos…</p>';
+    el('cursos-tabela').style.display = 'none';
+
+    postApi('cursos.listar', {})
+      .then(function(res) {
+        if (!res.sucesso) { mostrarEstado('cursos-estado', 'error_outline', res.mensagem || 'Erro ao carregar cursos.'); return; }
+        state.cursos = res.dados || [];
+        renderizarCursos();
+      })
+      .catch(function(e) { mostrarEstado('cursos-estado', 'error_outline', 'Erro de comunicação: ' + (e.message || '')); });
+  }
+
+  function renderizarCursos() {
+    var lista = state.cursos;
+    if (state.cursoBusca) {
+      var b = state.cursoBusca.toLowerCase();
+      lista = lista.filter(function(c) {
+        return (c.Nome||'').toLowerCase().indexOf(b) !== -1 ||
+               (c.Sigla||'').toLowerCase().indexOf(b) !== -1 ||
+               (c.Idioma||'').toLowerCase().indexOf(b) !== -1;
+      });
+    }
+
+    if (lista.length === 0) {
+      mostrarEstado('cursos-estado', 'auto_stories', state.cursoBusca ? 'Nenhum curso encontrado.' : 'Nenhum curso cadastrado.');
+      el('cursos-tabela').style.display = 'none';
+      return;
+    }
+
+    el('cursos-estado').style.display = 'none';
+    el('cursos-tabela').style.display = 'table';
+
+    var tbody = el('cursos-tbody'); tbody.innerHTML = '';
+
+    lista.forEach(function(c) {
+      var idiomaClass = {
+        'english':'english','espanhol':'espanhol','francês':'frances',
+        'alemão':'alemao','português':'portugues'
+      }[(c.Idioma||'').toLowerCase()] || 'outro';
+
+      var avIds = c.AvaliacaoID ? String(c.AvaliacaoID).split(',') : [];
+      var avBadges = avIds.map(function(id) {
+        return '<span class="badge-av">' + id.trim() + '</span>';
+      }).join('');
+
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td><span class="badge-idioma ' + idiomaClass + '">' + (c.Idioma || '—') + '</span></td>' +
+        '<td class="f9-nome-cel">' + (c.Nome || '—') + '</td>' +
+        '<td><code style="font-size:12px;background:#F5F4F0;padding:2px 7px;border-radius:4px;">' + (c.Sigla || '—') + '</code></td>' +
+        '<td>' + (avBadges || '<span style="color:var(--c-text-3);">—</span>') + '</td>' +
+        '<td>' +
+          (state.podeEditar ?
+            '<div class="f9-acoes-cel">' +
+              '<button class="btn-linha" data-id="' + c.CursoID + '" data-acao="editar-curso">' +
+                '<span class="material-icons-round">edit</span>Editar' +
+              '</button>' +
+            '</div>' : '') +
+        '</td>';
+      tbody.appendChild(tr);
+    });
+
+    // Eventos dos botões de editar
+    tbody.querySelectorAll('[data-acao="editar-curso"]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var curso = state.cursos.find(function(c) { return c.CursoID === btn.dataset.id; });
+        if (curso) abrirModalEditarCurso(curso);
+      });
+    });
+  }
+
+  // =========================================================
+  // AVALIAÇÕES
+  // =========================================================
+  function carregarAvaliacoes() {
+    el('av-estado').style.display = 'block';
+    el('av-estado').innerHTML = '<div class="f9-spinner"></div><p>Carregando avaliações…</p>';
+    el('av-tabela').style.display = 'none';
+
+    postApi('avaliacoes.listar', {})
+      .then(function(res) {
+        if (!res.sucesso) { mostrarEstado('av-estado', 'error_outline', res.mensagem || 'Erro ao carregar avaliações.'); return; }
+        state.avaliacoes = res.dados || [];
+        renderizarAvaliacoes();
+      })
+      .catch(function(e) { mostrarEstado('av-estado', 'error_outline', 'Erro de comunicação: ' + (e.message || '')); });
+  }
+
+  function renderizarAvaliacoes() {
+    var lista = state.avaliacoes;
+    if (state.avBusca) {
+      var b = state.avBusca.toLowerCase();
+      lista = lista.filter(function(a) {
+        return (a.ComponenteNota||'').toLowerCase().indexOf(b) !== -1 ||
+               (a.AvaliacaoID||'').toLowerCase().indexOf(b) !== -1 ||
+               (a.Tipo||'').toLowerCase().indexOf(b) !== -1;
+      });
+    }
+
+    if (lista.length === 0) {
+      mostrarEstado('av-estado', 'assessment', state.avBusca ? 'Nenhuma avaliação encontrada.' : 'Nenhuma avaliação cadastrada.');
+      el('av-tabela').style.display = 'none';
+      return;
+    }
+
+    el('av-estado').style.display = 'none';
+    el('av-tabela').style.display = 'table';
+
+    var tbody = el('av-tbody'); tbody.innerHTML = '';
+
+    lista.forEach(function(a) {
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td><code style="font-size:11.5px;background:#F5F4F0;padding:2px 7px;border-radius:4px;">' + (a.AvaliacaoID||'—') + '</code></td>' +
+        '<td class="f9-nome-cel">' + (a.ComponenteNota||'—') + '</td>' +
+        '<td>' + (a.Tipo||'—') + '</td>' +
+        '<td style="text-align:center;">' + (a.QntNotas||'—') + '</td>' +
+        '<td style="text-align:center;">' + (a.NotaMinima !== undefined ? a.NotaMinima : '—') + '</td>' +
+        '<td style="text-align:center;">' +
+          '<strong style="color:' + (a.NotaAprovacao >= 70 ? '#1A6E65' : '#A32D2D') + '">' +
+            (a.NotaAprovacao !== undefined ? a.NotaAprovacao : '—') +
+          '</strong>' +
+        '</td>' +
+        '<td style="text-align:center;">' +
+          (a.NotaObrigatoriaBoolean ?
+            '<span class="material-icons-round" style="color:#2A9D8F;font-size:18px;">check_circle</span>' :
+            '<span class="material-icons-round" style="color:#9898B0;font-size:18px;">cancel</span>') +
+        '</td>' +
+        '<td>' +
+          (state.podeEditar ?
+            '<div class="f9-acoes-cel">' +
+              '<button class="btn-linha" data-id="' + a.AvaliacaoID + '" data-acao="editar-av">' +
+                '<span class="material-icons-round">edit</span>Editar' +
+              '</button>' +
+            '</div>' : '') +
+        '</td>';
+      tbody.appendChild(tr);
+    });
+
+    tbody.querySelectorAll('[data-acao="editar-av"]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var av = state.avaliacoes.find(function(a) { return a.AvaliacaoID === btn.dataset.id; });
+        if (av) abrirModalEditarAv(av);
+      });
+    });
+  }
+
+  // =========================================================
+  // MODAL CURSO
+  // =========================================================
+  function abrirModalNovoCurso() {
+    state.modoCurso = 'novo'; state.cursoSel = null;
+    el('modal-curso-titulo').textContent = 'Novo curso';
+    limparModalCurso();
+    el('fc-id').disabled = false;
+    el('modal-curso-overlay').style.display = 'flex';
+  }
+
+  function abrirModalEditarCurso(curso) {
+    state.modoCurso = 'editar'; state.cursoSel = curso;
+    el('modal-curso-titulo').textContent = 'Editar curso';
+    limparModalCurso();
+    el('fc-id').value      = curso.CursoID    || '';
+    el('fc-id').disabled   = true; // ID não pode mudar
+    el('fc-idioma').value  = curso.Idioma      || '';
+    el('fc-nome').value    = curso.Nome        || '';
+    el('fc-sigla').value   = curso.Sigla       || '';
+    el('fc-proximo').value = curso.ProximoCursoID && curso.ProximoCursoID !== '#N/A' ? curso.ProximoCursoID : '';
+    el('fc-idade-min').value = curso.IdadeMinimaMeses || '';
+    el('fc-idade-max').value = curso.IdadeMaximaMeses || '';
+    el('fc-avaliacao').value = curso.AvaliacaoID || '';
+    el('modal-curso-overlay').style.display = 'flex';
+  }
+
+  function fecharModalCurso() {
+    el('modal-curso-overlay').style.display = 'none';
+    el('modal-curso-alerta').classList.remove('show');
+  }
+
+  function limparModalCurso() {
+    el('modal-curso-overlay').querySelectorAll('input,select').forEach(function(i) { i.value = ''; if(i.type==='checkbox') i.checked=false; });
+    document.querySelectorAll('.f9-erro-msg').forEach(function(e) { e.classList.remove('show'); });
+    el('modal-curso-alerta').classList.remove('show');
+    el('fc-id').disabled = false;
+  }
+
+  function salvarCurso() {
+    var ok = true;
+    if (!val('fc-id'))     { el('fc-id').classList.add('erro');     el('err-fc-id').classList.add('show');     ok=false; }
+    if (!val('fc-idioma')) { el('fc-idioma').classList.add('erro'); el('err-fc-idioma').classList.add('show'); ok=false; }
+    if (!val('fc-nome'))   { el('fc-nome').classList.add('erro');   el('err-fc-nome').classList.add('show');   ok=false; }
+    if (!val('fc-sigla'))  { el('fc-sigla').classList.add('erro');  el('err-fc-sigla').classList.add('show');  ok=false; }
+    if (!ok) { mostrarAlertaModal('modal-curso-alerta','modal-curso-alerta-msg','Verifique os campos obrigatórios.','erro'); return; }
+
+    var btn = el('btn-salvar-curso'); btn.disabled=true; btn.classList.add('loading');
+
+    var dados = {
+      CursoID:          val('fc-id').toUpperCase(),
+      Idioma:           val('fc-idioma'),
+      Nome:             val('fc-nome'),
+      Sigla:            val('fc-sigla').toUpperCase(),
+      ProximoCursoID:   val('fc-proximo') || '',
+      IdadeMinimaMeses: val('fc-idade-min') ? Number(val('fc-idade-min')) : '',
+      IdadeMaximaMeses: val('fc-idade-max') ? Number(val('fc-idade-max')) : '',
+      AvaliacaoID:      val('fc-avaliacao'),
+    };
+
+    var acao = state.modoCurso === 'novo' ? 'cursos.criar' : 'cursos.atualizar';
+    if (state.modoCurso === 'editar') dados.cursoId = dados.CursoID;
+
+    postApi(acao, dados)
+      .then(function(res) {
+        btn.disabled=false; btn.classList.remove('loading');
+        if (!res.sucesso) { mostrarAlertaModal('modal-curso-alerta','modal-curso-alerta-msg', res.mensagem||'Erro ao salvar.','erro'); return; }
+        fecharModalCurso();
+        if (typeof toast === 'function') toast(state.modoCurso==='novo'?'Curso criado!':'Curso atualizado!','success');
+        carregarCursos();
+      })
+      .catch(function() {
+        btn.disabled=false; btn.classList.remove('loading');
+        mostrarAlertaModal('modal-curso-alerta','modal-curso-alerta-msg','Erro de comunicação. Tente novamente.','erro');
+      });
+  }
+
+  // =========================================================
+  // MODAL AVALIAÇÃO
+  // =========================================================
+  function abrirModalNovaAv() {
+    state.modoAv = 'novo'; state.avSel = null;
+    el('modal-av-titulo').textContent = 'Nova avaliação';
+    limparModalAv();
+    el('fa-id').disabled = false;
+    el('fa-min').value = '0';
+    el('fa-max').value = '100';
+    el('fa-obrigatoria').checked = true;
+    el('modal-av-overlay').style.display = 'flex';
+  }
+
+  function abrirModalEditarAv(av) {
+    state.modoAv = 'editar'; state.avSel = av;
+    el('modal-av-titulo').textContent = 'Editar avaliação';
+    limparModalAv();
+    el('fa-id').value          = av.AvaliacaoID       || '';
+    el('fa-id').disabled       = true;
+    el('fa-componente').value  = av.ComponenteNota    || '';
+    el('fa-tipo').value        = av.Tipo              || '';
+    el('fa-qnt').value         = av.QntNotas          || '';
+    el('fa-min').value         = av.NotaMinima        !== undefined ? av.NotaMinima  : '0';
+    el('fa-max').value         = av.NotaMaxima        !== undefined ? av.NotaMaxima  : '100';
+    el('fa-aprovacao').value   = av.NotaAprovacao     !== undefined ? av.NotaAprovacao : '';
+    el('fa-obrigatoria').checked = !!av.NotaObrigatoriaBoolean;
+    el('modal-av-overlay').style.display = 'flex';
+  }
+
+  function fecharModalAv() {
+    el('modal-av-overlay').style.display = 'none';
+    el('modal-av-alerta').classList.remove('show');
+  }
+
+  function limparModalAv() {
+    el('modal-av-overlay').querySelectorAll('input,select').forEach(function(i) {
+      if (i.type === 'checkbox') i.checked = false; else i.value = '';
+    });
+    document.querySelectorAll('.f9-erro-msg').forEach(function(e) { e.classList.remove('show'); });
+    el('modal-av-alerta').classList.remove('show');
+    el('fa-id').disabled = false;
+  }
+
+  function salvarAv() {
+    var ok = true;
+    if (!val('fa-id'))        { el('fa-id').classList.add('erro');        el('err-fa-id').classList.add('show');        ok=false; }
+    if (!val('fa-componente')){ el('fa-componente').classList.add('erro');el('err-fa-componente').classList.add('show');ok=false; }
+    if (!val('fa-tipo'))      { el('fa-tipo').classList.add('erro');      el('err-fa-tipo').classList.add('show');      ok=false; }
+    if (!val('fa-qnt'))       { el('fa-qnt').classList.add('erro');       el('err-fa-qnt').classList.add('show');       ok=false; }
+    if (!val('fa-aprovacao')) { el('fa-aprovacao').classList.add('erro'); el('err-fa-aprov').classList.add('show');     ok=false; }
+    if (!ok) { mostrarAlertaModal('modal-av-alerta','modal-av-alerta-msg','Verifique os campos obrigatórios.','erro'); return; }
+
+    var btn = el('btn-salvar-av'); btn.disabled=true; btn.classList.add('loading');
+
+    var dados = {
+      AvaliacaoID:            val('fa-id'),
+      ComponenteNota:         val('fa-componente'),
+      Tipo:                   val('fa-tipo'),
+      QntNotas:               Number(val('fa-qnt')),
+      NotaMinima:             Number(el('fa-min').value),
+      NotaMaxima:             Number(el('fa-max').value),
+      NotaAprovacao:          Number(val('fa-aprovacao')),
+      NotaObrigatoriaBoolean: el('fa-obrigatoria').checked,
+    };
+
+    var acao = state.modoAv === 'novo' ? 'avaliacoes.criar' : 'avaliacoes.atualizar';
+    if (state.modoAv === 'editar') dados.avaliacaoId = dados.AvaliacaoID;
+
+    postApi(acao, dados)
+      .then(function(res) {
+        btn.disabled=false; btn.classList.remove('loading');
+        if (!res.sucesso) { mostrarAlertaModal('modal-av-alerta','modal-av-alerta-msg', res.mensagem||'Erro ao salvar.','erro'); return; }
+        fecharModalAv();
+        if (typeof toast === 'function') toast(state.modoAv==='novo'?'Avaliação criada!':'Avaliação atualizada!','success');
+        carregarAvaliacoes();
+      })
+      .catch(function() {
+        btn.disabled=false; btn.classList.remove('loading');
+        mostrarAlertaModal('modal-av-alerta','modal-av-alerta-msg','Erro de comunicação. Tente novamente.','erro');
+      });
+  }
+
+  // =========================================================
+  // UTILITÁRIOS
+  // =========================================================
+  function mostrarEstado(id, icone, msg) {
+    el(id).style.display = 'block';
+    el(id).innerHTML = '<span class="material-icons-round">' + icone + '</span><p>' + msg + '</p>';
+  }
+
+  function mostrarAlertaModal(alertaId, msgId, msg, tipo) {
+    var a = el(alertaId), m = el(msgId);
+    if (!a || !m) return;
+    a.className = 'f9-modal-alerta show ' + (tipo||'erro');
+    m.textContent = msg;
+    var ic = a.querySelector('.material-icons-round');
+    if (ic) ic.textContent = tipo === 'sucesso' ? 'check_circle' : 'error_outline';
+  }
+
+  // =========================================================
+  // EVENTOS
+  // =========================================================
+  function registrarEventos() {
+    // Abas
+    document.querySelectorAll('.f9-aba').forEach(function(btn) {
+      btn.addEventListener('click', function() { mostrarAba(this.dataset.aba); });
+    });
+
+    // Busca cursos
+    el('cursos-busca') && el('cursos-busca').addEventListener('input', function() {
+      state.cursoBusca = this.value.trim();
+      renderizarCursos();
+    });
+
+    // Busca avaliações
+    el('av-busca') && el('av-busca').addEventListener('input', function() {
+      state.avBusca = this.value.trim();
+      renderizarAvaliacoes();
+    });
+
+    // Botões novo
+    el('btn-novo-curso') && el('btn-novo-curso').addEventListener('click', function() {
+      if (!state.podeEditar) { if(typeof toast==='function') toast('Sem permissão para criar cursos.','error'); return; }
+      abrirModalNovoCurso();
+    });
+
+    el('btn-nova-av') && el('btn-nova-av').addEventListener('click', function() {
+      if (!state.podeEditar) { if(typeof toast==='function') toast('Sem permissão para criar avaliações.','error'); return; }
+      abrirModalNovaAv();
+    });
+
+    // Fechar modais
+    el('btn-fechar-modal-curso')  && el('btn-fechar-modal-curso').addEventListener('click', fecharModalCurso);
+    el('btn-cancelar-modal-curso')&& el('btn-cancelar-modal-curso').addEventListener('click', fecharModalCurso);
+    el('modal-curso-overlay')     && el('modal-curso-overlay').addEventListener('click', function(e) { if(e.target===this) fecharModalCurso(); });
+
+    el('btn-fechar-modal-av')  && el('btn-fechar-modal-av').addEventListener('click', fecharModalAv);
+    el('btn-cancelar-modal-av')&& el('btn-cancelar-modal-av').addEventListener('click', fecharModalAv);
+    el('modal-av-overlay')     && el('modal-av-overlay').addEventListener('click', function(e) { if(e.target===this) fecharModalAv(); });
+
+    // Salvar
+    el('btn-salvar-curso') && el('btn-salvar-curso').addEventListener('click', salvarCurso);
+    el('btn-salvar-av')    && el('btn-salvar-av').addEventListener('click', salvarAv);
+
+    // Limpa erro ao digitar
+    el('modal-curso-overlay') && el('modal-curso-overlay').querySelectorAll('.f9-input').forEach(function(inp) {
+      inp.addEventListener('input', function() { this.classList.remove('erro'); });
+    });
+    el('modal-av-overlay') && el('modal-av-overlay').querySelectorAll('.f9-input').forEach(function(inp) {
+      inp.addEventListener('input', function() { this.classList.remove('erro'); });
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+
+}());
+</script>

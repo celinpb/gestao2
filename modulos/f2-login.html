@@ -1,0 +1,612 @@
+<!--
+  F2_Login.html — versão 3
+  Correção: fetch com redirect:'follow' e melhor diagnóstico de erros
+  para contornar o comportamento de redirecionamento do Apps Script Web App.
+-->
+
+<style>
+  :root {
+    --c-bg:       #F5F4F0;
+    --c-surface:  #FFFFFF;
+    --c-accent:   #E63946;
+    --c-accent-h: #C1121F;
+    --c-dark:     #1A1A2E;
+    --c-text-1:   #1A1A2E;
+    --c-text-2:   #5C5C7A;
+    --c-text-3:   #9898B0;
+    --c-border:   #E8E7E2;
+    --c-success:  #2A9D8F;
+    --c-danger:   #E63946;
+    --font-sans:  'DM Sans', sans-serif;
+    --font-mono:  'DM Mono', monospace;
+    --radius-md:  10px;
+    --radius-lg:  16px;
+    --shadow-lg:  0 8px 40px rgba(26,26,46,0.13);
+    --transition: 180ms cubic-bezier(0.4,0,0.2,1);
+  }
+
+  #login-root {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    min-height: 100vh;
+    background: var(--c-bg);
+    font-family: var(--font-sans);
+  }
+
+  .login-card {
+    background: var(--c-surface);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    width: 100%;
+    max-width: 400px;
+    overflow: hidden;
+    animation: card-in 0.38s cubic-bezier(0.34, 1.4, 0.64, 1);
+  }
+
+  @keyframes card-in {
+    from { opacity: 0; transform: translateY(18px) scale(0.97); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  .card-header {
+    background: var(--c-dark);
+    padding: 28px 32px 24px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .card-header::before {
+    content: '';
+    position: absolute;
+    top: -30px; right: -30px;
+    width: 120px; height: 120px;
+    border-radius: 50%;
+    background: rgba(230,57,70,0.15);
+  }
+
+  .card-header::after {
+    content: '';
+    position: absolute;
+    bottom: -20px; left: 20px;
+    width: 80px; height: 80px;
+    border-radius: 50%;
+    background: rgba(230,57,70,0.08);
+  }
+
+  .card-logo-row {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 16px; position: relative; z-index: 1;
+  }
+
+  .card-logo-box {
+    width: 36px; height: 36px;
+    background: var(--c-accent); border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-mono); font-size: 13px;
+    font-weight: 500; color: #fff; letter-spacing: -0.5px; flex-shrink: 0;
+  }
+
+  .card-escola { font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.90); line-height: 1.2; }
+  .card-escola-sub { font-size: 10.5px; color: rgba(255,255,255,0.35); letter-spacing: 0.4px; font-weight: 400; }
+
+  .card-title { font-size: 22px; font-weight: 600; color: #fff; line-height: 1.2; position: relative; z-index: 1; }
+  .card-subtitle { font-size: 13px; color: rgba(255,255,255,0.45); margin-top: 4px; font-weight: 300; position: relative; z-index: 1; }
+
+  .card-body { padding: 28px 32px 32px; }
+
+  .field { margin-bottom: 16px; }
+
+  .field label {
+    display: block; font-size: 12px; font-weight: 500;
+    color: var(--c-text-2); margin-bottom: 6px;
+    letter-spacing: 0.3px; text-transform: uppercase;
+  }
+
+  .field-input-wrap { position: relative; display: flex; align-items: center; }
+
+  .field input {
+    width: 100%; height: 44px;
+    border: 1.5px solid var(--c-border); border-radius: var(--radius-md);
+    padding: 0 40px 0 14px; font-family: var(--font-sans); font-size: 14.5px;
+    color: var(--c-text-1); background: var(--c-bg);
+    transition: border-color var(--transition), box-shadow var(--transition);
+    outline: none;
+  }
+
+  .field input::placeholder { color: var(--c-text-3); }
+
+  .field input:focus {
+    border-color: var(--c-accent);
+    box-shadow: 0 0 0 3px rgba(230,57,70,0.10);
+    background: #fff;
+  }
+
+  .field input.error {
+    border-color: var(--c-danger);
+    box-shadow: 0 0 0 3px rgba(230,57,70,0.10);
+  }
+
+  .btn-toggle-senha {
+    position: absolute; right: 12px;
+    display: flex; align-items: center; justify-content: center;
+    width: 24px; height: 24px;
+    background: none; border: none; cursor: pointer;
+    color: var(--c-text-3); transition: color var(--transition); padding: 0;
+  }
+
+  .btn-toggle-senha:hover { color: var(--c-text-1); }
+  .btn-toggle-senha .material-icons-round { font-size: 17px; }
+
+  .field-error { font-size: 12px; color: var(--c-danger); margin-top: 5px; display: none; }
+  .field-error.show { display: block; }
+
+  .senha-regras {
+    background: #F8F7F3; border: 1px solid var(--c-border);
+    border-radius: var(--radius-md); padding: 12px 14px; margin-bottom: 16px;
+  }
+
+  .senha-regras p { font-size: 11.5px; font-weight: 500; color: var(--c-text-2); margin-bottom: 8px; }
+
+  .regra { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--c-text-3); margin-bottom: 4px; transition: color var(--transition); }
+  .regra .material-icons-round { font-size: 13px; }
+  .regra.ok { color: var(--c-success); }
+
+  .btn-primary {
+    width: 100%; height: 46px;
+    background: var(--c-accent); color: #fff; border: none;
+    border-radius: var(--radius-md); font-family: var(--font-sans);
+    font-size: 14.5px; font-weight: 500; cursor: pointer;
+    transition: background var(--transition), transform var(--transition), box-shadow var(--transition);
+    display: flex; align-items: center; justify-content: center;
+    gap: 8px; letter-spacing: 0.2px; margin-top: 8px;
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background: var(--c-accent-h);
+    box-shadow: 0 4px 14px rgba(230,57,70,0.30);
+    transform: translateY(-1px);
+  }
+
+  .btn-primary:active:not(:disabled) { transform: translateY(0); }
+  .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+  .btn-primary .spinner-btn {
+    width: 17px; height: 17px;
+    border: 2px solid rgba(255,255,255,0.35);
+    border-top-color: #fff; border-radius: 50%;
+    animation: spin-f2 0.7s linear infinite; display: none;
+  }
+
+  .btn-primary.loading .spinner-btn { display: block; }
+  .btn-primary.loading .btn-label   { display: none; }
+
+  @keyframes spin-f2 { to { transform: rotate(360deg); } }
+
+  .alert {
+    border-radius: var(--radius-md); padding: 11px 14px;
+    font-size: 13px; margin-bottom: 16px; display: none;
+    align-items: flex-start; gap: 8px;
+  }
+
+  .alert.show { display: flex; }
+
+  .alert.error {
+    background: rgba(230,57,70,0.08); border: 1px solid rgba(230,57,70,0.20); color: #B01020;
+  }
+
+  .alert.success {
+    background: rgba(42,157,143,0.08); border: 1px solid rgba(42,157,143,0.20); color: #1A6E65;
+  }
+
+  .alert .material-icons-round { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+
+  .etapa-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.8px;
+    text-transform: uppercase; color: var(--c-accent);
+    background: rgba(230,57,70,0.08); border: 1px solid rgba(230,57,70,0.18);
+    border-radius: 20px; padding: 3px 10px; margin-bottom: 16px;
+  }
+
+  .etapa-badge .material-icons-round { font-size: 13px; }
+
+  /* Diagnóstico (visível apenas durante depuração) */
+  #f2-debug {
+    font-size: 11px; font-family: monospace;
+    background: #f0f0f0; border: 1px solid #ccc;
+    border-radius: 6px; padding: 8px; margin-bottom: 12px;
+    color: #333; display: none; word-break: break-all;
+  }
+</style>
+
+<div id="login-root">
+  <div class="login-card">
+
+    <div class="card-header">
+      <div class="card-logo-row">
+        <div class="card-logo-box">CL</div>
+        <div>
+          <div class="card-escola">CELINPB</div>
+          <div class="card-escola-sub">Centro Estadual de Línguas da Paraíba</div>
+        </div>
+      </div>
+      <div class="card-title" id="f2-card-title">Acesso ao sistema</div>
+      <div class="card-subtitle" id="f2-card-subtitle">Informe suas credenciais para continuar</div>
+    </div>
+
+    <div class="card-body">
+
+      <!-- Diagnóstico (remover após resolver) -->
+      <div id="f2-debug"></div>
+
+      <div class="alert" id="f2-alert" role="alert">
+        <span class="material-icons-round">error_outline</span>
+        <span id="f2-alert-msg"></span>
+      </div>
+
+      <!-- TELA 1: LOGIN -->
+      <div id="f2-tela-login">
+        <div class="field">
+          <label for="f2-campo-login">Login ou e-mail</label>
+          <div class="field-input-wrap">
+            <input type="text" id="f2-campo-login"
+                   placeholder="seu.login ou email@escola.br"
+                   autocomplete="username" autocapitalize="none">
+          </div>
+          <div class="field-error" id="f2-err-login">Informe seu login ou e-mail.</div>
+        </div>
+
+        <div class="field">
+          <label for="f2-campo-senha">Senha</label>
+          <div class="field-input-wrap">
+            <input type="password" id="f2-campo-senha"
+                   placeholder="••••••••" autocomplete="current-password">
+            <button class="btn-toggle-senha" id="f2-toggle-senha"
+                    type="button" aria-label="Mostrar/ocultar senha">
+              <span class="material-icons-round">visibility_off</span>
+            </button>
+          </div>
+          <div class="field-error" id="f2-err-senha">Informe sua senha.</div>
+        </div>
+
+        <button class="btn-primary" id="f2-btn-entrar" type="button">
+          <div class="spinner-btn"></div>
+          <span class="btn-label">Entrar</span>
+        </button>
+      </div>
+
+      <!-- TELA 2: PRIMEIRO ACESSO -->
+      <div id="f2-tela-primeiro-acesso" style="display:none;">
+        <div class="etapa-badge">
+          <span class="material-icons-round">lock_reset</span>
+          Primeiro acesso
+        </div>
+
+        <p style="font-size:13.5px;color:var(--c-text-2);margin-bottom:18px;line-height:1.6;">
+          Esta é sua primeira entrada no sistema. Por segurança, defina uma nova senha pessoal agora.
+        </p>
+
+        <div class="field">
+          <label for="f2-nova-senha">Nova senha</label>
+          <div class="field-input-wrap">
+            <input type="password" id="f2-nova-senha"
+                   placeholder="Mínimo 8 caracteres" autocomplete="new-password">
+            <button class="btn-toggle-senha" id="f2-toggle-nova"
+                    type="button" aria-label="Mostrar/ocultar senha">
+              <span class="material-icons-round">visibility_off</span>
+            </button>
+          </div>
+          <div class="field-error" id="f2-err-nova-senha"></div>
+        </div>
+
+        <div class="senha-regras">
+          <p>A senha deve conter:</p>
+          <div class="regra" id="f2-r-len"><span class="material-icons-round">radio_button_unchecked</span><span>Pelo menos 8 caracteres</span></div>
+          <div class="regra" id="f2-r-mai"><span class="material-icons-round">radio_button_unchecked</span><span>Uma letra maiúscula</span></div>
+          <div class="regra" id="f2-r-min"><span class="material-icons-round">radio_button_unchecked</span><span>Uma letra minúscula</span></div>
+          <div class="regra" id="f2-r-num"><span class="material-icons-round">radio_button_unchecked</span><span>Um número</span></div>
+          <div class="regra" id="f2-r-esp"><span class="material-icons-round">radio_button_unchecked</span><span>Um caractere especial (!@#$%...)</span></div>
+        </div>
+
+        <div class="field">
+          <label for="f2-confirmar-senha">Confirmar nova senha</label>
+          <div class="field-input-wrap">
+            <input type="password" id="f2-confirmar-senha"
+                   placeholder="Repita a nova senha" autocomplete="new-password">
+            <button class="btn-toggle-senha" id="f2-toggle-confirmar"
+                    type="button" aria-label="Mostrar/ocultar senha">
+              <span class="material-icons-round">visibility_off</span>
+            </button>
+          </div>
+          <div class="field-error" id="f2-err-confirmar-senha"></div>
+        </div>
+
+        <button class="btn-primary" id="f2-btn-definir" type="button">
+          <div class="spinner-btn"></div>
+          <span class="btn-label">Definir senha e entrar</span>
+        </button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var state = { loginOuEmail: null, senhaAtual: null };
+
+  // -------------------------------------------------------
+  // DEBUG: exibe informações de diagnóstico na tela
+  // Remove ou comente após resolver o problema
+  // -------------------------------------------------------
+  function debug(msg) {
+    var el = document.getElementById('f2-debug');
+    if (!el) return;
+    el.style.display = 'block';
+    el.innerHTML += '<div>' + new Date().toLocaleTimeString() + ' — ' + msg + '</div>';
+  }
+
+  // -------------------------------------------------------
+  // UTILITÁRIOS
+  // -------------------------------------------------------
+  function el(id) { return document.getElementById(id); }
+
+  function setBotao(id, carregando) {
+    var btn = el(id);
+    if (!btn) return;
+    btn.disabled = carregando;
+    btn.classList.toggle('loading', carregando);
+  }
+
+  function alerta(msg, tipo) {
+    var a = el('f2-alert');
+    var m = el('f2-alert-msg');
+    if (!a || !m) return;
+    tipo = tipo || 'error';
+    a.className = 'alert ' + tipo + ' show';
+    m.textContent = msg;
+    var ic = a.querySelector('.material-icons-round');
+    if (ic) ic.textContent = (tipo === 'error') ? 'error_outline' : 'check_circle';
+  }
+
+  function semAlerta() {
+    var a = el('f2-alert');
+    if (a) a.classList.remove('show');
+  }
+
+  function erroField(id, msg) {
+    var e = el(id);
+    if (!e) return;
+    e.textContent = msg;
+    e.classList.add('show');
+  }
+
+  function limpar() {
+    document.querySelectorAll('#login-root .field-error').forEach(function(e) {
+      e.classList.remove('show');
+    });
+    document.querySelectorAll('#login-root .field input').forEach(function(e) {
+      e.classList.remove('error');
+    });
+    semAlerta();
+  }
+
+  function toggleSenha(inputId, btn) {
+    var inp = el(inputId);
+    var ic  = btn.querySelector('.material-icons-round');
+    if (!inp || !ic) return;
+    if (inp.type === 'password') { inp.type = 'text'; ic.textContent = 'visibility'; }
+    else                         { inp.type = 'password'; ic.textContent = 'visibility_off'; }
+  }
+
+  function checarRegras() {
+    var s = el('f2-nova-senha') ? el('f2-nova-senha').value : '';
+    var regras = {
+      'f2-r-len': s.length >= 8,
+      'f2-r-mai': /[A-Z]/.test(s),
+      'f2-r-min': /[a-z]/.test(s),
+      'f2-r-num': /[0-9]/.test(s),
+      'f2-r-esp': /[^A-Za-z0-9]/.test(s),
+    };
+    Object.keys(regras).forEach(function(id) {
+      var ok = regras[id]; var r = el(id); if (!r) return;
+      r.classList.toggle('ok', ok);
+      var ic = r.querySelector('.material-icons-round');
+      if (ic) ic.textContent = ok ? 'check_circle' : 'radio_button_unchecked';
+    });
+    return Object.keys(regras).every(function(k) { return regras[k]; });
+  }
+
+  // -------------------------------------------------------
+  // CHAMADA À API — usa postApi() do api.js (fetch com text/plain)
+  // Funciona tanto no GitHub Pages quanto em qualquer servidor estático.
+  // O token é null para rotas públicas (login, definirNovaSenha).
+  // -------------------------------------------------------
+  function chamarApi(acao, dados, callback) {
+    debug('Chamando: ' + acao);
+
+    // postApi() está definido em api.js, carregado pelo index.html
+    postApi(acao, dados)
+      .then(function(resultado) {
+        debug('Resposta: ' + JSON.stringify(resultado).substring(0, 80));
+        callback(null, resultado);
+      })
+      .catch(function(erro) {
+        debug('ERRO: ' + (erro.message || JSON.stringify(erro)));
+        callback(erro, null);
+      });
+  }
+
+  // -------------------------------------------------------
+  // TELA 1 — LOGIN
+  // -------------------------------------------------------
+  function tentarLogin() {
+    limpar();
+    var login = el('f2-campo-login') ? el('f2-campo-login').value.trim() : '';
+    var senha = el('f2-campo-senha') ? el('f2-campo-senha').value        : '';
+    var ok    = true;
+
+    if (!login) {
+      erroField('f2-err-login', 'Informe seu login ou e-mail.');
+      if (el('f2-campo-login')) el('f2-campo-login').classList.add('error');
+      ok = false;
+    }
+    if (!senha) {
+      erroField('f2-err-senha', 'Informe sua senha.');
+      if (el('f2-campo-senha')) el('f2-campo-senha').classList.add('error');
+      ok = false;
+    }
+    if (!ok) return;
+
+    setBotao('f2-btn-entrar', true);
+
+    chamarApi('auth.login', { loginOuEmail: login, senha: senha }, function(erro, res) {
+      if (erro || !res) {
+        alerta('Erro ao comunicar com o servidor. Tente novamente.');
+        setBotao('f2-btn-entrar', false);
+        return;
+      }
+      if (!res.sucesso) {
+        alerta(res.mensagem || 'Credenciais incorretas. Tente novamente.');
+        setBotao('f2-btn-entrar', false);
+        return;
+      }
+      if (res.primeirAcesso) {
+        state.loginOuEmail = login;
+        state.senhaAtual   = senha;
+        irParaPrimeiroAcesso();
+        setBotao('f2-btn-entrar', false);
+        return;
+      }
+      setBotao('f2-btn-entrar', false);
+      if (typeof window.onLoginSucesso === 'function') {
+        window.onLoginSucesso(res.token, res.usuario);
+      }
+    });
+  }
+
+  // -------------------------------------------------------
+  // TELA 2 — PRIMEIRO ACESSO
+  // -------------------------------------------------------
+  function irParaPrimeiroAcesso() {
+    el('f2-tela-login').style.display           = 'none';
+    el('f2-tela-primeiro-acesso').style.display = 'block';
+    if (el('f2-card-title'))    el('f2-card-title').textContent    = 'Defina sua senha';
+    if (el('f2-card-subtitle')) el('f2-card-subtitle').textContent = 'Crie uma senha segura e pessoal';
+    semAlerta();
+    if (el('f2-nova-senha')) el('f2-nova-senha').focus();
+  }
+
+  function definirNovaSenha() {
+    limpar();
+    var nova     = el('f2-nova-senha')      ? el('f2-nova-senha').value      : '';
+    var confirma = el('f2-confirmar-senha') ? el('f2-confirmar-senha').value : '';
+    var ok = true;
+
+    if (!checarRegras()) {
+      erroField('f2-err-nova-senha', 'A senha não atende todos os requisitos acima.');
+      if (el('f2-nova-senha')) el('f2-nova-senha').classList.add('error');
+      ok = false;
+    }
+    if (!confirma) {
+      erroField('f2-err-confirmar-senha', 'Confirme a nova senha.');
+      if (el('f2-confirmar-senha')) el('f2-confirmar-senha').classList.add('error');
+      ok = false;
+    } else if (nova !== confirma) {
+      erroField('f2-err-confirmar-senha', 'As senhas não coincidem.');
+      if (el('f2-confirmar-senha')) el('f2-confirmar-senha').classList.add('error');
+      ok = false;
+    }
+    if (!ok) return;
+
+    setBotao('f2-btn-definir', true);
+
+    chamarApi('auth.definirNovaSenha', {
+      loginOuEmail:     state.loginOuEmail,
+      senhaAtual:       state.senhaAtual,
+      novaSenha:        nova,
+      confirmacaoSenha: confirma,
+    }, function(erro, res) {
+      if (erro || !res) {
+        alerta('Erro ao comunicar com o servidor. Tente novamente.');
+        setBotao('f2-btn-definir', false);
+        return;
+      }
+      if (!res.sucesso) {
+        alerta(res.mensagem || 'Erro ao definir senha. Tente novamente.');
+        setBotao('f2-btn-definir', false);
+        return;
+      }
+      alerta('Senha definida com sucesso! Entrando…', 'success');
+      setBotao('f2-btn-definir', false);
+      setTimeout(function() {
+        if (typeof window.onLoginSucesso === 'function') {
+          window.onLoginSucesso(res.token, res.usuario);
+        }
+      }, 800);
+    });
+  }
+
+  // -------------------------------------------------------
+  // REGISTRO DE EVENTOS
+  // -------------------------------------------------------
+  function init() {
+    debug('F2 init() executado no GitHub Pages.');
+
+    var btnEntrar  = el('f2-btn-entrar');
+    var btnDefinir = el('f2-btn-definir');
+    var campoLogin = el('f2-campo-login');
+    var campoSenha = el('f2-campo-senha');
+    var campoNova  = el('f2-nova-senha');
+    var campoConf  = el('f2-confirmar-senha');
+
+    if (btnEntrar)  btnEntrar.addEventListener('click', tentarLogin);
+    if (btnDefinir) btnDefinir.addEventListener('click', definirNovaSenha);
+
+    if (campoLogin) {
+      campoLogin.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && campoSenha) campoSenha.focus();
+      });
+    }
+    if (campoSenha) {
+      campoSenha.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') tentarLogin();
+      });
+    }
+    if (campoNova) {
+      campoNova.addEventListener('input', checarRegras);
+      campoNova.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && campoConf) campoConf.focus();
+      });
+    }
+    if (campoConf) {
+      campoConf.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') definirNovaSenha();
+      });
+    }
+
+    [
+      ['f2-toggle-senha',     'f2-campo-senha'],
+      ['f2-toggle-nova',      'f2-nova-senha'],
+      ['f2-toggle-confirmar', 'f2-confirmar-senha'],
+    ].forEach(function(par) {
+      var btn = el(par[0]);
+      if (btn) btn.addEventListener('click', function() { toggleSenha(par[1], this); });
+    });
+
+    if (campoLogin) campoLogin.focus();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+
+}());
+</script>

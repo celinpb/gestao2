@@ -1,0 +1,434 @@
+<!--
+  F3_Usuarios.html
+  Gerenciamento de usuários do sistema.
+  Visível apenas para admin e coordenação.
+-->
+<style>
+  .u3-toolbar{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
+  .u3-busca-wrap{flex:1;min-width:180px;position:relative;}
+  .u3-busca-wrap .material-icons-round{position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:18px;color:var(--c-text-3,#9898B0);pointer-events:none;}
+  .u3-busca{width:100%;height:38px;border:1.5px solid var(--c-border,#E8E7E2);border-radius:8px;padding:0 12px 0 36px;font-family:var(--font-sans,sans-serif);font-size:13.5px;color:var(--c-text-1,#1A1A2E);background:#fff;outline:none;transition:border-color 150ms ease;}
+  .u3-busca:focus{border-color:#E63946;box-shadow:0 0 0 3px rgba(230,57,70,0.09);}
+  .u3-busca::placeholder{color:var(--c-text-3,#9898B0);}
+  .btn-u3{height:38px;padding:0 14px;border-radius:8px;font-family:var(--font-sans,sans-serif);font-size:13px;font-weight:500;cursor:pointer;border:none;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;transition:background 150ms ease,box-shadow 150ms ease;}
+  .btn-u3 .material-icons-round{font-size:17px;}
+  .btn-u3-primario{background:#E63946;color:#fff;}
+  .btn-u3-primario:hover{background:#C1121F;box-shadow:0 3px 10px rgba(230,57,70,0.25);}
+  .btn-u3-secundario{background:#fff;color:var(--c-text-1,#1A1A2E);border:1.5px solid var(--c-border,#E8E7E2);}
+  .btn-u3-secundario:hover{background:#F5F4F0;}
+
+  .u3-card{background:#fff;border:1px solid var(--c-border,#E8E7E2);border-radius:10px;overflow:hidden;}
+  .u3-tabela{width:100%;border-collapse:collapse;font-size:13.5px;}
+  .u3-tabela thead tr{background:#F8F7F3;border-bottom:1px solid var(--c-border,#E8E7E2);}
+  .u3-tabela th{padding:10px 16px;font-size:11px;font-weight:600;letter-spacing:0.6px;text-transform:uppercase;color:var(--c-text-3,#9898B0);text-align:left;white-space:nowrap;}
+  .u3-tabela tbody tr{border-bottom:1px solid var(--c-border,#E8E7E2);transition:background 120ms ease;}
+  .u3-tabela tbody tr:last-child{border-bottom:none;}
+  .u3-tabela tbody tr:hover{background:#FAFAF8;}
+  .u3-tabela td{padding:11px 16px;color:var(--c-text-1,#1A1A2E);vertical-align:middle;}
+  .u3-nome{font-weight:500;}
+  .u3-login{font-family:var(--font-mono,monospace);font-size:12px;color:var(--c-text-3,#9898B0);}
+  .u3-email{font-size:13px;color:var(--c-text-2,#5C5C7A);}
+
+  .badge-papel{display:inline-flex;padding:3px 10px;border-radius:20px;font-size:11.5px;font-weight:600;}
+  .badge-papel.admin{background:#1A1A2E;color:#fff;}
+  .badge-papel.coordenacao{background:rgba(69,123,157,0.15);color:#185FA5;}
+  .badge-papel.professor{background:rgba(42,157,143,0.12);color:#1A6E65;}
+  .badge-papel.secretaria{background:rgba(233,196,106,0.22);color:#5C4200;}
+
+  .badge-u3-sit{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500;}
+  .badge-u3-sit.ativo{background:rgba(42,157,143,0.12);color:#1A6E65;}
+  .badge-u3-sit.inativo{background:rgba(230,57,70,0.10);color:#A32D2D;}
+  .badge-u3-sit .material-icons-round{font-size:11px;}
+
+  .u3-acoes{display:flex;gap:5px;justify-content:flex-end;}
+  .btn-u3-linha{height:28px;padding:0 9px;border-radius:5px;font-size:11.5px;cursor:pointer;border:1.5px solid var(--c-border,#E8E7E2);background:#fff;color:var(--c-text-2,#5C5C7A);font-family:var(--font-sans,sans-serif);display:inline-flex;align-items:center;gap:3px;transition:background 120ms ease;white-space:nowrap;}
+  .btn-u3-linha:hover{background:#F5F4F0;}
+  .btn-u3-linha .material-icons-round{font-size:14px;}
+  .btn-u3-linha.perigo{border-color:rgba(230,57,70,0.25);color:#A32D2D;}
+  .btn-u3-linha.perigo:hover{background:rgba(230,57,70,0.06);}
+
+  .u3-estado{padding:48px 24px;text-align:center;color:var(--c-text-3,#9898B0);font-size:13.5px;}
+  .u3-estado .material-icons-round{font-size:36px;display:block;margin:0 auto 10px;}
+  .u3-spinner{width:24px;height:24px;border:2.5px solid var(--c-border,#E8E7E2);border-top-color:#E63946;border-radius:50%;animation:spin-u3 0.7s linear infinite;margin:0 auto 10px;}
+  @keyframes spin-u3{to{transform:rotate(360deg);}}
+
+  /* Avatar inline */
+  .u3-avatar{width:30px;height:30px;border-radius:50%;background:#1A1A2E;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:#fff;margin-right:8px;vertical-align:middle;letter-spacing:-0.3px;flex-shrink:0;}
+
+  /* Modal */
+  .u3-modal-overlay{position:fixed;inset:0;background:rgba(26,26,46,0.45);z-index:200;display:flex;align-items:flex-start;justify-content:center;padding:24px 16px;overflow-y:auto;backdrop-filter:blur(2px);animation:fade-u3 180ms ease;}
+  @keyframes fade-u3{from{opacity:0;}to{opacity:1;}}
+  .u3-modal{background:#fff;border-radius:14px;width:100%;max-width:460px;box-shadow:0 12px 48px rgba(26,26,46,0.18);animation:modal-u3 220ms cubic-bezier(0.34,1.3,0.64,1);overflow:hidden;}
+  @keyframes modal-u3{from{opacity:0;transform:translateY(14px) scale(0.97);}to{opacity:1;transform:translateY(0) scale(1);}}
+  .u3-modal-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--c-border,#E8E7E2);}
+  .u3-modal-titulo{font-size:15px;font-weight:600;color:var(--c-text-1,#1A1A2E);}
+  .btn-fechar-u3{width:30px;height:30px;border-radius:6px;border:none;background:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--c-text-3,#9898B0);transition:background 120ms ease;}
+  .btn-fechar-u3:hover{background:#F5F4F0;}
+  .btn-fechar-u3 .material-icons-round{font-size:18px;}
+  .u3-modal-corpo{padding:20px;}
+  .u3-modal-footer{display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:14px 20px;border-top:1px solid var(--c-border,#E8E7E2);background:#FAFAF8;}
+  .u3-modal-alerta{border-radius:8px;padding:10px 14px;font-size:13px;display:none;align-items:center;gap:8px;margin-bottom:14px;}
+  .u3-modal-alerta.show{display:flex;}
+  .u3-modal-alerta.erro{background:rgba(230,57,70,0.08);border:1px solid rgba(230,57,70,0.20);color:#B01020;}
+  .u3-modal-alerta.sucesso{background:rgba(42,157,143,0.08);border:1px solid rgba(42,157,143,0.20);color:#1A6E65;}
+  .u3-modal-alerta .material-icons-round{font-size:16px;flex-shrink:0;}
+
+  .u3-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  .u3-field{display:flex;flex-direction:column;gap:5px;}
+  .u3-field.span2{grid-column:span 2;}
+  .u3-field label{font-size:11.5px;font-weight:500;color:var(--c-text-2,#5C5C7A);letter-spacing:0.3px;text-transform:uppercase;}
+  .u3-field label .req{color:#E63946;margin-left:2px;}
+  .u3-input{height:38px;border:1.5px solid var(--c-border,#E8E7E2);border-radius:7px;padding:0 11px;font-family:var(--font-sans,sans-serif);font-size:13.5px;color:var(--c-text-1,#1A1A2E);background:#FAFAF8;outline:none;transition:border-color 150ms ease;width:100%;}
+  .u3-input:focus{border-color:#E63946;box-shadow:0 0 0 3px rgba(230,57,70,0.09);background:#fff;}
+  .u3-input.erro{border-color:#E63946;}
+  select.u3-input{cursor:pointer;}
+  .u3-erro-msg{font-size:11.5px;color:#E63946;margin-top:2px;display:none;}
+  .u3-erro-msg.show{display:block;}
+  .u3-hint{font-size:11.5px;color:var(--c-text-3,#9898B0);margin-top:2px;}
+
+  .btn-u3-modal{height:38px;padding:0 18px;border-radius:8px;font-family:var(--font-sans,sans-serif);font-size:13.5px;font-weight:500;cursor:pointer;border:none;display:inline-flex;align-items:center;gap:6px;transition:background 150ms ease;}
+  .btn-u3-modal .spinner-btn{width:15px;height:15px;border:2px solid rgba(255,255,255,0.35);border-top-color:#fff;border-radius:50%;animation:spin-u3 0.7s linear infinite;display:none;}
+  .btn-u3-modal.loading .spinner-btn{display:block;}
+  .btn-u3-modal.loading .btn-txt{display:none;}
+  .btn-u3-modal-primario{background:#E63946;color:#fff;}
+  .btn-u3-modal-primario:hover{background:#C1121F;}
+  .btn-u3-modal-primario:disabled{opacity:0.55;cursor:not-allowed;}
+  .btn-u3-modal-sec{background:#fff;color:var(--c-text-1,#1A1A2E);border:1.5px solid var(--c-border,#E8E7E2);}
+  .btn-u3-modal-sec:hover{background:#F5F4F0;}
+
+  /* Aviso primeiro acesso */
+  .senha-padrao-aviso{background:#FAEEDA;border:1px solid rgba(233,196,106,0.5);border-radius:8px;padding:10px 14px;font-size:12.5px;color:#5C4200;display:flex;align-items:center;gap:8px;margin-top:14px;}
+  .senha-padrao-aviso .material-icons-round{font-size:16px;flex-shrink:0;}
+</style>
+
+<div>
+  <div class="u3-toolbar">
+    <div class="u3-busca-wrap">
+      <span class="material-icons-round">search</span>
+      <input type="text" class="u3-busca" id="u3-busca" placeholder="Buscar por nome, login ou e-mail…">
+    </div>
+    <select style="height:38px;border:1.5px solid var(--c-border,#E8E7E2);border-radius:8px;padding:0 11px;font-family:var(--font-sans,sans-serif);font-size:13px;background:#fff;outline:none;cursor:pointer;" id="u3-filtro-papel">
+      <option value="">Todos os papéis</option>
+      <option value="admin">Admin</option>
+      <option value="coordenacao">Coordenação</option>
+      <option value="professor">Professor</option>
+      <option value="secretaria">Secretaria</option>
+    </select>
+    <button class="btn-u3 btn-u3-secundario" id="btn-u3-inativos">
+      <span class="material-icons-round">filter_list</span>Exibir inativos
+    </button>
+    <button class="btn-u3 btn-u3-primario" id="btn-u3-novo">
+      <span class="material-icons-round">person_add</span>Novo usuário
+    </button>
+  </div>
+
+  <div class="u3-card">
+    <div id="u3-estado" class="u3-estado">
+      <div class="u3-spinner"></div><p>Carregando usuários…</p>
+    </div>
+    <table class="u3-tabela" id="u3-tabela" style="display:none;">
+      <thead>
+        <tr>
+          <th>Usuário</th>
+          <th>Login</th>
+          <th>E-mail</th>
+          <th>Papel</th>
+          <th>Situação</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="u3-tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- MODAL -->
+<div class="u3-modal-overlay" id="u3-modal-overlay" style="display:none;">
+  <div class="u3-modal">
+    <div class="u3-modal-header">
+      <span class="u3-modal-titulo" id="u3-modal-titulo">Novo usuário</span>
+      <button class="btn-fechar-u3" id="btn-fechar-u3">
+        <span class="material-icons-round">close</span>
+      </button>
+    </div>
+    <div class="u3-modal-corpo">
+      <div class="u3-modal-alerta" id="u3-modal-alerta">
+        <span class="material-icons-round">error_outline</span>
+        <span id="u3-modal-alerta-msg"></span>
+      </div>
+      <div class="u3-form-grid">
+        <div class="u3-field span2">
+          <label>Nome completo <span class="req">*</span></label>
+          <input type="text" class="u3-input" id="fu-nome" placeholder="Nome do usuário">
+          <span class="u3-erro-msg" id="err-fu-nome">Informe o nome.</span>
+        </div>
+        <div class="u3-field">
+          <label>Login <span class="req">*</span></label>
+          <input type="text" class="u3-input" id="fu-login" placeholder="Ex: joao.silva" autocapitalize="none">
+          <span class="u3-erro-msg" id="err-fu-login">Informe o login.</span>
+        </div>
+        <div class="u3-field">
+          <label>Papel <span class="req">*</span></label>
+          <select class="u3-input" id="fu-papel">
+            <option value="">Selecione…</option>
+            <option value="admin">Admin</option>
+            <option value="coordenacao">Coordenação</option>
+            <option value="professor">Professor</option>
+            <option value="secretaria">Secretaria</option>
+          </select>
+          <span class="u3-erro-msg" id="err-fu-papel">Selecione o papel.</span>
+        </div>
+        <div class="u3-field span2">
+          <label>E-mail institucional <span class="req">*</span></label>
+          <input type="email" class="u3-input" id="fu-email" placeholder="usuario@professor.pb.gov.br">
+          <span class="u3-erro-msg" id="err-fu-email">Informe um e-mail válido.</span>
+        </div>
+      </div>
+      <div class="senha-padrao-aviso" id="u3-aviso-senha" style="display:none;">
+        <span class="material-icons-round">info</span>
+        O usuário receberá a senha padrão do sistema e será solicitado a trocá-la no primeiro acesso.
+      </div>
+    </div>
+    <div class="u3-modal-footer">
+      <button class="btn-u3-modal btn-u3-modal-sec" id="btn-u3-cancelar">Cancelar</button>
+      <button class="btn-u3-modal btn-u3-modal-primario" id="btn-u3-salvar">
+        <div class="spinner-btn"></div>
+        <span class="material-icons-round btn-txt" style="font-size:16px;">save</span>
+        <span class="btn-txt">Salvar</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var state = {
+    usuarios: [], busca: '', filtroPapel: '', exibirInativos: false,
+    modo: 'novo', usuarioSel: null, papel: '', isAdmin: false,
+  };
+  var buscarTimer = null;
+
+  function postApi(acao, dados) {
+    return window.postApi(acao, dados);
+  }
+
+  function el(id) { return document.getElementById(id); }
+  function val(id) { return el(id) ? el(id).value.trim() : ''; }
+
+  function iniciais(nome) {
+    return (nome||'').split(' ').filter(Boolean).slice(0,2).map(function(p){return p[0];}).join('').toUpperCase()||'?';
+  }
+
+  function init() {
+    var _u = (typeof App !== 'undefined' && App.usuario) ? App.usuario : null;
+    (function(sessao) {
+        if (sessao && sessao.usuario) {
+          state.papel   = sessao.usuario.Papel || '';
+          state.isAdmin = state.papel === 'admin';
+        }
+        registrarEventos();
+        carregarUsuarios();
+      })(_u ? {usuario:_u, token:(typeof Auth!=='undefined'?Auth.getToken():null)} : null);
+    if (!_u) { (function(){ registrarEventos(); carregarUsuarios(); })(); }
+  }
+
+  function carregarUsuarios() {
+    el('u3-estado').style.display = 'block';
+    el('u3-estado').innerHTML = '<div class="u3-spinner"></div><p>Carregando usuários…</p>';
+    el('u3-tabela').style.display = 'none';
+
+    postApi('usuarios.listar', {})
+      .then(function(res) {
+        if (!res.sucesso) { mostrarEstado('error_outline', res.mensagem||'Erro ao carregar.'); return; }
+        state.usuarios = res.dados || [];
+        renderizarUsuarios();
+      })
+      .catch(function(e) { mostrarEstado('error_outline', 'Erro de comunicação: ' + (e.message||'')); });
+  }
+
+  function usuariosFiltrados() {
+    return state.usuarios.filter(function(u) {
+      var ativo = u.SituacaoUsuario !== false && u.SituacaoUsuario !== 'false';
+      if (!state.exibirInativos && !ativo) return false;
+      if (state.filtroPapel && u.Papel !== state.filtroPapel) return false;
+      if (state.busca) {
+        var b = state.busca.toLowerCase();
+        return (u.Nome||'').toLowerCase().indexOf(b) !== -1 ||
+               (u.Login||'').toLowerCase().indexOf(b) !== -1 ||
+               (u.Email||'').toLowerCase().indexOf(b) !== -1;
+      }
+      return true;
+    });
+  }
+
+  function renderizarUsuarios() {
+    var lista = usuariosFiltrados();
+    if (lista.length === 0) {
+      mostrarEstado('people', 'Nenhum usuário encontrado.');
+      return;
+    }
+    el('u3-estado').style.display = 'none';
+    el('u3-tabela').style.display = 'table';
+    var tbody = el('u3-tbody'); tbody.innerHTML = '';
+
+    lista.forEach(function(u) {
+      var ativo = u.SituacaoUsuario !== false && u.SituacaoUsuario !== 'false';
+      var papelClass = u.Papel || 'secretaria';
+      var papelLabel = { admin:'Admin', coordenacao:'Coordenação', professor:'Professor', secretaria:'Secretaria' }[u.Papel] || u.Papel;
+      var cor = { admin:'#1A1A2E', coordenacao:'#185FA5', professor:'#2A9D8F', secretaria:'#D4A843' }[u.Papel] || '#888';
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td><span class="u3-avatar" style="background:'+cor+'">'+iniciais(u.Nome)+'</span><span class="u3-nome">'+( u.Nome||'—')+'</span></td>' +
+        '<td class="u3-login">'+( u.Login||'—')+'</td>' +
+        '<td class="u3-email">'+(u.Email||'—')+'</td>' +
+        '<td><span class="badge-papel '+papelClass+'">'+papelLabel+'</span></td>' +
+        '<td><span class="badge-u3-sit '+(ativo?'ativo':'inativo')+'">' +
+          '<span class="material-icons-round">'+(ativo?'check_circle':'cancel')+'</span>' +
+          (ativo?'Ativo':'Inativo')+'</span></td>' +
+        '<td><div class="u3-acoes">' +
+          '<button class="btn-u3-linha" data-id="'+u.UsuarioID+'" data-acao="editar"><span class="material-icons-round">edit</span>Editar</button>' +
+          '<button class="btn-u3-linha" data-id="'+u.UsuarioID+'" data-acao="senha"><span class="material-icons-round">lock_reset</span>Senha</button>' +
+          (state.isAdmin && ativo ? '<button class="btn-u3-linha perigo" data-id="'+u.UsuarioID+'" data-acao="inativar"><span class="material-icons-round">person_off</span>Inativar</button>' : '') +
+        '</div></td>';
+
+      tbody.appendChild(tr);
+    });
+
+    // Eventos dos botões de ação
+    tbody.querySelectorAll('[data-acao]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var u = state.usuarios.find(function(u) { return u.UsuarioID === btn.dataset.id; });
+        if (!u) return;
+        if (btn.dataset.acao === 'editar')   abrirModalEditar(u);
+        if (btn.dataset.acao === 'senha')    redefinirSenha(u);
+        if (btn.dataset.acao === 'inativar') inativarUsuario(u);
+      });
+    });
+  }
+
+  function mostrarEstado(icone, msg) {
+    el('u3-estado').style.display = 'block';
+    el('u3-estado').innerHTML = '<span class="material-icons-round">'+icone+'</span><p>'+msg+'</p>';
+    el('u3-tabela').style.display = 'none';
+  }
+
+  // Modal
+  function abrirModalNovo() {
+    state.modo = 'novo'; state.usuarioSel = null;
+    el('u3-modal-titulo').textContent = 'Novo usuário';
+    limparModal();
+    el('fu-login').disabled = false;
+    el('u3-aviso-senha').style.display = 'flex';
+    el('u3-modal-overlay').style.display = 'flex';
+  }
+
+  function abrirModalEditar(u) {
+    state.modo = 'editar'; state.usuarioSel = u;
+    el('u3-modal-titulo').textContent = 'Editar usuário';
+    limparModal();
+    el('fu-nome').value  = u.Nome  || '';
+    el('fu-login').value = u.Login || '';
+    el('fu-login').disabled = true;
+    el('fu-papel').value = u.Papel || '';
+    el('fu-email').value = u.Email || '';
+    el('u3-aviso-senha').style.display = 'none';
+    el('u3-modal-overlay').style.display = 'flex';
+  }
+
+  function fecharModal() {
+    el('u3-modal-overlay').style.display = 'none';
+    el('u3-modal-alerta').classList.remove('show');
+  }
+
+  function limparModal() {
+    el('u3-modal').querySelectorAll('input,select').forEach(function(i) { i.value = ''; });
+    document.querySelectorAll('.u3-erro-msg').forEach(function(e) { e.classList.remove('show'); });
+    document.querySelectorAll('.u3-input').forEach(function(i) { i.classList.remove('erro'); });
+    el('u3-modal-alerta').classList.remove('show');
+    el('fu-login').disabled = false;
+  }
+
+  function salvarUsuario() {
+    var ok = true;
+    if (!val('fu-nome'))  { el('fu-nome').classList.add('erro');  el('err-fu-nome').classList.add('show');  ok=false; }
+    if (!val('fu-login')) { el('fu-login').classList.add('erro'); el('err-fu-login').classList.add('show'); ok=false; }
+    if (!val('fu-papel')) { el('fu-papel').classList.add('erro'); el('err-fu-papel').classList.add('show'); ok=false; }
+    if (!val('fu-email') || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val('fu-email'))) {
+      el('fu-email').classList.add('erro'); el('err-fu-email').classList.add('show'); ok=false;
+    }
+    if (!ok) { mostrarAlertaModal('Verifique os campos obrigatórios.','erro'); return; }
+
+    var btn = el('btn-u3-salvar'); btn.disabled = true; btn.classList.add('loading');
+
+    var dados = { Nome: val('fu-nome'), Login: val('fu-login'), Papel: val('fu-papel'), Email: val('fu-email') };
+    var acao = state.modo === 'novo' ? 'usuarios.criar' : 'usuarios.atualizar';
+    if (state.modo === 'editar') dados.usuarioId = state.usuarioSel.UsuarioID;
+
+    postApi(acao, dados)
+      .then(function(res) {
+        btn.disabled = false; btn.classList.remove('loading');
+        if (!res.sucesso) { mostrarAlertaModal(res.mensagem||'Erro ao salvar.','erro'); return; }
+        fecharModal();
+        if (typeof toast === 'function') toast(state.modo === 'novo' ? 'Usuário criado!' : 'Usuário atualizado!', 'success');
+        carregarUsuarios();
+      })
+      .catch(function() {
+        btn.disabled = false; btn.classList.remove('loading');
+        mostrarAlertaModal('Erro de comunicação. Tente novamente.','erro');
+      });
+  }
+
+  function redefinirSenha(u) {
+    if (!confirm('Redefinir a senha de ' + u.Nome + ' para a senha padrão?\nO usuário será solicitado a trocá-la no próximo acesso.')) return;
+    postApi('usuarios.redefinirSenha', { usuarioId: u.UsuarioID })
+      .then(function(res) {
+        if (typeof toast === 'function') toast(res.sucesso ? 'Senha redefinida com sucesso.' : (res.mensagem||'Erro.'), res.sucesso ? 'success' : 'error');
+      })
+      .catch(function() { if (typeof toast==='function') toast('Erro de comunicação.','error'); });
+  }
+
+  function inativarUsuario(u) {
+    if (!confirm('Inativar o usuário ' + u.Nome + '?\nO usuário não conseguirá mais acessar o sistema.')) return;
+    postApi('usuarios.inativar', { usuarioId: u.UsuarioID })
+      .then(function(res) {
+        if (typeof toast === 'function') toast(res.sucesso ? 'Usuário inativado.' : (res.mensagem||'Erro.'), res.sucesso ? 'success' : 'error');
+        if (res.sucesso) carregarUsuarios();
+      })
+      .catch(function() { if (typeof toast==='function') toast('Erro de comunicação.','error'); });
+  }
+
+  function mostrarAlertaModal(msg, tipo) {
+    var a = el('u3-modal-alerta'), m = el('u3-modal-alerta-msg'); if (!a||!m) return;
+    a.className = 'u3-modal-alerta show ' + (tipo||'erro'); m.textContent = msg;
+    var ic = a.querySelector('.material-icons-round');
+    if (ic) ic.textContent = tipo === 'sucesso' ? 'check_circle' : 'error_outline';
+  }
+
+  function registrarEventos() {
+    el('u3-busca') && el('u3-busca').addEventListener('input', function() {
+      clearTimeout(buscarTimer);
+      buscarTimer = setTimeout(function() { state.busca = el('u3-busca').value.trim(); renderizarUsuarios(); }, 300);
+    });
+    el('u3-filtro-papel') && el('u3-filtro-papel').addEventListener('change', function() {
+      state.filtroPapel = this.value; renderizarUsuarios();
+    });
+    el('btn-u3-inativos') && el('btn-u3-inativos').addEventListener('click', function() {
+      state.exibirInativos = !state.exibirInativos;
+      this.textContent = state.exibirInativos ? 'Ocultar inativos' : 'Exibir inativos';
+      renderizarUsuarios();
+    });
+    el('btn-u3-novo')     && el('btn-u3-novo').addEventListener('click', abrirModalNovo);
+    el('btn-fechar-u3')   && el('btn-fechar-u3').addEventListener('click', fecharModal);
+    el('btn-u3-cancelar') && el('btn-u3-cancelar').addEventListener('click', fecharModal);
+    el('u3-modal-overlay')&& el('u3-modal-overlay').addEventListener('click', function(e) { if(e.target===this) fecharModal(); });
+    el('btn-u3-salvar')   && el('btn-u3-salvar').addEventListener('click', salvarUsuario);
+    el('u3-modal') && el('u3-modal').querySelectorAll('.u3-input').forEach(function(inp) {
+      inp.addEventListener('input', function() { this.classList.remove('erro'); });
+    });
+  }
+
+  if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', init); }
+  else { init(); }
+}());
+</script>

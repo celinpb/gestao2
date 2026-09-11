@@ -1,0 +1,1617 @@
+<!--
+  F4_Alunos.html — versão corrigida
+  postApi usa getSessaoAtiva() no back-end para obter o token,
+  evitando dependência de variáveis globais entre iframes do Apps Script.
+-->
+<style>
+  .alunos-wrap{display:flex;gap:20px;align-items:flex-start;position:relative;}
+  .alunos-main{flex:1;min-width:0;transition:margin-right 280ms cubic-bezier(0.4,0,0.2,1);}
+  .alunos-main.com-painel{margin-right:360px;}
+  .alunos-toolbar{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
+  .alunos-busca-wrap{flex:1;min-width:200px;position:relative;}
+  .alunos-busca-wrap .material-icons-round{position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:18px;color:var(--c-text-3,#9898B0);pointer-events:none;}
+  .alunos-busca{width:100%;height:38px;border:1.5px solid var(--c-border,#E8E7E2);border-radius:8px;padding:0 12px 0 36px;font-family:var(--font-sans,sans-serif);font-size:13.5px;color:var(--c-text-1,#1A1A2E);background:#fff;outline:none;transition:border-color 150ms ease;}
+  .alunos-busca:focus{border-color:#E63946;box-shadow:0 0 0 3px rgba(230,57,70,0.09);}
+  .alunos-busca::placeholder{color:var(--c-text-3,#9898B0);}
+  .btn-tool{height:38px;padding:0 14px;border-radius:8px;font-family:var(--font-sans,sans-serif);font-size:13px;font-weight:500;cursor:pointer;border:none;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;transition:background 150ms ease,box-shadow 150ms ease;}
+  .btn-tool .material-icons-round{font-size:17px;}
+  .btn-tool-primario{background:#E63946;color:#fff;}
+  .btn-tool-primario:hover{background:#C1121F;box-shadow:0 3px 10px rgba(230,57,70,0.25);}
+  .btn-tool-secundario{background:#fff;color:var(--c-text-1,#1A1A2E);border:1.5px solid var(--c-border,#E8E7E2);}
+  .btn-tool-secundario:hover{background:#F5F4F0;}
+  .alunos-card{background:#fff;border:1px solid var(--c-border,#E8E7E2);border-radius:10px;overflow:hidden;}
+  .alunos-tabela{width:100%;border-collapse:collapse;font-size:13.5px;}
+  .alunos-tabela thead tr{background:#F8F7F3;border-bottom:1px solid var(--c-border,#E8E7E2);}
+  .alunos-tabela th{padding:10px 16px;font-size:11px;font-weight:600;letter-spacing:0.6px;text-transform:uppercase;color:var(--c-text-3,#9898B0);text-align:left;white-space:nowrap;}
+  .alunos-tabela tbody tr{border-bottom:1px solid var(--c-border,#E8E7E2);cursor:pointer;transition:background 120ms ease;}
+  .alunos-tabela tbody tr:last-child{border-bottom:none;}
+  .alunos-tabela tbody tr:hover{background:#FAFAF8;}
+  .alunos-tabela tbody tr.selecionado{background:rgba(230,57,70,0.04);}
+  .alunos-tabela td{padding:11px 16px;color:var(--c-text-1,#1A1A2E);vertical-align:middle;}
+  .aluno-nome-cel{font-weight:500;}
+  .aluno-id-cel{font-family:var(--font-mono,monospace);font-size:12px;color:var(--c-text-3,#9898B0);}
+  .badge-situacao{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;font-size:11.5px;font-weight:500;}
+  .badge-situacao.ativo{background:rgba(42,157,143,0.12);color:#1A6E65;}
+  .badge-situacao.inativo{background:rgba(230,57,70,0.10);color:#A32D2D;}
+  .badge-situacao .material-icons-round{font-size:12px;}
+  .tabela-estado{padding:48px 24px;text-align:center;color:var(--c-text-3,#9898B0);font-size:13.5px;}
+  .tabela-estado .material-icons-round{font-size:36px;display:block;margin:0 auto 10px;}
+  .tabela-spinner{width:24px;height:24px;border:2.5px solid var(--c-border,#E8E7E2);border-top-color:#E63946;border-radius:50%;animation:spin-a4 0.7s linear infinite;margin:0 auto 10px;}
+  @keyframes spin-a4{to{transform:rotate(360deg);}}
+  .alunos-paginacao{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-top:1px solid var(--c-border,#E8E7E2);font-size:12.5px;color:var(--c-text-2,#5C5C7A);flex-wrap:wrap;gap:8px;}
+  .pag-btns{display:flex;gap:4px;}
+  .btn-pag{width:30px;height:30px;border-radius:6px;border:1.5px solid var(--c-border,#E8E7E2);background:#fff;font-size:12px;font-family:var(--font-sans,sans-serif);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background 120ms ease;color:var(--c-text-1,#1A1A2E);}
+  .btn-pag:hover:not(:disabled){background:#F5F4F0;}
+  .btn-pag:disabled{opacity:0.4;cursor:not-allowed;}
+  .btn-pag.ativa{background:#E63946;border-color:#E63946;color:#fff;}
+  .btn-pag .material-icons-round{font-size:16px;}
+  .aluno-painel{position:fixed;top:var(--header-h,56px);right:0;width:360px;height:calc(100vh - var(--header-h,56px));background:#fff;border-left:1px solid var(--c-border,#E8E7E2);box-shadow:-4px 0 20px rgba(26,26,46,0.08);display:flex;flex-direction:column;z-index:40;transform:translateX(100%);transition:transform 280ms cubic-bezier(0.4,0,0.2,1);overflow:hidden;}
+  .aluno-painel.aberto{transform:translateX(0);}
+  .painel-topo{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--c-border,#E8E7E2);flex-shrink:0;}
+  .painel-topo-titulo{font-size:13.5px;font-weight:600;color:var(--c-text-1,#1A1A2E);}
+  .painel-topo-acoes{display:flex;gap:6px;}
+  .btn-painel-acao{height:32px;padding:0 12px;border-radius:6px;font-size:12.5px;font-weight:500;cursor:pointer;border:none;display:inline-flex;align-items:center;gap:5px;font-family:var(--font-sans,sans-serif);transition:background 120ms ease;}
+  .btn-painel-acao .material-icons-round{font-size:15px;}
+  .btn-painel-editar{background:#F5F4F0;color:var(--c-text-1,#1A1A2E);}
+  .btn-painel-editar:hover{background:#ECEAE5;}
+  .btn-painel-ativar{background:rgba(42,157,143,0.08);color:#1A6E65;}
+  .btn-painel-ativar:hover{background:rgba(42,157,143,0.18);}
+
+  /* Modal de motivo (inativar/ativar) */
+  .motivo-modal-overlay{position:fixed;inset:0;background:rgba(26,26,46,0.45);z-index:300;display:flex;align-items:center;justify-content:center;padding:24px;backdrop-filter:blur(2px);}
+  .motivo-modal{background:#fff;border-radius:12px;width:100%;max-width:420px;box-shadow:0 12px 48px rgba(26,26,46,0.18);animation:modal-in4 200ms cubic-bezier(0.34,1.3,0.64,1);overflow:hidden;}
+  .motivo-modal-header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--c-border,#E8E7E2);}
+  .motivo-modal-titulo{font-size:14px;font-weight:600;color:var(--c-text-1,#1A1A2E);}
+  .motivo-modal-corpo{padding:16px 18px;}
+  .motivo-modal-corpo p{font-size:13px;color:var(--c-text-2,#5C5C7A);margin-bottom:12px;line-height:1.5;}
+  .motivo-textarea{width:100%;min-height:90px;border:1.5px solid var(--c-border,#E8E7E2);border-radius:8px;padding:10px 12px;font-family:var(--font-sans,sans-serif);font-size:13.5px;color:var(--c-text-1,#1A1A2E);background:#FAFAF8;outline:none;resize:vertical;transition:border-color 150ms ease;}
+  .motivo-textarea:focus{border-color:#E63946;background:#fff;}
+  .motivo-textarea::placeholder{color:var(--c-text-3,#9898B0);}
+  .motivo-erro{font-size:12px;color:#E63946;margin-top:6px;display:none;}
+  .motivo-erro.show{display:block;}
+  .motivo-modal-footer{display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid var(--c-border,#E8E7E2);background:#FAFAF8;}
+  .btn-motivo{height:36px;padding:0 16px;border-radius:7px;font-family:var(--font-sans,sans-serif);font-size:13px;font-weight:500;cursor:pointer;border:none;display:inline-flex;align-items:center;gap:5px;transition:background 150ms ease;}
+  .btn-motivo .spinner-btn{width:14px;height:14px;border:2px solid rgba(255,255,255,0.35);border-top-color:#fff;border-radius:50%;animation:spin-a4 0.7s linear infinite;display:none;}
+  .btn-motivo.loading .spinner-btn{display:block;}
+  .btn-motivo.loading .btn-txt{display:none;}
+  .btn-motivo-primario{background:#E63946;color:#fff;}
+  .btn-motivo-primario:hover{background:#C1121F;}
+  .btn-motivo-primario.ativar{background:#2A9D8F;}
+  .btn-motivo-primario.ativar:hover{background:#1A7A6E;}
+  .btn-motivo-sec{background:#fff;color:var(--c-text-1,#1A1A2E);border:1.5px solid var(--c-border,#E8E7E2);}
+  .btn-motivo-sec:hover{background:#F5F4F0;}
+  .btn-fechar-painel{width:30px;height:30px;border-radius:6px;border:none;background:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--c-text-3,#9898B0);transition:background 120ms ease;}
+  .btn-fechar-painel:hover{background:#F5F4F0;}
+  .btn-fechar-painel .material-icons-round{font-size:18px;}
+  .painel-corpo{flex:1;overflow-y:auto;padding:16px;scrollbar-width:thin;}
+  .painel-avatar-wrap{display:flex;align-items:center;gap:12px;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--c-border,#E8E7E2);}
+  .painel-avatar{width:48px;height:48px;border-radius:50%;background:#1A1A2E;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:600;color:#fff;flex-shrink:0;letter-spacing:-0.5px;}
+  .painel-avatar-info{flex:1;min-width:0;}
+  .painel-nome{font-size:15px;font-weight:600;color:var(--c-text-1,#1A1A2E);line-height:1.25;word-break:break-word;}
+  .painel-nome-legal{font-size:11.5px;color:var(--c-text-3,#9898B0);margin-top:2px;}
+  .painel-id{font-size:11.5px;font-family:var(--font-mono,monospace);color:var(--c-text-3,#9898B0);margin-top:2px;}
+  .ficha-secao{margin-bottom:16px;}
+  .ficha-secao-titulo{font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--c-text-3,#9898B0);margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid var(--c-border,#E8E7E2);}
+  .ficha-campo{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:5px 0;font-size:13px;}
+  .ficha-campo-label{color:var(--c-text-2,#5C5C7A);flex-shrink:0;min-width:110px;}
+  .ficha-campo-valor{color:var(--c-text-1,#1A1A2E);text-align:right;word-break:break-word;font-weight:500;}
+  .ficha-campo-valor.vazio{color:var(--c-text-3,#9898B0);font-weight:400;}
+  .modal-overlay{position:fixed;inset:0;background:rgba(26,26,46,0.45);z-index:200;display:flex;align-items:flex-start;justify-content:center;padding:24px 16px;overflow-y:auto;backdrop-filter:blur(2px);animation:fade-in-ov4 180ms ease;}
+  @keyframes fade-in-ov4{from{opacity:0;}to{opacity:1;}}
+  .modal{background:#fff;border-radius:14px;width:100%;max-width:640px;box-shadow:0 12px 48px rgba(26,26,46,0.18);animation:modal-in4 220ms cubic-bezier(0.34,1.3,0.64,1);overflow:hidden;}
+  @keyframes modal-in4{from{opacity:0;transform:translateY(16px) scale(0.97);}to{opacity:1;transform:translateY(0) scale(1);}}
+  .modal-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--c-border,#E8E7E2);}
+  .modal-titulo{font-size:15px;font-weight:600;color:var(--c-text-1,#1A1A2E);}
+  .btn-fechar-modal{width:30px;height:30px;border-radius:6px;border:none;background:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--c-text-3,#9898B0);transition:background 120ms ease;}
+  .btn-fechar-modal:hover{background:#F5F4F0;}
+  .btn-fechar-modal .material-icons-round{font-size:18px;}
+  .modal-corpo{padding:20px;}
+  .modal-abas{display:flex;gap:4px;margin-bottom:20px;border-bottom:1px solid var(--c-border,#E8E7E2);overflow-x:auto;scrollbar-width:none;}
+  .modal-abas::-webkit-scrollbar{display:none;}
+  .modal-aba{padding:8px 14px;font-size:13px;font-weight:500;color:var(--c-text-2,#5C5C7A);cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap;font-family:var(--font-sans,sans-serif);transition:color 150ms ease,border-color 150ms ease;}
+  .modal-aba:hover{color:var(--c-text-1,#1A1A2E);}
+  .modal-aba.ativa{color:#E63946;border-bottom-color:#E63946;}
+  .modal-secao{display:none;}
+  .modal-secao.ativa{display:block;}
+  .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  .form-grid.col1{grid-template-columns:1fr;}
+  .form-field{display:flex;flex-direction:column;gap:5px;}
+  .form-field.span2{grid-column:span 2;}
+  .form-field label{font-size:11.5px;font-weight:500;color:var(--c-text-2,#5C5C7A);letter-spacing:0.3px;text-transform:uppercase;}
+  .form-field label .req{color:#E63946;margin-left:2px;}
+  .form-input{height:38px;border:1.5px solid var(--c-border,#E8E7E2);border-radius:7px;padding:0 11px;font-family:var(--font-sans,sans-serif);font-size:13.5px;color:var(--c-text-1,#1A1A2E);background:#FAFAF8;outline:none;transition:border-color 150ms ease,background 150ms ease;width:100%;}
+  .form-input:focus{border-color:#E63946;box-shadow:0 0 0 3px rgba(230,57,70,0.09);background:#fff;}
+  .form-input.erro{border-color:#E63946;}
+  select.form-input{cursor:pointer;}
+  .form-input::placeholder{color:var(--c-text-3,#9898B0);}
+  .form-check-row{display:flex;align-items:center;gap:8px;padding:6px 0;}
+  .form-check-row input[type="checkbox"]{width:16px;height:16px;cursor:pointer;accent-color:#E63946;}
+  .form-check-row label{font-size:13.5px;color:var(--c-text-1,#1A1A2E);cursor:pointer;}
+  .form-erro-msg{font-size:11.5px;color:#E63946;margin-top:2px;display:none;}
+  .form-erro-msg.show{display:block;}
+  .form-subsecao{font-size:11px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:var(--c-text-3,#9898B0);grid-column:1/-1;margin-top:4px;padding-top:10px;border-top:1px solid var(--c-border,#E8E7E2);}
+  .modal-footer{display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:14px 20px;border-top:1px solid var(--c-border,#E8E7E2);background:#FAFAF8;}
+  .btn-modal{height:38px;padding:0 18px;border-radius:8px;font-family:var(--font-sans,sans-serif);font-size:13.5px;font-weight:500;cursor:pointer;border:none;display:inline-flex;align-items:center;gap:6px;transition:background 150ms ease,box-shadow 150ms ease;}
+  .btn-modal .spinner-btn{width:15px;height:15px;border:2px solid rgba(255,255,255,0.35);border-top-color:#fff;border-radius:50%;animation:spin-a4 0.7s linear infinite;display:none;}
+  .btn-modal.loading .spinner-btn{display:block;}
+  .btn-modal.loading .btn-txt{display:none;}
+  .btn-modal-primario{background:#E63946;color:#fff;}
+  .btn-modal-primario:hover{background:#C1121F;box-shadow:0 3px 10px rgba(230,57,70,0.25);}
+  .btn-modal-primario:disabled{opacity:0.55;cursor:not-allowed;}
+  .btn-modal-secundario{background:#fff;color:var(--c-text-1,#1A1A2E);border:1.5px solid var(--c-border,#E8E7E2);}
+  .btn-modal-secundario:hover{background:#F5F4F0;}
+  .modal-alerta{border-radius:8px;padding:10px 14px;font-size:13px;display:none;align-items:center;gap:8px;margin-bottom:14px;}
+  .modal-alerta.show{display:flex;}
+  .modal-alerta.erro{background:rgba(230,57,70,0.08);border:1px solid rgba(230,57,70,0.20);color:#B01020;}
+  .modal-alerta.sucesso{background:rgba(42,157,143,0.08);border:1px solid rgba(42,157,143,0.20);color:#1A6E65;}
+  .modal-alerta .material-icons-round{font-size:16px;flex-shrink:0;}
+
+  /* =========================================================
+     OCORRÊNCIAS — painel lateral
+  ========================================================= */
+  .oco-abas-wrap{display:flex;border-bottom:1px solid var(--c-border,#E8E7E2);flex-shrink:0;}
+  .oco-aba{flex:1;padding:10px 8px;font-size:12px;font-weight:500;color:var(--c-text-2,#5C5C7A);cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;margin-bottom:-1px;font-family:var(--font-sans,sans-serif);transition:color 150ms ease,border-color 150ms ease;display:flex;align-items:center;justify-content:center;gap:4px;}
+  .oco-aba .material-icons-round{font-size:14px;}
+  .oco-aba.ativa{color:#E63946;border-bottom-color:#E63946;}
+  .oco-filtros{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;}
+  .oco-filtro-sel{height:30px;border:1.5px solid var(--c-border,#E8E7E2);border-radius:6px;padding:0 8px;font-family:var(--font-sans,sans-serif);font-size:12px;color:var(--c-text-1,#1A1A2E);background:#fff;outline:none;cursor:pointer;flex:1;min-width:80px;}
+  .oco-filtro-sel:focus{border-color:#E63946;}
+  .oco-card{background:#fff;border:1px solid var(--c-border,#E8E7E2);border-radius:8px;padding:11px 13px;margin-bottom:8px;cursor:pointer;transition:border-color 150ms ease,box-shadow 150ms ease;}
+  .oco-card:hover{border-color:#C8C7C2;box-shadow:0 2px 8px rgba(26,26,46,0.07);}
+  .oco-card-header{display:flex;align-items:flex-start;justify-content:space-between;gap:6px;margin-bottom:4px;}
+  .oco-card-titulo{font-size:13px;font-weight:600;color:var(--c-text-1,#1A1A2E);flex:1;min-width:0;word-break:break-word;line-height:1.3;}
+  .oco-badge-tipo{display:inline-flex;padding:2px 7px;border-radius:4px;font-size:10.5px;font-weight:600;white-space:nowrap;flex-shrink:0;}
+  .oco-badge-tipo.ausencia{background:rgba(233,196,106,0.22);color:#5C4200;}
+  .oco-badge-tipo.contato{background:rgba(69,123,157,0.12);color:#185FA5;}
+  .oco-badge-tipo.pedagogica{background:rgba(42,157,143,0.12);color:#1A6E65;}
+  .oco-badge-tipo.disciplinar{background:rgba(230,57,70,0.10);color:#A32D2D;}
+  .oco-badge-tipo.comunicado{background:rgba(26,26,46,0.08);color:#3A3A5C;}
+  .oco-badge-tipo.outro{background:#F5F4F0;color:#5C5C7A;}
+  .oco-card-meta{font-size:11px;color:var(--c-text-3,#9898B0);display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+  .oco-badge-status{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;}
+  .oco-badge-status.PENDENTE{background:rgba(233,196,106,0.20);color:#5C4200;}
+  .oco-badge-status.RESOLVIDA{background:rgba(42,157,143,0.12);color:#1A6E65;}
+  .oco-badge-status .material-icons-round{font-size:10px;}
+  .oco-vazio{padding:28px 0;text-align:center;color:var(--c-text-3,#9898B0);font-size:13px;}
+  .oco-vazio .material-icons-round{font-size:32px;display:block;margin:0 auto 8px;}
+  .oco-spinner{width:20px;height:20px;border:2.5px solid var(--c-border,#E8E7E2);border-top-color:#E63946;border-radius:50%;animation:spin-a4 0.7s linear infinite;margin:24px auto;}
+  .btn-nova-oco{width:100%;height:36px;background:#E63946;color:#fff;border:none;border-radius:7px;font-family:var(--font-sans,sans-serif);font-size:13px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:12px;transition:background 150ms ease;}
+  .btn-nova-oco:hover{background:#C1121F;}
+  .btn-nova-oco .material-icons-round{font-size:16px;}
+  .oco-detalhe{display:none;}
+  .oco-detalhe.show{display:block;}
+  .oco-detalhe-header{display:flex;align-items:center;gap:8px;margin-bottom:12px;}
+  .btn-oco-voltar{height:28px;padding:0 10px;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;border:1.5px solid var(--c-border,#E8E7E2);background:#fff;font-family:var(--font-sans,sans-serif);display:inline-flex;align-items:center;gap:4px;color:var(--c-text-2,#5C5C7A);transition:background 120ms ease;}
+  .btn-oco-voltar:hover{background:#F5F4F0;}
+  .btn-oco-voltar .material-icons-round{font-size:14px;}
+  .oco-detalhe-titulo{font-size:14px;font-weight:600;color:var(--c-text-1,#1A1A2E);flex:1;min-width:0;word-break:break-word;}
+  .oco-detalhe-meta{font-size:11.5px;color:var(--c-text-3,#9898B0);margin-bottom:10px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+  .oco-detalhe-desc{font-size:13px;color:var(--c-text-1,#1A1A2E);line-height:1.6;background:#F8F7F3;border-radius:6px;padding:10px 12px;margin-bottom:14px;white-space:pre-wrap;word-break:break-word;}
+  .oco-acoes-detalhe{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;}
+  .btn-oco-acao{height:28px;padding:0 10px;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;border:1.5px solid var(--c-border,#E8E7E2);background:#fff;font-family:var(--font-sans,sans-serif);display:inline-flex;align-items:center;gap:4px;color:var(--c-text-2,#5C5C7A);transition:background 120ms ease;}
+  .btn-oco-acao:hover{background:#F5F4F0;}
+  .btn-oco-acao.resolver{border-color:#2A9D8F;color:#1A6E65;}
+  .btn-oco-acao.reabrir{border-color:#D4A843;color:#5C4200;}
+  .btn-oco-acao.excluir{border-color:#E63946;color:#A32D2D;}
+  .btn-oco-acao .material-icons-round{font-size:14px;}
+  .oco-thread-titulo{font-size:10px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:var(--c-text-3,#9898B0);margin-bottom:8px;}
+  .oco-msg{display:flex;flex-direction:column;gap:2px;margin-bottom:8px;}
+  .oco-msg.minha{align-items:flex-end;}
+  .oco-msg-bubble{max-width:90%;background:#F5F4F0;border-radius:10px 10px 10px 2px;padding:8px 11px;font-size:12.5px;color:var(--c-text-1,#1A1A2E);line-height:1.5;word-break:break-word;}
+  .oco-msg.minha .oco-msg-bubble{background:rgba(230,57,70,0.08);border-radius:10px 10px 2px 10px;}
+  .oco-msg-autor{font-size:10.5px;color:var(--c-text-3,#9898B0);}
+  .oco-reply-wrap{display:flex;gap:6px;margin-top:12px;align-items:flex-end;}
+  .oco-reply-input{flex:1;min-height:36px;max-height:100px;border:1.5px solid var(--c-border,#E8E7E2);border-radius:7px;padding:8px 10px;font-family:var(--font-sans,sans-serif);font-size:13px;color:var(--c-text-1,#1A1A2E);background:#FAFAF8;outline:none;resize:vertical;transition:border-color 150ms ease;}
+  .oco-reply-input:focus{border-color:#E63946;background:#fff;}
+  .oco-reply-input::placeholder{color:var(--c-text-3,#9898B0);}
+  .btn-oco-reply{height:36px;width:36px;border-radius:7px;border:none;background:#E63946;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background 150ms ease;}
+  .btn-oco-reply:hover{background:#C1121F;}
+  .btn-oco-reply:disabled{opacity:0.5;cursor:not-allowed;}
+  .btn-oco-reply .material-icons-round{font-size:18px;}
+  .oco-alerta{border-radius:7px;padding:8px 12px;font-size:12.5px;margin-bottom:10px;display:none;align-items:center;gap:7px;}
+  .oco-alerta.show{display:flex;}
+  .oco-alerta.erro{background:rgba(230,57,70,0.08);border:1px solid rgba(230,57,70,0.18);color:#B01020;}
+  .oco-alerta.sucesso{background:rgba(42,157,143,0.08);border:1px solid rgba(42,157,143,0.18);color:#1A6E65;}
+  .oco-alerta .material-icons-round{font-size:15px;flex-shrink:0;}
+</style>
+
+
+<div class="alunos-wrap" id="alunos-wrap">
+  <div class="alunos-main" id="alunos-main">
+    <div class="alunos-toolbar">
+      <div class="alunos-busca-wrap">
+        <span class="material-icons-round">search</span>
+        <input type="text" class="alunos-busca" id="alunos-busca" placeholder="Buscar por nome…">
+      </div>
+      <button class="btn-tool btn-tool-secundario" id="btn-filtro-inativos">
+        <span class="material-icons-round">filter_list</span>Exibir inativos
+      </button>
+      <button class="btn-tool btn-tool-primario" id="btn-novo-aluno" style="display:none;">
+        <span class="material-icons-round">person_add</span>Novo aluno
+      </button>
+    </div>
+    <div class="alunos-card">
+      <div id="alunos-estado" class="tabela-estado">
+        <div class="tabela-spinner"></div><p>Carregando alunos…</p>
+      </div>
+      <table class="alunos-tabela" id="alunos-tabela" style="display:none;">
+        <thead>
+          <tr>
+            <th>Nome</th><th>ID</th><th>Telefone</th><th>E-mail</th><th>Situação</th>
+          </tr>
+        </thead>
+        <tbody id="alunos-tbody"></tbody>
+      </table>
+      <div class="alunos-paginacao" id="alunos-paginacao" style="display:none;">
+        <span id="pag-info">—</span>
+        <div class="pag-btns" id="pag-btns"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="aluno-painel" id="aluno-painel">
+    <div class="painel-topo">
+      <span class="painel-topo-titulo">Ficha do aluno</span>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <div class="painel-topo-acoes" id="painel-acoes"></div>
+        <button class="btn-fechar-painel" id="btn-fechar-painel" title="Fechar">
+          <span class="material-icons-round">close</span>
+        </button>
+      </div>
+    </div>
+    <!-- Abas do painel: Ficha | Ocorrências -->
+    <div class="oco-abas-wrap" id="painel-abas-topo" style="display:none;">
+      <button class="oco-aba ativa" id="painel-aba-ficha" data-aba-painel="ficha">
+        <span class="material-icons-round">person</span>Ficha
+      </button>
+      <button class="oco-aba" id="painel-aba-ocorrencias" data-aba-painel="ocorrencias">
+        <span class="material-icons-round">forum</span>Ocorrências
+      </button>
+    </div>
+    <div id="painel-corpo" class="painel-corpo"></div>
+    <div id="painel-ocorrencias" class="painel-corpo" style="display:none;"></div>
+  </div>
+</div>
+
+
+<div class="modal-overlay" id="modal-overlay" style="display:none;">
+  <div class="modal" id="modal-aluno">
+    <div class="modal-header">
+      <span class="modal-titulo" id="modal-titulo">Novo aluno</span>
+      <button class="btn-fechar-modal" id="btn-fechar-modal">
+        <span class="material-icons-round">close</span>
+      </button>
+    </div>
+    <div class="modal-corpo">
+      <div class="modal-alerta" id="modal-alerta">
+        <span class="material-icons-round">error_outline</span>
+        <span id="modal-alerta-msg"></span>
+      </div>
+      <div class="modal-abas" id="modal-abas">
+        <button class="modal-aba ativa" data-aba="pessoal">Dados pessoais</button>
+        <button class="modal-aba" data-aba="contato">Contato</button>
+        <button class="modal-aba" data-aba="endereco">Endereço</button>
+        <button class="modal-aba" data-aba="acessibilidade">Acessibilidade</button>
+        <button class="modal-aba" data-aba="responsaveis">Responsáveis</button>
+        <button class="modal-aba" data-aba="publico">Público-alvo</button>
+      </div>
+
+      <div class="modal-secao ativa" id="secao-pessoal">
+        <div class="form-grid">
+          <div class="form-field span2">
+            <label>Nome completo <span class="req">*</span></label>
+            <input type="text" class="form-input" id="f-nome" placeholder="Nome como no documento">
+            <span class="form-erro-msg" id="err-nome">Informe o nome completo.</span>
+          </div>
+          <div class="form-field span2">
+            <div class="form-check-row">
+              <input type="checkbox" id="f-nome-social-bool">
+              <label for="f-nome-social-bool">Possui nome social</label>
+            </div>
+          </div>
+          <div class="form-field span2" id="campo-nome-social" style="display:none;">
+            <label>Nome social</label>
+            <input type="text" class="form-input" id="f-nome-social" placeholder="Nome social do aluno">
+          </div>
+          <div class="form-field">
+            <label>CPF / CIN</label>
+            <input type="text" class="form-input" id="f-cpf" placeholder="000.000.000-00" maxlength="14">
+            <span class="form-erro-msg" id="err-cpf">CPF inválido.</span>
+          </div>
+          <div class="form-field">
+            <label>Data de nascimento <span class="req">*</span></label>
+            <input type="date" class="form-input" id="f-nascimento">
+            <span class="form-erro-msg" id="err-nasc">Informe a data de nascimento.</span>
+          </div>
+          <div class="form-field">
+            <label>Gênero</label>
+            <select class="form-input" id="f-genero">
+              <option value="">Selecione…</option>
+              <option>Masculino</option><option>Feminino</option>
+              <option>Não Binário</option><option>Outro</option>
+              <option>Prefiro não informar</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label>Raça / Cor</label>
+            <select class="form-input" id="f-raca">
+              <option value="">Selecione…</option>
+              <option>Branca</option><option>Preta</option><option>Parda</option>
+              <option>Amarela</option><option>Indígena</option>
+              <option>Prefiro não informar</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label>Estado civil</label>
+            <select class="form-input" id="f-estado-civil">
+              <option value="">Selecione…</option>
+              <option>Solteiro</option><option>Casado</option>
+              <option>Divorciado</option><option>Viúvo</option><option>União estável</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label>Estrangeiro</label>
+            <select class="form-input" id="f-estrangeiro">
+              <option value="false">Não</option><option value="true">Sim</option>
+            </select>
+          </div>
+          <div class="form-field" id="campo-passaporte" style="display:none;">
+            <label>Passaporte</label>
+            <input type="text" class="form-input" id="f-passaporte" placeholder="Número do passaporte">
+          </div>
+          <div class="form-field">
+            <label>UF de nascimento</label>
+            <input type="text" class="form-input" id="f-nasc-uf" placeholder="Ex: PB" maxlength="2">
+          </div>
+          <div class="form-field">
+            <label>Município de nascimento</label>
+            <input type="text" class="form-input" id="f-nasc-municipio" placeholder="Ex: João Pessoa">
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-secao" id="secao-contato">
+        <div class="form-grid">
+          <div class="form-field">
+            <label>Telefone</label>
+            <input type="tel" class="form-input" id="f-telefone" placeholder="(83) 99999-9999">
+            <span class="form-erro-msg" id="err-tel">Telefone inválido.</span>
+          </div>
+          <div class="form-field">
+            <label>E-mail</label>
+            <input type="email" class="form-input" id="f-email" placeholder="aluno@email.com">
+            <span class="form-erro-msg" id="err-email">E-mail inválido.</span>
+          </div>
+          <div class="form-subsecao">CPF do responsável financeiro</div>
+          <div class="form-field span2">
+            <div class="form-check-row">
+              <input type="checkbox" id="f-cpf-resp">
+              <label for="f-cpf-resp">O CPF para fins fiscais é de outra pessoa (responsável)</label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-secao" id="secao-endereco">
+        <div class="form-grid">
+          <div class="form-field">
+            <label>CEP</label>
+            <input type="text" class="form-input" id="f-cep" placeholder="00000-000" maxlength="9">
+          </div>
+          <div class="form-field span2">
+            <label>Endereço (rua/avenida)</label>
+            <input type="text" class="form-input" id="f-endereco" placeholder="Nome da rua ou avenida">
+          </div>
+          <div class="form-field">
+            <label>Número</label>
+            <input type="text" class="form-input" id="f-numero" placeholder="Ex: 123 ou S/N">
+          </div>
+          <div class="form-field">
+            <label>Complemento</label>
+            <input type="text" class="form-input" id="f-complemento" placeholder="Apto, casa, bloco…">
+          </div>
+          <div class="form-field">
+            <label>Bairro</label>
+            <input type="text" class="form-input" id="f-bairro">
+          </div>
+          <div class="form-field">
+            <label>Município</label>
+            <input type="text" class="form-input" id="f-municipio">
+          </div>
+          <div class="form-field">
+            <label>UF</label>
+            <input type="text" class="form-input" id="f-uf" placeholder="Ex: PB" maxlength="2">
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-secao" id="secao-acessibilidade">
+        <div class="form-grid">
+          <div class="form-subsecao" style="border:none;margin-top:0;">Pessoa com deficiência (PcD)</div>
+          <div class="form-field span2">
+            <div class="form-check-row">
+              <input type="checkbox" id="f-pcd">
+              <label for="f-pcd">Aluno possui deficiência</label>
+            </div>
+          </div>
+          <div class="form-field" id="campo-pcd-tipo" style="display:none;">
+            <label>Tipo de deficiência</label>
+            <input type="text" class="form-input" id="f-pcd-tipo" placeholder="Ex: Visual, Auditiva, Motora…">
+          </div>
+          <div class="form-field" id="campo-pcd-laudo" style="display:none;">
+            <label>URL do laudo (Google Drive)</label>
+            <input type="url" class="form-input" id="f-pcd-laudo" placeholder="https://drive.google.com/…">
+          </div>
+          <div class="form-subsecao">Pertencimento a povo ou comunidade tradicional</div>
+          <div class="form-field span2">
+            <div class="form-check-row">
+              <input type="checkbox" id="f-povo">
+              <label for="f-povo">Pertence a povo ou comunidade tradicional</label>
+            </div>
+          </div>
+          <div class="form-field" id="campo-povo-tipo" style="display:none;">
+            <label>Qual povo / comunidade</label>
+            <input type="text" class="form-input" id="f-povo-tipo" placeholder="Ex: Quilombola, Indígena…">
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-secao" id="secao-responsaveis">
+        <div class="form-grid">
+          <div class="form-field span2">
+            <div class="form-check-row">
+              <input type="checkbox" id="f-menor">
+              <label for="f-menor">Aluno é menor de idade</label>
+            </div>
+          </div>
+          <div id="campos-responsaveis" style="display:none;grid-column:1/-1;">
+            <div class="form-grid">
+              <div class="form-subsecao" style="border:none;margin-top:0;">Responsável 1</div>
+              <div class="form-field span2">
+                <label>Nome completo <span class="req">*</span></label>
+                <input type="text" class="form-input" id="f-resp1-nome" placeholder="Nome do responsável">
+              </div>
+              <div class="form-field">
+                <label>CPF <span class="req">*</span></label>
+                <input type="text" class="form-input" id="f-resp1-cpf" placeholder="000.000.000-00" maxlength="14">
+              </div>
+              <div class="form-field">
+                <label>Parentesco <span class="req">*</span></label>
+                <select class="form-input" id="f-resp1-parentesco">
+                  <option value="">Selecione…</option>
+                  <option>Mãe</option><option>Pai</option><option>Avó/Avô</option>
+                  <option>Tia/Tio</option><option>Irmã/Irmão</option><option>Outro</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label>Telefone</label>
+                <input type="tel" class="form-input" id="f-resp1-tel" placeholder="(83) 99999-9999">
+              </div>
+              <div class="form-field">
+                <label>E-mail</label>
+                <input type="email" class="form-input" id="f-resp1-email">
+              </div>
+              <div class="form-subsecao">Responsável 2 (opcional)</div>
+              <div class="form-field span2">
+                <label>Nome completo</label>
+                <input type="text" class="form-input" id="f-resp2-nome">
+              </div>
+              <div class="form-field">
+                <label>Parentesco</label>
+                <select class="form-input" id="f-resp2-parentesco">
+                  <option value="">Selecione…</option>
+                  <option>Mãe</option><option>Pai</option><option>Avó/Avô</option>
+                  <option>Tia/Tio</option><option>Irmã/Irmão</option><option>Outro</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label>Telefone</label>
+                <input type="tel" class="form-input" id="f-resp2-tel">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-secao" id="secao-publico">
+        <div class="form-grid col1">
+          <div class="form-field">
+            <label>Público-alvo <span class="req">*</span></label>
+            <select class="form-input" id="f-publico">
+              <option value="">Selecione…</option>
+              <option>Público Geral (não se encaixa em nenhuma das categorias abaixo)</option>
+              <option>Professores da rede estadual ou municipal da Paraíba (Educação básica)</option>
+              <option>Servidores públicos estaduais ou municipais da Paraíba</option>
+              <option>Estudantes de graduação ou pós-graduação</option>
+              <option>Profissionais de saúde da rede pública da Paraíba</option>
+              <option>Outro</option>
+            </select>
+            <span class="form-erro-msg" id="err-publico">Selecione o público-alvo.</span>
+          </div>
+          <div class="form-field">
+            <label>URL do comprovante (Google Drive)</label>
+            <input type="url" class="form-input" id="f-comprovante" placeholder="https://drive.google.com/…">
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-modal btn-modal-secundario" id="btn-cancelar-modal">Cancelar</button>
+      <button class="btn-modal btn-modal-primario" id="btn-salvar-modal" type="button">
+        <div class="spinner-btn"></div>
+        <span class="material-icons-round btn-txt" style="font-size:16px;">save</span>
+        <span class="btn-txt">Salvar</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+
+<!-- Modal: nova ocorrência -->
+<!-- Modal: motivo de inativação/reativação -->
+<div class="motivo-modal-overlay" id="motivo-modal-overlay" style="display:none;">
+  <div class="motivo-modal">
+    <div class="motivo-modal-header">
+      <span class="motivo-modal-titulo" id="motivo-modal-titulo">Confirmar ação</span>
+      <button class="btn-fechar-modal" id="motivo-btn-fechar">
+        <span class="material-icons-round">close</span>
+      </button>
+    </div>
+    <div class="motivo-modal-corpo">
+      <p id="motivo-modal-descricao"></p>
+      <textarea class="motivo-textarea" id="motivo-texto"
+        placeholder="Descreva brevemente o motivo…" rows="3" maxlength="300"></textarea>
+      <div class="motivo-erro" id="motivo-erro">O motivo é obrigatório.</div>
+    </div>
+    <div class="motivo-modal-footer">
+      <button class="btn-motivo btn-motivo-sec" id="motivo-btn-cancelar">Cancelar</button>
+      <button class="btn-motivo btn-motivo-primario" id="motivo-btn-confirmar">
+        <div class="spinner-btn"></div>
+        <span class="btn-txt" id="motivo-btn-txt">Confirmar</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="oco-modal-overlay" style="display:none;">
+  <div class="modal" id="oco-modal" style="max-width:520px;">
+    <div class="modal-header">
+      <span class="modal-titulo">Nova ocorrência</span>
+      <button class="btn-fechar-modal" id="oco-btn-fechar-modal">
+        <span class="material-icons-round">close</span>
+      </button>
+    </div>
+    <div class="modal-corpo">
+      <div class="oco-alerta" id="oco-modal-alerta">
+        <span class="material-icons-round">error_outline</span>
+        <span id="oco-modal-alerta-msg"></span>
+      </div>
+      <div class="form-grid">
+        <div class="form-field span2">
+          <label>Tipo <span class="req">*</span></label>
+          <select class="form-input" id="oco-tipo">
+            <option value="">Selecione...</option>
+            <option value="Ausencia avisada">Ausencia avisada</option>
+            <option value="Contato com responsavel">Contato com responsavel</option>
+            <option value="Observacao pedagogica">Observacao pedagogica</option>
+            <option value="Ocorrencia disciplinar">Ocorrencia disciplinar</option>
+            <option value="Comunicado interno">Comunicado interno</option>
+            <option value="Outro">Outro</option>
+          </select>
+          <span class="form-erro-msg" id="err-oco-tipo">Selecione o tipo.</span>
+        </div>
+        <div class="form-field span2">
+          <label>Titulo <span class="req">*</span></label>
+          <input type="text" class="form-input" id="oco-titulo" placeholder="Resumo breve da ocorrencia" maxlength="120">
+          <span class="form-erro-msg" id="err-oco-titulo">Informe o titulo.</span>
+        </div>
+        <div class="form-field span2">
+          <label>Turma relacionada</label>
+          <select class="form-input" id="oco-turma">
+            <option value="">Carregando turmas...</option>
+          </select>
+          <span style="font-size:11px;color:var(--c-text-3,#9898B0);" id="oco-turma-hint"></span>
+        </div>
+        <div class="form-field span2">
+          <label>Descricao <span class="req">*</span></label>
+          <textarea class="form-input" id="oco-descricao" rows="4" placeholder="Detalhes da ocorrencia..." style="height:auto;resize:vertical;padding-top:9px;padding-bottom:9px;"></textarea>
+          <span class="form-erro-msg" id="err-oco-desc">Informe a descricao.</span>
+        </div>
+        <div class="form-field span2">
+          <label>Notificar (destinatarios)</label>
+          <div style="display:flex;flex-wrap:wrap;gap:10px;padding:6px 0 10px;">
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+              <input type="checkbox" id="oco-dest-coord" value="coordenacao" style="accent-color:#E63946;width:15px;height:15px;">
+              Coordenacao
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+              <input type="checkbox" id="oco-dest-sec" value="secretaria" style="accent-color:#E63946;width:15px;height:15px;">
+              Secretaria
+            </label>
+          </div>
+          <label style="font-size:11px;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;color:var(--c-text-3,#9898B0);display:block;margin-bottom:5px;">Professor(a) da turma</label>
+          <select class="form-input" id="oco-dest-prof-sel" multiple style="height:80px;padding:6px 8px;font-size:13px;">
+            <option value="" disabled>Carregando professores...</option>
+          </select>
+          <span style="font-size:11px;color:var(--c-text-3,#9898B0);">Segure Ctrl para selecionar mais de um professor.</span>
+        </div>
+        <div class="form-field span2">
+          <label>Semestre de referencia (opcional)</label>
+          <input type="text" class="form-input" id="oco-semestre-ref" placeholder="Ex: 2025.1">
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-modal btn-modal-secundario" id="oco-btn-cancelar">Cancelar</button>
+      <button class="btn-modal btn-modal-primario" id="oco-btn-salvar">
+        <div class="spinner-btn"></div>
+        <span class="material-icons-round btn-txt" style="font-size:16px;">save</span>
+        <span class="btn-txt">Registrar ocorrencia</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+
+  var state = {
+    alunos:[], paginaAtual:1, totalPaginas:1, totalRegistros:0,
+    tamanhoPagina:20, busca:'', exibirInativos:false,
+    alunoSelecionado:null, modoModal:'novo',
+    papel:'', podeEditar:false, podeCadastrar:false,
+  };
+
+  // Estado de ocorrencias
+  state.ocoAlunoId      = null;
+  state.ocoLista        = [];
+  state.ocoSelecionada  = null;
+  state.ocoFiltroTipo   = '';
+  state.ocoFiltroStatus = '';
+  state.ocoPainelAtivo  = 'ficha';
+  state._usuarioId      = '';
+
+  var buscarTimer = null;
+
+function postApi(acao, dados) {
+    return window.postApi(acao, dados);
+  }
+
+  // =========================================================
+  // UTILITÁRIOS
+  // =========================================================
+  function el(id) { return document.getElementById(id); }
+  function val(id) { return el(id) ? el(id).value.trim() : ''; }
+  function checked(id) { return el(id) ? el(id).checked : false; }
+
+  function fmtTel(t) {
+    if (!t) return '—';
+    var l = String(t).replace(/\D/g,'');
+    if (l.length===11) return l.replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');
+    if (l.length===10) return l.replace(/(\d{2})(\d{4})(\d{4})/,'($1) $2-$3');
+    return String(t);
+  }
+
+  function fmtData(d) {
+    if (!d) return '—';
+    if (d instanceof Date) { var p=function(n){return String(n).padStart(2,'0');}; return p(d.getDate())+'/'+p(d.getMonth()+1)+'/'+d.getFullYear(); }
+    if (typeof d==='string' && d.indexOf('-')!==-1) { var pts=d.substring(0,10).split('-'); return pts[2]+'/'+pts[1]+'/'+pts[0]; }
+    return String(d);
+  }
+
+  function iniciais(nome) {
+    return (nome||'').split(' ').filter(Boolean).slice(0,2).map(function(p){return p[0];}).join('').toUpperCase()||'?';
+  }
+
+  function campo(label, valor) {
+    var v=(valor!==null&&valor!==undefined&&valor!==''&&valor!==false)?String(valor):null;
+    return '<div class="ficha-campo"><span class="ficha-campo-label">'+label+'</span><span class="ficha-campo-valor'+(v?'':' vazio')+'">'+(v||'—')+'</span></div>';
+  }
+
+  // =========================================================
+  // INIT
+  // =========================================================
+
+
+  // =========================================================
+  // LISTAGEM
+  // =========================================================
+  function carregarAlunos() {
+    el('alunos-estado').style.display='block';
+    el('alunos-estado').innerHTML='<div class="tabela-spinner"></div><p>Carregando alunos…</p>';
+    el('alunos-tabela').style.display='none';
+    el('alunos-paginacao').style.display='none';
+
+    postApi('alunos.listar', { busca:state.busca, pagina:state.paginaAtual, tamanhoPagina:state.tamanhoPagina })
+      .then(function(res) {
+        if (!res.sucesso) { mostrarEstadoTabela('error_outline', res.mensagem||'Erro ao carregar alunos.'); return; }
+        var lista = (res.dados && res.dados.dados) ? res.dados.dados : [];
+        if (!state.exibirInativos) {
+          lista = lista.filter(function(a){ return a.SituacaoAluno !== false && a.SituacaoAluno !== 'false' && a.SituacaoAluno !== ''; });
+        }
+        state.alunos         = lista;
+        state.totalRegistros = (res.dados && res.dados.totalRegistros) ? res.dados.totalRegistros : lista.length;
+        state.totalPaginas   = (res.dados && res.dados.totalPaginas)   ? res.dados.totalPaginas   : 1;
+        if (lista.length===0) { mostrarEstadoTabela('person_search', state.busca?'Nenhum aluno encontrado para "'+state.busca+'".':'Nenhum aluno cadastrado.'); return; }
+        renderizarTabela(lista);
+        renderizarPaginacao();
+      })
+      .catch(function(e) { mostrarEstadoTabela('error_outline','Erro de comunicação: '+(e.message||'Tente novamente.')); });
+  }
+
+  function mostrarEstadoTabela(icone, msg) {
+    el('alunos-estado').style.display='block';
+    el('alunos-estado').innerHTML='<span class="material-icons-round">'+icone+'</span><p>'+msg+'</p>';
+    el('alunos-tabela').style.display='none';
+    el('alunos-paginacao').style.display='none';
+  }
+
+  function renderizarTabela(lista) {
+    el('alunos-estado').style.display='none';
+    el('alunos-tabela').style.display='table';
+    var tbody=el('alunos-tbody'); tbody.innerHTML='';
+    lista.forEach(function(a) {
+      var ativo = a.SituacaoAluno!==false && a.SituacaoAluno!=='false' && a.SituacaoAluno!=='';
+      var email = a.email || a.Email || '—';
+      var tr=document.createElement('tr');
+      tr.dataset.id=a.AlunoID;
+      if (state.alunoSelecionado && state.alunoSelecionado.AlunoID===a.AlunoID) tr.classList.add('selecionado');
+      tr.innerHTML=
+        '<td class="aluno-nome-cel">'+(a.NomeExibicao||a.NomeCompleto||'—')+'</td>'+
+        '<td class="aluno-id-cel">'+(a.AlunoID||'—')+'</td>'+
+        '<td>'+fmtTel(a.Telefone)+'</td>'+
+        '<td>'+email+'</td>'+
+        '<td><span class="badge-situacao '+(ativo?'ativo':'inativo')+'">'+
+          '<span class="material-icons-round">'+(ativo?'check_circle':'cancel')+'</span>'+(ativo?'Ativo':'Inativo')+
+        '</span></td>';
+      tr.addEventListener('click', function(){ selecionarAluno(a); });
+      tbody.appendChild(tr);
+    });
+  }
+
+  function renderizarPaginacao() {
+    var pag=el('alunos-paginacao'); pag.style.display='flex';
+    var ini=(state.paginaAtual-1)*state.tamanhoPagina+1;
+    var fim=Math.min(state.paginaAtual*state.tamanhoPagina, state.totalRegistros);
+    el('pag-info').textContent=ini+'–'+fim+' de '+state.totalRegistros+' aluno(s)';
+    var btns=el('pag-btns'); btns.innerHTML='';
+    var prev=document.createElement('button'); prev.className='btn-pag';
+    prev.innerHTML='<span class="material-icons-round">chevron_left</span>'; prev.disabled=state.paginaAtual<=1;
+    prev.addEventListener('click',function(){if(state.paginaAtual>1){state.paginaAtual--;carregarAlunos();}});
+    btns.appendChild(prev);
+    var ini2=Math.max(1,state.paginaAtual-2), fim2=Math.min(state.totalPaginas,ini2+4);
+    for(var i=ini2;i<=fim2;i++){
+      (function(pg){
+        var b=document.createElement('button'); b.className='btn-pag'+(pg===state.paginaAtual?' ativa':'');
+        b.textContent=pg; b.addEventListener('click',function(){state.paginaAtual=pg;carregarAlunos();});
+        btns.appendChild(b);
+      })(i);
+    }
+    var next=document.createElement('button'); next.className='btn-pag';
+    next.innerHTML='<span class="material-icons-round">chevron_right</span>'; next.disabled=state.paginaAtual>=state.totalPaginas;
+    next.addEventListener('click',function(){if(state.paginaAtual<state.totalPaginas){state.paginaAtual++;carregarAlunos();}});
+    btns.appendChild(next);
+  }
+
+  // =========================================================
+  // PAINEL LATERAL
+  // =========================================================
+
+
+  // =========================================================
+  // ABAS DO PAINEL LATERAL
+  // =========================================================
+  function selecionarAluno(aluno) {
+    state.alunoSelecionado = aluno;
+    state.ocoAlunoId       = aluno.AlunoID;
+    state.ocoPainelAtivo   = 'ficha';
+    document.querySelectorAll('#alunos-tbody tr').forEach(function(tr) {
+      tr.classList.toggle('selecionado', tr.dataset.id === aluno.AlunoID);
+    });
+    el('aluno-painel').classList.add('aberto');
+    el('alunos-main').classList.add('com-painel');
+    el('painel-abas-topo').style.display = 'flex';
+    el('painel-aba-ocorrencias').style.display = '';
+    mostrarAbaPainel('ficha');
+    renderizarFicha(aluno);
+  }
+
+  function fecharPainel() {
+    el('aluno-painel').classList.remove('aberto');
+    el('alunos-main').classList.remove('com-painel');
+    el('painel-abas-topo').style.display = 'none';
+    state.alunoSelecionado = null;
+    state.ocoAlunoId       = null;
+    document.querySelectorAll('#alunos-tbody tr').forEach(function(tr) {
+      tr.classList.remove('selecionado');
+    });
+  }
+
+  function mostrarAbaPainel(aba) {
+    state.ocoPainelAtivo = aba;
+    el('painel-aba-ficha').classList.toggle('ativa', aba === 'ficha');
+    el('painel-aba-ocorrencias').classList.toggle('ativa', aba === 'ocorrencias');
+    el('painel-corpo').style.display       = aba === 'ficha'       ? 'block' : 'none';
+    el('painel-ocorrencias').style.display = aba === 'ocorrencias' ? 'block' : 'none';
+    if (aba === 'ocorrencias') carregarOcorrencias();
+  }
+
+  // =========================================================
+  // OCORRENCIAS — utilitarios
+  // =========================================================
+  function ocoBadgeTipo(tipo) {
+    var mapaClass = {
+      'Ausencia avisada':       'ausencia',
+      'Contato com responsavel':'contato',
+      'Observacao pedagogica':  'pedagogica',
+      'Ocorrencia disciplinar': 'disciplinar',
+      'Comunicado interno':     'comunicado',
+      'Outro':                  'outro'
+    };
+    var cls = mapaClass[tipo] || 'outro';
+    return '<span class="oco-badge-tipo ' + cls + '">' + tipo + '</span>';
+  }
+
+  function ocoBadgeStatus(status) {
+    var ic = status === 'RESOLVIDA' ? 'check_circle' : 'schedule';
+    return '<span class="oco-badge-status ' + status + '">' +
+      '<span class="material-icons-round">' + ic + '</span>' + status + '</span>';
+  }
+
+  function ocoFmtData(d) {
+    if (!d) return '---';
+    var dt = (d instanceof Date) ? d : new Date(d);
+    if (isNaN(dt.getTime())) return String(d).substring(0, 10);
+    var pad = function(n) { return String(n).padStart(2, '0'); };
+    return pad(dt.getDate()) + '/' + pad(dt.getMonth() + 1) + '/' + dt.getFullYear() +
+           ' ' + pad(dt.getHours()) + ':' + pad(dt.getMinutes());
+  }
+
+  // =========================================================
+  // OCORRENCIAS — carregar lista
+  // =========================================================
+  function carregarOcorrencias() {
+    if (!state.ocoAlunoId) return;
+    var cont = el('painel-ocorrencias');
+    cont.innerHTML = '<div class="oco-spinner"></div>';
+    postApi('ocorrencias.listar', {
+      alunoId: state.ocoAlunoId,
+      tipo:    state.ocoFiltroTipo   || '',
+      status:  state.ocoFiltroStatus || ''
+    }).then(function(res) {
+      state.ocoLista = (res.sucesso && res.dados) ? res.dados : [];
+      renderOcoLista();
+    }).catch(function() {
+      state.ocoLista = [];
+      renderOcoLista();
+    });
+  }
+
+  function renderOcoLista() {
+    var cont = el('painel-ocorrencias');
+    var html = '';
+
+    html += '<button class="btn-nova-oco" id="btn-nova-oco">' +
+              '<span class="material-icons-round">add</span>Nova ocorrencia</button>';
+
+    html += '<div class="oco-filtros">' +
+      '<select class="oco-filtro-sel" id="oco-filtro-tipo">' +
+        '<option value="">Todos os tipos</option>' +
+        '<option value="Ausencia avisada">Ausencia avisada</option>' +
+        '<option value="Contato com responsavel">Contato com responsavel</option>' +
+        '<option value="Observacao pedagogica">Obs. pedagogica</option>' +
+        '<option value="Ocorrencia disciplinar">Ocorrencia disciplinar</option>' +
+        '<option value="Comunicado interno">Comunicado interno</option>' +
+        '<option value="Outro">Outro</option>' +
+      '</select>' +
+      '<select class="oco-filtro-sel" id="oco-filtro-status">' +
+        '<option value="">Todos os status</option>' +
+        '<option value="PENDENTE">Pendente</option>' +
+        '<option value="RESOLVIDA">Resolvida</option>' +
+      '</select>' +
+    '</div>';
+
+    html += '<div id="oco-lista-corpo">';
+    if (state.ocoLista.length === 0) {
+      html += '<div class="oco-vazio">' +
+                '<span class="material-icons-round">forum</span>' +
+                'Nenhuma ocorrencia registrada.</div>';
+    } else {
+      var i;
+      for (i = 0; i < state.ocoLista.length; i++) {
+        var o = state.ocoLista[i];
+        html += '<div class="oco-card" data-oco-id="' + o.OcorrenciaID + '">' +
+          '<div class="oco-card-header">' +
+            '<span class="oco-card-titulo">' + o.Titulo + '</span>' +
+            ocoBadgeTipo(o.Tipo) +
+          '</div>' +
+          '<div class="oco-card-meta">' +
+            ocoBadgeStatus(o.Status) +
+            '<span>' + ocoFmtData(o.DataCriacao) + '</span>' +
+            (o.SemestreRef ? '<span>Sem. ' + o.SemestreRef + '</span>' : '') +
+          '</div>' +
+        '</div>';
+      }
+    }
+    html += '</div>';
+    html += '<div class="oco-detalhe" id="oco-detalhe"></div>';
+
+    cont.innerHTML = html;
+
+    if (el('oco-filtro-tipo'))   el('oco-filtro-tipo').value   = state.ocoFiltroTipo;
+    if (el('oco-filtro-status')) el('oco-filtro-status').value = state.ocoFiltroStatus;
+
+    el('oco-filtro-tipo') && el('oco-filtro-tipo').addEventListener('change', function() {
+      state.ocoFiltroTipo = this.value; carregarOcorrencias();
+    });
+    el('oco-filtro-status') && el('oco-filtro-status').addEventListener('change', function() {
+      state.ocoFiltroStatus = this.value; carregarOcorrencias();
+    });
+    el('btn-nova-oco') && el('btn-nova-oco').addEventListener('click', abrirModalNovaOco);
+
+    cont.querySelectorAll('.oco-card').forEach(function(card) {
+      card.addEventListener('click', function() {
+        var ocoId = this.dataset.ocoId;
+        var oco = null;
+        var j;
+        for (j = 0; j < state.ocoLista.length; j++) {
+          if (state.ocoLista[j].OcorrenciaID === ocoId) { oco = state.ocoLista[j]; break; }
+        }
+        if (oco) abrirDetalheOco(oco);
+      });
+    });
+  }
+
+  // =========================================================
+  // OCORRENCIAS — detalhe + thread
+  // =========================================================
+  function abrirDetalheOco(oco) {
+    state.ocoSelecionada = oco;
+    el('oco-lista-corpo').style.display  = 'none';
+    el('btn-nova-oco').style.display     = 'none';
+    var filtrosEl = el('painel-ocorrencias').querySelector('.oco-filtros');
+    if (filtrosEl) filtrosEl.style.display = 'none';
+
+    var detalhe = el('oco-detalhe');
+    detalhe.classList.add('show');
+
+    var ehCriador   = oco.CriadoPor === state._usuarioId;
+    var temPrivil   = state.papel === 'admin' || state.papel === 'coordenacao';
+    var podeAlterar = ehCriador || temPrivil;
+    var resolvida   = oco.Status === 'RESOLVIDA';
+
+    var acoesHtml = '';
+    if (podeAlterar) {
+      if (!resolvida) {
+        acoesHtml += '<button class="btn-oco-acao resolver" id="btn-oco-resolver">' +
+          '<span class="material-icons-round">check_circle</span>Marcar resolvida</button>';
+      } else {
+        acoesHtml += '<button class="btn-oco-acao reabrir" id="btn-oco-reabrir">' +
+          '<span class="material-icons-round">restart_alt</span>Reabrir</button>';
+      }
+      acoesHtml += '<button class="btn-oco-acao excluir" id="btn-oco-excluir">' +
+        '<span class="material-icons-round">delete</span>Excluir</button>';
+    }
+
+    detalhe.innerHTML =
+      '<div class="oco-detalhe-header">' +
+        '<button class="btn-oco-voltar" id="btn-oco-voltar">' +
+          '<span class="material-icons-round">arrow_back</span>Voltar</button>' +
+        '<span class="oco-detalhe-titulo">' + oco.Titulo + '</span>' +
+      '</div>' +
+      '<div class="oco-detalhe-meta">' +
+        ocoBadgeTipo(oco.Tipo) +
+        ocoBadgeStatus(oco.Status) +
+        '<span>' + ocoFmtData(oco.DataCriacao) + '</span>' +
+        (oco.SemestreRef ? '<span>Sem. ' + oco.SemestreRef + '</span>' : '') +
+      '</div>' +
+      '<div class="oco-detalhe-desc">' + oco.Descricao + '</div>' +
+      (acoesHtml ? '<div class="oco-acoes-detalhe">' + acoesHtml + '</div>' : '') +
+      '<div class="oco-thread-titulo">Respostas</div>' +
+      '<div id="oco-thread-corpo"><div class="oco-spinner"></div></div>' +
+      '<div class="oco-reply-wrap">' +
+        '<textarea class="oco-reply-input" id="oco-reply-input" placeholder="Escreva uma resposta..." rows="2"></textarea>' +
+        '<button class="btn-oco-reply" id="btn-oco-reply" title="Enviar">' +
+          '<span class="material-icons-round">send</span></button>' +
+      '</div>';
+
+    el('btn-oco-voltar').addEventListener('click', voltarListaOco);
+    el('btn-oco-resolver') && el('btn-oco-resolver').addEventListener('click', function() {
+      alterarStatusOco(oco.OcorrenciaID, 'RESOLVIDA');
+    });
+    el('btn-oco-reabrir') && el('btn-oco-reabrir').addEventListener('click', function() {
+      alterarStatusOco(oco.OcorrenciaID, 'PENDENTE');
+    });
+    el('btn-oco-excluir') && el('btn-oco-excluir').addEventListener('click', function() {
+      excluirOco(oco.OcorrenciaID);
+    });
+    el('btn-oco-reply').addEventListener('click', enviarResposta);
+    el('oco-reply-input').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) enviarResposta();
+    });
+
+    carregarRespostas(oco.OcorrenciaID);
+  }
+
+  function voltarListaOco() {
+    state.ocoSelecionada = null;
+    el('oco-detalhe').classList.remove('show');
+    el('oco-detalhe').innerHTML = '';
+    el('oco-lista-corpo').style.display = 'block';
+    el('btn-nova-oco').style.display    = 'flex';
+    var filtrosEl = el('painel-ocorrencias').querySelector('.oco-filtros');
+    if (filtrosEl) filtrosEl.style.display = 'flex';
+  }
+
+  function carregarRespostas(ocoId) {
+    postApi('ocorrencias.listarRespostas', { ocorrenciaId: ocoId })
+      .then(function(res) {
+        renderThread((res.sucesso && res.dados) ? res.dados : []);
+      })
+      .catch(function() { renderThread([]); });
+  }
+
+  function renderThread(respostas) {
+    var corpo = el('oco-thread-corpo');
+    if (!corpo) return;
+    if (respostas.length === 0) {
+      corpo.innerHTML = '<p style="font-size:12.5px;color:var(--c-text-3,#9898B0);text-align:center;padding:12px 0;">' +
+        'Nenhuma resposta ainda.</p>';
+      return;
+    }
+    var html = '';
+    var i;
+    for (i = 0; i < respostas.length; i++) {
+      var r = respostas[i];
+      var minha = r.EhMinha === true || r.EhMinha === 'true';
+      html += '<div class="oco-msg' + (minha ? ' minha' : '') + '">' +
+        '<div class="oco-msg-bubble">' + r.Texto + '</div>' +
+        '<div class="oco-msg-autor">' + (minha ? 'Voce' : r.AutorNome) + ' - ' + ocoFmtData(r.DataCriacao) + '</div>' +
+      '</div>';
+    }
+    corpo.innerHTML = html;
+    corpo.scrollTop = corpo.scrollHeight;
+  }
+
+  function enviarResposta() {
+    var input = el('oco-reply-input');
+    var texto = (input ? input.value : '').trim();
+    if (!texto || !state.ocoSelecionada) return;
+    var btn = el('btn-oco-reply');
+    if (btn) btn.disabled = true;
+    postApi('ocorrencias.adicionarResposta', {
+      ocorrenciaId: state.ocoSelecionada.OcorrenciaID,
+      texto:        texto
+    }).then(function(res) {
+      if (btn) btn.disabled = false;
+      if (!res.sucesso) { if (typeof toast === 'function') toast(res.mensagem || 'Erro.', 'error'); return; }
+      if (input) input.value = '';
+      carregarRespostas(state.ocoSelecionada.OcorrenciaID);
+    }).catch(function() {
+      if (btn) btn.disabled = false;
+      if (typeof toast === 'function') toast('Erro de comunicacao.', 'error');
+    });
+  }
+
+  function alterarStatusOco(ocoId, novoStatus) {
+    postApi('ocorrencias.atualizarStatus', { ocorrenciaId: ocoId, novoStatus: novoStatus })
+      .then(function(res) {
+        if (!res.sucesso) { if (typeof toast === 'function') toast(res.mensagem || 'Erro.', 'error'); return; }
+        if (typeof toast === 'function') toast('Status atualizado para ' + novoStatus + '.', 'success');
+        var i;
+        for (i = 0; i < state.ocoLista.length; i++) {
+          if (state.ocoLista[i].OcorrenciaID === ocoId) {
+            state.ocoLista[i].Status = novoStatus;
+            abrirDetalheOco(state.ocoLista[i]);
+            break;
+          }
+        }
+      })
+      .catch(function() { if (typeof toast === 'function') toast('Erro de comunicacao.', 'error'); });
+  }
+
+  function excluirOco(ocoId) {
+    if (!confirm('Excluir esta ocorrencia e todas as suas respostas?')) return;
+    postApi('ocorrencias.excluir', { ocorrenciaId: ocoId })
+      .then(function(res) {
+        if (!res.sucesso) { if (typeof toast === 'function') toast(res.mensagem || 'Erro.', 'error'); return; }
+        if (typeof toast === 'function') toast('Ocorrencia excluida.', 'success');
+        voltarListaOco();
+        carregarOcorrencias();
+      })
+      .catch(function() { if (typeof toast === 'function') toast('Erro de comunicacao.', 'error'); });
+  }
+
+  // =========================================================
+  // OCORRENCIAS — modal nova ocorrencia
+  // =========================================================
+  function abrirModalNovaOco() {
+    if (!state.ocoAlunoId) return;
+    var ids = ['oco-tipo', 'oco-titulo', 'oco-descricao', 'oco-semestre-ref'];
+    var i;
+    for (i = 0; i < ids.length; i++) {
+      var e = el(ids[i]); if (e) e.value = '';
+    }
+    var cbs = ['oco-dest-coord', 'oco-dest-sec'];
+    for (i = 0; i < cbs.length; i++) {
+      var cb = el(cbs[i]); if (cb) cb.checked = false;
+    }
+    // Carrega as turmas ativas do aluno para o seletor de turma relacionada
+    carregarTurmasOco();
+    // Carrega professores das turmas ativas do aluno
+    var sel = el('oco-dest-prof-sel');
+    if (sel) {
+      sel.innerHTML = '<option value="" disabled>Carregando...</option>';
+      postApi('ocorrencias.professoresDasTurmas', { alunoId: state.ocoAlunoId })
+        .then(function(res) {
+          sel.innerHTML = '';
+          if (res.sucesso && res.dados && res.dados.length > 0) {
+            res.dados.forEach(function(p) {
+              var opt = document.createElement('option');
+              opt.value       = p.UsuarioID;
+              opt.textContent = p.Label || p.Nome;
+              sel.appendChild(opt);
+            });
+          } else {
+            sel.innerHTML = '<option value="" disabled>Nenhum professor encontrado</option>';
+          }
+        })
+        .catch(function() {
+          sel.innerHTML = '<option value="" disabled>Erro ao carregar</option>';
+        });
+    }
+    el('oco-modal-alerta').classList.remove('show');
+    el('oco-modal-overlay').style.display = 'flex';
+  }
+
+  function fecharModalNovaOco() {
+    el('oco-modal-overlay').style.display = 'none';
+  }
+
+  // =========================================================
+  // OCORRENCIAS — seletor de turma relacionada
+  // =========================================================
+  function carregarTurmasOco() {
+    var sel  = el('oco-turma');
+    var hint = el('oco-turma-hint');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">Carregando turmas...</option>';
+    if (hint) hint.textContent = '';
+
+    postApi('ocorrencias.turmasAtivasDoAluno', { alunoId: state.ocoAlunoId })
+      .then(function(res) {
+        var turmas = (res.sucesso && res.dados) ? res.dados : [];
+        sel.innerHTML = '';
+
+        if (turmas.length === 0) {
+          sel.innerHTML = '<option value="">Nenhuma turma ativa encontrada</option>';
+          if (hint) hint.textContent = 'A ocorrencia sera registrada sem turma associada.';
+          return;
+        }
+
+        var optVazia = document.createElement('option');
+        optVazia.value = '';
+        optVazia.textContent = 'Nao associar a uma turma especifica';
+        sel.appendChild(optVazia);
+
+        turmas.forEach(function(t) {
+          var opt = document.createElement('option');
+          opt.value       = t.TurmaID;
+          opt.textContent = t.Label || t.TurmaID;
+          sel.appendChild(opt);
+        });
+
+        if (turmas.length === 1) {
+          // Sem ambiguidade: pre-seleciona a unica turma encontrada.
+          sel.value = turmas[0].TurmaID;
+          if (hint) hint.textContent = 'Turma preenchida automaticamente.';
+        } else {
+          if (hint) hint.textContent = 'O aluno esta em mais de uma turma ativa — selecione a turma correta.';
+        }
+      })
+      .catch(function() {
+        sel.innerHTML = '<option value="">Erro ao carregar turmas</option>';
+        if (hint) hint.textContent = '';
+      });
+  }
+
+  function salvarNovaOco() {
+    var tipo      = el('oco-tipo')      ? el('oco-tipo').value      : '';
+    var titulo    = el('oco-titulo')    ? el('oco-titulo').value.trim()    : '';
+    var descricao = el('oco-descricao') ? el('oco-descricao').value.trim() : '';
+    var turmaId   = el('oco-turma')     ? el('oco-turma').value     : '';
+
+    var ok = true;
+    if (!tipo)     { el('err-oco-tipo').classList.add('show');  ok = false; }
+    else           { el('err-oco-tipo').classList.remove('show'); }
+    if (!titulo)   { el('err-oco-titulo').classList.add('show');ok = false; }
+    else           { el('err-oco-titulo').classList.remove('show'); }
+    if (!descricao){ el('err-oco-desc').classList.add('show');  ok = false; }
+    else           { el('err-oco-desc').classList.remove('show'); }
+    if (!ok) return;
+
+    var dests = [];
+    if (el('oco-dest-coord') && el('oco-dest-coord').checked) dests.push('coordenacao');
+    if (el('oco-dest-sec')   && el('oco-dest-sec').checked)   dests.push('secretaria');
+    // Coleta UsuarioIDs dos professores selecionados no select múltiplo
+    var profSel = el('oco-dest-prof-sel');
+    if (profSel) {
+      Array.from(profSel.options).forEach(function(opt) {
+        if (opt.selected && opt.value) dests.push(opt.value);
+      });
+    }
+
+    var btn = el('oco-btn-salvar');
+    if (btn) { btn.disabled = true; btn.classList.add('loading'); }
+
+    postApi('ocorrencias.criar', {
+      AlunoID:       state.ocoAlunoId,
+      TurmaID:       turmaId,
+      Tipo:          tipo,
+      Titulo:        titulo,
+      Descricao:     descricao,
+      Destinatarios: dests.join(','),
+      SemestreRef:   el('oco-semestre-ref') ? el('oco-semestre-ref').value.trim() : ''
+    }).then(function(res) {
+      if (btn) { btn.disabled = false; btn.classList.remove('loading'); }
+      if (!res.sucesso) {
+        var a = el('oco-modal-alerta'); var m = el('oco-modal-alerta-msg');
+        if (a) a.className = 'oco-alerta show erro';
+        if (m) m.textContent = res.mensagem || 'Erro ao registrar.';
+        return;
+      }
+      fecharModalNovaOco();
+      if (typeof toast === 'function') toast('Ocorrencia registrada!', 'success');
+      carregarOcorrencias();
+    }).catch(function() {
+      if (btn) { btn.disabled = false; btn.classList.remove('loading'); }
+      var a = el('oco-modal-alerta'); var m = el('oco-modal-alerta-msg');
+      if (a) a.className = 'oco-alerta show erro';
+      if (m) m.textContent = 'Erro de comunicacao. Tente novamente.';
+    });
+  }
+
+
+  function renderizarFicha(a) {
+    // Professor: mostra apenas campos liberados pelo back-end (contato, PcD, etc.)
+    var modoRestrito = state.papel === 'professor';
+    var acoes=el('painel-acoes'); acoes.innerHTML='';
+    if (state.podeEditar) {
+      var btnEdit=document.createElement('button'); btnEdit.className='btn-painel-acao btn-painel-editar';
+      btnEdit.innerHTML='<span class="material-icons-round">edit</span> Editar';
+      btnEdit.addEventListener('click',function(){abrirModalEditar(a);}); acoes.appendChild(btnEdit);
+      var ativo = a.SituacaoAluno!==false && a.SituacaoAluno!=='false';
+      if (ativo) {
+        var btnInativar=document.createElement('button'); btnInativar.className='btn-painel-acao btn-painel-inativar';
+        btnInativar.innerHTML='<span class="material-icons-round">person_off</span> Inativar';
+        btnInativar.addEventListener('click',function(){ abrirModalMotivo('inativar', a); });
+        acoes.appendChild(btnInativar);
+      } else {
+        // Botão Ativar — visível para admin, coordenação e secretaria
+        var podeAtivar = ['admin','coordenacao','secretaria'].indexOf(state.papel) !== -1;
+        if (podeAtivar) {
+          var btnAtivar=document.createElement('button'); btnAtivar.className='btn-painel-acao btn-painel-ativar';
+          btnAtivar.innerHTML='<span class="material-icons-round">person</span> Ativar';
+          btnAtivar.addEventListener('click',function(){ abrirModalMotivo('ativar', a); });
+          acoes.appendChild(btnAtivar);
+        }
+      }
+    }
+    var nomeExib=a.NomeExibicao||a.NomeCompleto||'—';
+    var temNomeSocial=a.NomeSocialBoolean&&a.NomeSocial;
+    var cores=['#1A1A2E','#E63946','#2A9D8F','#457B9D'];
+    var cor=cores[nomeExib.charCodeAt(0)%cores.length];
+    var email = a.email || a.Email || null;
+    var html='<div class="painel-avatar-wrap">'+
+      '<div class="painel-avatar" style="background:'+cor+'">'+iniciais(nomeExib)+'</div>'+
+      '<div class="painel-avatar-info">'+
+        '<div class="painel-nome">'+nomeExib+'</div>'+
+        (temNomeSocial?'<div class="painel-nome-legal">Nome legal: '+a.NomeCompleto+'</div>':'')+
+        '<div class="painel-id">'+(a.AlunoID||'')+'</div>'+
+      '</div></div>';
+    html+='<div class="ficha-secao"><div class="ficha-secao-titulo">Dados pessoais</div>';
+    html+=campo('CPF/CIN',a.CPFouCIN)+campo('Nascimento',fmtData(a.Nascimento))+campo('Gênero',a.Genero)+campo('Raça/Cor',a.Raca)+campo('Estado civil',a.EstadoCivil)+campo('Estrangeiro',a.Estrangeiro?'Sim':'Não')+'</div>';
+    html+='<div class="ficha-secao"><div class="ficha-secao-titulo">Contato</div>'+campo('Telefone',fmtTel(a.Telefone))+campo('E-mail',email)+'</div>';
+    if (state.papel==='admin'||state.papel==='coordenacao'||state.papel==='secretaria') {
+      html+='<div class="ficha-secao"><div class="ficha-secao-titulo">Endereço</div>';
+      var end=[a.Endereco,a.Numero,a.Complemento].filter(Boolean).join(', ');
+      html+=campo('Logradouro',end)+campo('Bairro',a.Bairro)+campo('Município',a.Municipio)+campo('UF',a.UF)+campo('CEP',a.CEP)+'</div>';
+    }
+    if (a.PcDBoolean) {
+      html+='<div class="ficha-secao"><div class="ficha-secao-titulo">Acessibilidade</div>'+campo('Deficiência',a.PcDTipo||'Não especificado');
+      if (a.PcDLaudoURL) html+=campo('Laudo','<a href="'+a.PcDLaudoURL+'" target="_blank">Ver laudo</a>');
+      html+='</div>';
+    }
+    if (a.MenorBoolean) {
+      html+='<div class="ficha-secao"><div class="ficha-secao-titulo">Responsável 1</div>';
+      html+=campo('Nome',a.Responsavel1Nome)+campo('CPF',a.Responsavel1CPF)+campo('Parentesco',a.Responsavel1Parentesco)+
+            campo('Telefone',a.Responsavel1Telefone?fmtTel(a.Responsavel1Telefone):null)+
+            campo('E-mail',a['Responsavel1e-mail']);
+      html+='</div>';
+      if (a.Responsavel2Nome) {
+        html+='<div class="ficha-secao"><div class="ficha-secao-titulo">Responsável 2</div>';
+        html+=campo('Nome',a.Responsavel2Nome)+campo('Parentesco',a.Responsavel2Parentesco)+
+              campo('Telefone',a.Responsavel2Telefone?fmtTel(a.Responsavel2Telefone):null);
+        html+='</div>';
+      }
+    }
+    if (a.PublicoAluno) html+='<div class="ficha-secao"><div class="ficha-secao-titulo">Público-alvo</div>'+campo('Categoria',a.PublicoAluno)+'</div>';
+    html+='<div class="ficha-secao"><div class="ficha-secao-titulo">Situação</div>'+campo('Status',(a.SituacaoAluno!==false&&a.SituacaoAluno!=='false')?'Ativo':'Inativo')+campo('Cadastro',fmtData(a.InscricaoDataHora))+'</div>';
+    el('painel-corpo').innerHTML=html;
+  }
+
+  // =========================================================
+  // MODAL DE MOTIVO (inativar / ativar)
+  // =========================================================
+  var _motivoAcao   = null; // 'inativar' | 'ativar'
+  var _motivoAluno  = null; // objeto aluno
+
+  function abrirModalMotivo(acao, aluno) {
+    _motivoAcao  = acao;
+    _motivoAluno = aluno;
+    var inativando = acao === 'inativar';
+    el('motivo-modal-titulo').textContent = inativando ? 'Inativar aluno' : 'Reativar aluno';
+    el('motivo-modal-descricao').textContent = inativando
+      ? 'Informe o motivo da inativação de ' + (aluno.NomeExibicao || aluno.NomeCompleto || aluno.AlunoID) + '. O cadastro será mantido.'
+      : 'Informe o motivo da reativação de ' + (aluno.NomeExibicao || aluno.NomeCompleto || aluno.AlunoID) + '.';
+    el('motivo-texto').value = '';
+    el('motivo-erro').classList.remove('show');
+    var btnConf = el('motivo-btn-confirmar');
+    btnConf.className = 'btn-motivo btn-motivo-primario' + (inativando ? '' : ' ativar');
+    el('motivo-btn-txt').textContent = inativando ? 'Inativar' : 'Reativar';
+    el('motivo-modal-overlay').style.display = 'flex';
+    setTimeout(function(){ el('motivo-texto').focus(); }, 100);
+  }
+
+  function fecharModalMotivo() {
+    el('motivo-modal-overlay').style.display = 'none';
+    _motivoAcao  = null;
+    _motivoAluno = null;
+  }
+
+  function confirmarMotivo() {
+    var motivo = el('motivo-texto').value.trim();
+    if (!motivo) {
+      el('motivo-erro').classList.add('show');
+      el('motivo-texto').focus();
+      return;
+    }
+    el('motivo-erro').classList.remove('show');
+    var btn = el('motivo-btn-confirmar');
+    btn.disabled = true; btn.classList.add('loading');
+
+    var acao  = _motivoAcao === 'inativar' ? 'alunos.inativar' : 'alunos.ativar';
+    var alunoId = _motivoAluno.AlunoID;
+
+    postApi(acao, { alunoId: alunoId, motivo: motivo })
+      .then(function(res) {
+        btn.disabled = false; btn.classList.remove('loading');
+        if (!res.sucesso) {
+          if (typeof toast === 'function') toast(res.mensagem || 'Erro.', 'error');
+          return;
+        }
+        var msg = _motivoAcao === 'inativar' ? 'Aluno inativado.' : 'Cadastro do aluno reativado.';
+        if (typeof toast === 'function') toast(msg, 'success');
+        fecharModalMotivo();
+        fecharPainel();
+        carregarAlunos();
+      })
+      .catch(function() {
+        btn.disabled = false; btn.classList.remove('loading');
+        if (typeof toast === 'function') toast('Erro de comunicação.', 'error');
+      });
+  }
+
+  // =========================================================
+  // MODAL
+  // =========================================================
+  function abrirModalNovo() { state.modoModal='novo'; el('modal-titulo').textContent='Novo aluno'; limparModal(); mostrarAba('pessoal'); el('modal-overlay').style.display='flex'; }
+  function abrirModalEditar(aluno) { state.modoModal='editar'; el('modal-titulo').textContent='Editar aluno'; limparModal(); preencherModal(aluno); mostrarAba('pessoal'); el('modal-overlay').style.display='flex'; }
+  function fecharModal() { el('modal-overlay').style.display='none'; el('modal-alerta').classList.remove('show'); }
+
+  function limparModal() {
+    el('modal-aluno').querySelectorAll('input,select,textarea').forEach(function(inp){
+      if(inp.type==='checkbox')inp.checked=false; else inp.value='';
+    });
+    ['campo-nome-social','campo-passaporte','campos-responsaveis','campo-pcd-tipo','campo-pcd-laudo','campo-povo-tipo'].forEach(function(id){
+      if(el(id))el(id).style.display='none';
+    });
+    document.querySelectorAll('.form-erro-msg').forEach(function(e){e.classList.remove('show');});
+    el('modal-alerta').classList.remove('show');
+  }
+
+  function preencherModal(a) {
+    function set(id,v){if(el(id))el(id).value=v||'';}
+    function setC(id,v){if(el(id))el(id).checked=!!v;}
+    set('f-nome',a.NomeCompleto); setC('f-nome-social-bool',a.NomeSocialBoolean); set('f-nome-social',a.NomeSocial);
+    if(a.NomeSocialBoolean)el('campo-nome-social').style.display='block';
+    set('f-cpf',a.CPFouCIN);
+    if(a.Nascimento){var dt=fmtData(a.Nascimento);if(dt&&dt!=='—'){var p=dt.split('/');if(p.length===3)el('f-nascimento').value=p[2]+'-'+p[1]+'-'+p[0];}}
+    set('f-genero',a.Genero); set('f-raca',a.Raca); set('f-estado-civil',a.EstadoCivil);
+    set('f-nasc-uf',a.NascimentoUF); set('f-nasc-municipio',a.NascimentoMunicipio);
+    var estrang=a.Estrangeiro===true||a.Estrangeiro==='true';
+    set('f-estrangeiro',estrang?'true':'false'); set('f-passaporte',a.Passaporte);
+    if(estrang)el('campo-passaporte').style.display='block';
+    set('f-telefone',a.Telefone); set('f-email',a['e-mail']||a.Email); setC('f-cpf-resp',a.CPFRespBoolean);
+    set('f-cep',a.CEP); set('f-endereco',a.Endereco); set('f-numero',a.Numero);
+    set('f-complemento',a.Complemento); set('f-bairro',a.Bairro); set('f-municipio',a.Municipio); set('f-uf',a.UF);
+    setC('f-pcd',a.PcDBoolean); set('f-pcd-tipo',a.PcDTipo); set('f-pcd-laudo',a.PcDLaudoURL);
+    if(a.PcDBoolean){el('campo-pcd-tipo').style.display='block';el('campo-pcd-laudo').style.display='block';}
+    setC('f-povo',a.PovoTradicionalBoolean); set('f-povo-tipo',a.PovoTradicional);
+    if(a.PovoTradicionalBoolean)el('campo-povo-tipo').style.display='block';
+    setC('f-menor',a.MenorBoolean);
+    if(a.MenorBoolean)el('campos-responsaveis').style.display='block';
+    set('f-resp1-nome',a.Responsavel1Nome); set('f-resp1-cpf',a.Responsavel1CPF);
+    set('f-resp1-parentesco',a.Responsavel1Parentesco); set('f-resp1-tel',a.Responsavel1Telefone);
+    set('f-resp1-email',a['Responsavel1e-mail']); set('f-resp2-nome',a.Responsavel2Nome);
+    set('f-resp2-parentesco',a.Responsavel2Parentesco); set('f-resp2-tel',a.Responsavel2Telefone);
+    set('f-publico',a.PublicoAluno); set('f-comprovante',a.PublicoComprovanteURL);
+  }
+
+  function mostrarAba(id) {
+    document.querySelectorAll('.modal-aba').forEach(function(b){b.classList.toggle('ativa',b.dataset.aba===id);});
+    document.querySelectorAll('.modal-secao').forEach(function(s){s.classList.toggle('ativa',s.id==='secao-'+id);});
+  }
+
+  function validarModal() {
+    var ok=true;
+    el('modal-aluno').querySelectorAll('.form-input').forEach(function(i){i.classList.remove('erro');});
+    el('modal-aluno').querySelectorAll('.form-erro-msg').forEach(function(e){e.classList.remove('show');});
+    function marcarErro(c,m){if(el(c))el(c).classList.add('erro');if(el(m))el(m).classList.add('show');ok=false;}
+    if(!val('f-nome'))marcarErro('f-nome','err-nome');
+    if(!val('f-nascimento'))marcarErro('f-nascimento','err-nasc');
+    if(!val('f-publico'))marcarErro('f-publico','err-publico');
+    if(val('f-cpf')&&val('f-cpf').replace(/\D/g,'').length!==11)marcarErro('f-cpf','err-cpf');
+    if(val('f-email')&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val('f-email')))marcarErro('f-email','err-email');
+    if(val('f-telefone')&&val('f-telefone').replace(/\D/g,'').length<10)marcarErro('f-telefone','err-tel');
+    if(!ok)mostrarAlertaModal('Verifique os campos obrigatórios antes de salvar.','erro');
+    return ok;
+  }
+
+  function coletarDados() {
+    var nascRaw=val('f-nascimento'), nascFmt='';
+    if(nascRaw){var p=nascRaw.split('-');if(p.length===3)nascFmt=p[2]+'/'+p[1]+'/'+p[0];}
+    return {
+      NomeCompleto:val('f-nome').toUpperCase(), NomeSocialBoolean:checked('f-nome-social-bool'),
+      NomeSocial:checked('f-nome-social-bool')?val('f-nome-social').toUpperCase():'',
+      CPFouCIN:val('f-cpf'), CPFRespBoolean:checked('f-cpf-resp'),
+      Nascimento:nascFmt, NascimentoUF:val('f-nasc-uf').toUpperCase(),
+      NascimentoMunicipio:val('f-nasc-municipio').toUpperCase(),
+      Raca:val('f-raca'), EstadoCivil:val('f-estado-civil'), Genero:val('f-genero'),
+      Estrangeiro:val('f-estrangeiro')==='true', Passaporte:val('f-passaporte'),
+      Telefone:val('f-telefone').replace(/\D/g,''),
+      'e-mail':val('f-email'), Email:val('f-email'),
+      PcDBoolean:checked('f-pcd'), PcDTipo:checked('f-pcd')?val('f-pcd-tipo'):'',
+      PcDLaudoURL:checked('f-pcd')?val('f-pcd-laudo'):'',
+      PovoTradicionalBoolean:checked('f-povo'), PovoTradicional:checked('f-povo')?val('f-povo-tipo'):'',
+      MenorBoolean:checked('f-menor'),
+      Responsavel1Nome:checked('f-menor')?val('f-resp1-nome').toUpperCase():'',
+      Responsavel1CPF:checked('f-menor')?val('f-resp1-cpf'):'',
+      Responsavel1Parentesco:checked('f-menor')?val('f-resp1-parentesco'):'',
+      Responsavel1Telefone:checked('f-menor')?val('f-resp1-tel').replace(/\D/g,''):'',
+      'Responsavel1e-mail':checked('f-menor')?val('f-resp1-email'):'',
+      Responsavel2Nome:checked('f-menor')?val('f-resp2-nome').toUpperCase():'',
+      Responsavel2Parentesco:checked('f-menor')?val('f-resp2-parentesco'):'',
+      Responsavel2Telefone:checked('f-menor')?val('f-resp2-tel').replace(/\D/g,''):'',
+      CEP:val('f-cep').replace(/\D/g,''), Endereco:val('f-endereco').toUpperCase(),
+      Numero:val('f-numero'), Complemento:val('f-complemento'),
+      Bairro:val('f-bairro').toUpperCase(), Municipio:val('f-municipio').toUpperCase(),
+      UF:val('f-uf').toUpperCase(), PublicoAluno:val('f-publico'),
+      PublicoComprovanteURL:val('f-comprovante'),
+    };
+  }
+
+  function salvarModal() {
+    if(!validarModal())return;
+    var btn=el('btn-salvar-modal'); btn.disabled=true; btn.classList.add('loading');
+    var dados=coletarDados();
+    var acao=state.modoModal==='novo'?'alunos.criar':'alunos.atualizar';
+    if(state.modoModal==='novo'){
+      // Obtém semestreId via postApi (sem google.script.run no GitHub Pages)
+      postApi('sistema.semestreAtual',{}).then(function(res){
+        var semId = (res.sucesso&&res.dados) ? (res.dados.SemestreID||'') : '';
+        dados.semestreId = semId;
+        _executarSalvar(acao,dados,btn);
+      }).catch(function(){dados.semestreId='';_executarSalvar(acao,dados,btn);});
+    } else {
+      dados.alunoId=state.alunoSelecionado?state.alunoSelecionado.AlunoID:'';
+      _executarSalvar(acao,dados,btn);
+    }
+  }
+
+  function _executarSalvar(acao,dados,btn) {
+    postApi(acao,dados).then(function(res){
+      btn.disabled=false; btn.classList.remove('loading');
+      if(!res.sucesso){mostrarAlertaModal(res.mensagem||'Erro ao salvar. Tente novamente.','erro');return;}
+      fecharModal(); fecharPainel();
+      if(typeof toast==='function')toast(state.modoModal==='novo'?'Aluno cadastrado com sucesso!':'Aluno atualizado!','success');
+      state.paginaAtual=1; carregarAlunos();
+    }).catch(function(){
+      btn.disabled=false; btn.classList.remove('loading');
+      mostrarAlertaModal('Erro de comunicação. Tente novamente.','erro');
+    });
+  }
+
+  function mostrarAlertaModal(msg,tipo) {
+    var a=el('modal-alerta'),m=el('modal-alerta-msg'); if(!a||!m)return;
+    a.className='modal-alerta show '+(tipo||'erro'); m.textContent=msg;
+    var ic=a.querySelector('.material-icons-round');
+    if(ic)ic.textContent=tipo==='sucesso'?'check_circle':'error_outline';
+  }
+
+  // =========================================================
+  // EVENTOS
+  // =========================================================
+
+
+  // =========================================================
+  // EVENTOS
+  // =========================================================
+  function registrarEventos() {
+    el('alunos-busca')&&el('alunos-busca').addEventListener('input',function(){
+      clearTimeout(buscarTimer);
+      buscarTimer=setTimeout(function(){state.busca=el('alunos-busca').value.trim();state.paginaAtual=1;carregarAlunos();},380);
+    });
+    el('btn-filtro-inativos')&&el('btn-filtro-inativos').addEventListener('click',function(){
+      state.exibirInativos=!state.exibirInativos;
+      this.textContent=state.exibirInativos?'Ocultar inativos':'Exibir inativos';
+      carregarAlunos();
+    });
+    el('btn-novo-aluno')&&el('btn-novo-aluno').addEventListener('click',abrirModalNovo);
+    el('btn-fechar-painel')&&el('btn-fechar-painel').addEventListener('click',fecharPainel);
+    el('btn-fechar-modal')&&el('btn-fechar-modal').addEventListener('click',fecharModal);
+    el('btn-cancelar-modal')&&el('btn-cancelar-modal').addEventListener('click',fecharModal);
+    el('modal-overlay')&&el('modal-overlay').addEventListener('click',function(e){if(e.target===this)fecharModal();});
+    document.querySelectorAll('.modal-aba').forEach(function(btn){btn.addEventListener('click',function(){mostrarAba(this.dataset.aba);});});
+    el('btn-salvar-modal')&&el('btn-salvar-modal').addEventListener('click',salvarModal);
+    el('f-nome-social-bool')&&el('f-nome-social-bool').addEventListener('change',function(){el('campo-nome-social').style.display=this.checked?'block':'none';});
+    el('f-estrangeiro')&&el('f-estrangeiro').addEventListener('change',function(){el('campo-passaporte').style.display=this.value==='true'?'block':'none';});
+    el('f-pcd')&&el('f-pcd').addEventListener('change',function(){var s=this.checked?'block':'none';el('campo-pcd-tipo').style.display=s;el('campo-pcd-laudo').style.display=s;});
+    el('f-povo')&&el('f-povo').addEventListener('change',function(){el('campo-povo-tipo').style.display=this.checked?'block':'none';});
+    el('f-menor')&&el('f-menor').addEventListener('change',function(){el('campos-responsaveis').style.display=this.checked?'block':'none';});
+    function mascaraCPF(input){input.addEventListener('input',function(){var v=this.value.replace(/\D/g,'').substring(0,11);if(v.length>9)v=v.replace(/(\d{3})(\d{3})(\d{3})(\d{0,2})/,'$1.$2.$3-$4');else if(v.length>6)v=v.replace(/(\d{3})(\d{3})(\d{0,3})/,'$1.$2.$3');else if(v.length>3)v=v.replace(/(\d{3})(\d{0,3})/,'$1.$2');this.value=v;});}
+    el('f-cpf')&&mascaraCPF(el('f-cpf'));
+    el('f-resp1-cpf')&&mascaraCPF(el('f-resp1-cpf'));
+    // Abas do painel lateral
+    el('painel-aba-ficha')&&el('painel-aba-ficha').addEventListener('click',function(){ mostrarAbaPainel('ficha'); });
+    el('painel-aba-ocorrencias')&&el('painel-aba-ocorrencias').addEventListener('click',function(){ mostrarAbaPainel('ocorrencias'); });
+    // Modal de nova ocorrencia
+    el('oco-btn-fechar-modal')&&el('oco-btn-fechar-modal').addEventListener('click',fecharModalNovaOco);
+    el('oco-btn-cancelar')&&el('oco-btn-cancelar').addEventListener('click',fecharModalNovaOco);
+    el('oco-btn-salvar')&&el('oco-btn-salvar').addEventListener('click',salvarNovaOco);
+    el('oco-modal-overlay')&&el('oco-modal-overlay').addEventListener('click',function(e){if(e.target===this)fecharModalNovaOco();});
+    // Modal de motivo (inativar / ativar)
+    el('motivo-btn-fechar')    && el('motivo-btn-fechar').addEventListener('click', fecharModalMotivo);
+    el('motivo-btn-cancelar')  && el('motivo-btn-cancelar').addEventListener('click', fecharModalMotivo);
+    el('motivo-btn-confirmar') && el('motivo-btn-confirmar').addEventListener('click', confirmarMotivo);
+    el('motivo-modal-overlay') && el('motivo-modal-overlay').addEventListener('click', function(e) {
+      if (e.target === this) fecharModalMotivo();
+    });
+    el('motivo-texto') && el('motivo-texto').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) confirmarMotivo();
+    });
+  }
+
+  function init() {
+    var _sessao = (typeof App !== 'undefined' && App.usuario)
+      ? { usuario: App.usuario } : null;
+    (function(sessao) {
+        if (sessao && sessao.usuario) {
+          state.papel         = sessao.usuario.Papel     || '';
+          state._usuarioId    = sessao.usuario.UsuarioID || '';
+          state.podeEditar    = ['admin','coordenacao','secretaria'].indexOf(state.papel) !== -1;
+          state.podeCadastrar = ['admin','coordenacao','secretaria'].indexOf(state.papel) !== -1;
+          state.podeLer       = state.podeEditar || state.papel === 'professor';
+          if (state.podeCadastrar) el('btn-novo-aluno').style.display = 'inline-flex';
+        }
+        registrarEventos();
+        carregarAlunos();
+    })(_sessao);
+    if (!_sessao) { registrarEventos(); carregarAlunos(); }
+  }
+
+  if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',init);}else{init();}
+}());
+</script>

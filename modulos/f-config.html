@@ -1,0 +1,540 @@
+<!--
+  F_Config.html
+  Configurações gerais da escola: dados institucionais, logo e gestão de semestres.
+  Visível apenas para admin.
+-->
+<style>
+  .cfg-secoes{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+  @media(max-width:800px){.cfg-secoes{grid-template-columns:1fr;}}
+
+  .cfg-card{background:#fff;border:1px solid var(--c-border,#E8E7E2);border-radius:10px;overflow:hidden;}
+  .cfg-card-header{padding:14px 18px;border-bottom:1px solid var(--c-border,#E8E7E2);display:flex;align-items:center;gap:8px;}
+  .cfg-card-header .material-icons-round{font-size:18px;color:#E63946;}
+  .cfg-card-titulo{font-size:14px;font-weight:600;color:var(--c-text-1,#1A1A2E);}
+  .cfg-card-corpo{padding:18px;}
+
+  .cfg-field{margin-bottom:14px;}
+  .cfg-field label{display:block;font-size:11.5px;font-weight:500;color:var(--c-text-2,#5C5C7A);letter-spacing:0.3px;text-transform:uppercase;margin-bottom:5px;}
+  .cfg-input{width:100%;height:38px;border:1.5px solid var(--c-border,#E8E7E2);border-radius:7px;padding:0 11px;font-family:var(--font-sans,sans-serif);font-size:13.5px;color:var(--c-text-1,#1A1A2E);background:#FAFAF8;outline:none;transition:border-color 150ms ease;}
+  .cfg-input:focus{border-color:#E63946;box-shadow:0 0 0 3px rgba(230,57,70,0.09);background:#fff;}
+  .cfg-input::placeholder{color:var(--c-text-3,#9898B0);}
+  .cfg-textarea{width:100%;height:80px;border:1.5px solid var(--c-border,#E8E7E2);border-radius:7px;padding:10px 11px;font-family:var(--font-sans,sans-serif);font-size:13.5px;color:var(--c-text-1,#1A1A2E);background:#FAFAF8;outline:none;resize:vertical;transition:border-color 150ms ease;}
+  .cfg-textarea:focus{border-color:#E63946;background:#fff;}
+  .cfg-hint{font-size:11.5px;color:var(--c-text-3,#9898B0);margin-top:4px;}
+
+  .btn-cfg{height:38px;padding:0 18px;border-radius:8px;font-family:var(--font-sans,sans-serif);font-size:13.5px;font-weight:500;cursor:pointer;border:none;display:inline-flex;align-items:center;gap:6px;transition:background 150ms ease;}
+  .btn-cfg .material-icons-round{font-size:17px;}
+  .btn-cfg .spinner-btn{width:15px;height:15px;border:2px solid rgba(255,255,255,0.35);border-top-color:#fff;border-radius:50%;animation:spin-cfg 0.7s linear infinite;display:none;}
+  .btn-cfg.loading .spinner-btn{display:block;}
+  .btn-cfg.loading .btn-txt{display:none;}
+  .btn-cfg-primario{background:#E63946;color:#fff;}
+  .btn-cfg-primario:hover{background:#C1121F;}
+  .btn-cfg-primario:disabled{opacity:0.55;cursor:not-allowed;}
+  .btn-cfg-sec{background:#fff;color:var(--c-text-1,#1A1A2E);border:1.5px solid var(--c-border,#E8E7E2);}
+  .btn-cfg-sec:hover{background:#F5F4F0;}
+  @keyframes spin-cfg{to{transform:rotate(360deg);}}
+
+  /* Logo */
+  .logo-preview-wrap{display:flex;align-items:center;gap:16px;margin-bottom:14px;}
+  .logo-preview{width:72px;height:72px;border:2px dashed var(--c-border,#E8E7E2);border-radius:10px;display:flex;align-items:center;justify-content:center;background:#FAFAF8;overflow:hidden;flex-shrink:0;}
+  .logo-preview img{width:100%;height:100%;object-fit:contain;}
+  .logo-preview .material-icons-round{font-size:28px;color:var(--c-text-3,#9898B0);}
+  .logo-upload-info{flex:1;}
+  .logo-upload-info p{font-size:13px;color:var(--c-text-2,#5C5C7A);margin-bottom:6px;}
+  .logo-upload-info small{font-size:11.5px;color:var(--c-text-3,#9898B0);}
+  input[type="file"]#cfg-logo-file{display:none;}
+  .btn-logo-upload{height:34px;padding:0 14px;border-radius:7px;border:1.5px solid var(--c-border,#E8E7E2);background:#fff;font-family:var(--font-sans,sans-serif);font-size:12.5px;cursor:pointer;display:inline-flex;align-items:center;gap:5px;transition:background 120ms ease;color:var(--c-text-1,#1A1A2E);}
+  .btn-logo-upload:hover{background:#F5F4F0;}
+  .btn-logo-upload .material-icons-round{font-size:16px;}
+
+  /* Semestres */
+  .sem-lista{display:flex;flex-direction:column;gap:10px;margin-bottom:16px;}
+  .sem-item{border:1px solid var(--c-border,#E8E7E2);border-radius:8px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+  .sem-item.atual{border-color:#E63946;background:rgba(230,57,70,0.02);}
+  .sem-info{flex:1;min-width:0;}
+  .sem-nome{font-size:14px;font-weight:600;color:var(--c-text-1,#1A1A2E);}
+  .sem-id{font-size:11px;font-family:var(--font-mono,monospace);color:var(--c-text-3,#9898B0);}
+  .sem-badges{display:flex;gap:5px;margin-top:4px;flex-wrap:wrap;}
+  .sem-badge{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:500;}
+  .sem-badge.atual{background:rgba(230,57,70,0.10);color:#A32D2D;}
+  .sem-badge.edicao{background:rgba(42,157,143,0.10);color:#1A6E65;}
+  .sem-badge.vis{background:rgba(69,123,157,0.10);color:#185FA5;}
+  .sem-badge.fechado{background:#F5F4F0;color:var(--c-text-3,#9898B0);}
+  .sem-acoes{display:flex;gap:6px;}
+  .btn-sem{height:28px;padding:0 10px;border-radius:6px;font-size:11.5px;cursor:pointer;border:1.5px solid var(--c-border,#E8E7E2);background:#fff;color:var(--c-text-2,#5C5C7A);font-family:var(--font-sans,sans-serif);display:inline-flex;align-items:center;gap:3px;transition:background 120ms ease;}
+  .btn-sem:hover{background:#F5F4F0;}
+  .btn-sem .material-icons-round{font-size:14px;}
+
+  /* Novo semestre */
+  .novo-sem-form{background:#F8F7F3;border:1px solid var(--c-border,#E8E7E2);border-radius:8px;padding:14px;display:none;}
+  .novo-sem-form.show{display:block;}
+  .novo-sem-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;}
+  .novo-sem-field label{display:block;font-size:11px;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;color:var(--c-text-3,#9898B0);margin-bottom:4px;}
+  .novo-sem-input{width:100%;height:36px;border:1.5px solid var(--c-border,#E8E7E2);border-radius:7px;padding:0 10px;font-family:var(--font-sans,sans-serif);font-size:13px;color:var(--c-text-1,#1A1A2E);background:#fff;outline:none;}
+  .novo-sem-input:focus{border-color:#E63946;}
+
+  /* Alerta */
+  .cfg-alerta{border-radius:8px;padding:10px 14px;font-size:13px;display:none;align-items:center;gap:8px;margin-bottom:14px;}
+  .cfg-alerta.show{display:flex;}
+  .cfg-alerta.erro{background:rgba(230,57,70,0.08);border:1px solid rgba(230,57,70,0.20);color:#B01020;}
+  .cfg-alerta.sucesso{background:rgba(42,157,143,0.08);border:1px solid rgba(42,157,143,0.20);color:#1A6E65;}
+  .cfg-alerta .material-icons-round{font-size:16px;flex-shrink:0;}
+
+  .cfg-spinner{display:flex;align-items:center;justify-content:center;padding:32px;gap:10px;color:var(--c-text-3,#9898B0);}
+  .cfg-spinner-anim{width:20px;height:20px;border:2px solid var(--c-border,#E8E7E2);border-top-color:#E63946;border-radius:50%;animation:spin-cfg 0.7s linear infinite;}
+
+  /* Seção única para admins */
+  .cfg-span2{grid-column:1/-1;}
+</style>
+
+<div>
+  <div class="cfg-alerta" id="cfg-alerta-global">
+    <span class="material-icons-round">info</span>
+    <span id="cfg-alerta-global-msg"></span>
+  </div>
+
+  <div id="cfg-acesso-negado" class="tabela-estado" style="display:none;padding:48px 24px;text-align:center;color:var(--c-text-3,#9898B0);">
+    <span class="material-icons-round" style="font-size:36px;display:block;margin:0 auto 10px;">lock</span>
+    <p>Esta área é restrita ao perfil administrador.</p>
+  </div>
+
+  <div id="cfg-loading" class="cfg-spinner">
+    <div class="cfg-spinner-anim"></div><span>Carregando configurações…</span>
+  </div>
+
+  <div id="cfg-conteudo" style="display:none;">
+    <div class="cfg-secoes">
+
+      <!-- DADOS DA ESCOLA -->
+      <div class="cfg-card">
+        <div class="cfg-card-header">
+          <span class="material-icons-round">business</span>
+          <span class="cfg-card-titulo">Dados da escola</span>
+        </div>
+        <div class="cfg-card-corpo">
+          <div class="cfg-alerta" id="cfg-alerta-dados">
+            <span class="material-icons-round">check_circle</span>
+            <span id="cfg-alerta-dados-msg"></span>
+          </div>
+          <div class="cfg-field">
+            <label>Nome oficial</label>
+            <input type="text" class="cfg-input" id="cfg-nome" placeholder="Nome completo da escola">
+          </div>
+          <div class="cfg-field">
+            <label>Sigla</label>
+            <input type="text" class="cfg-input" id="cfg-sigla" placeholder="Ex: CELINPB" maxlength="20">
+          </div>
+          <div class="cfg-field">
+            <label>Endereço</label>
+            <input type="text" class="cfg-input" id="cfg-endereco" placeholder="Rua, número, bairro, cidade - UF">
+          </div>
+          <div class="cfg-field">
+            <label>Telefone</label>
+            <input type="tel" class="cfg-input" id="cfg-telefone" placeholder="(83) 3333-4444">
+          </div>
+          <div class="cfg-field">
+            <label>E-mail institucional</label>
+            <input type="email" class="cfg-input" id="cfg-email" placeholder="contato@celinpb.pb.gov.br">
+          </div>
+          <div class="cfg-field">
+            <label>Site</label>
+            <input type="url" class="cfg-input" id="cfg-site" placeholder="https://celinpb.pb.gov.br">
+          </div>
+          <button class="btn-cfg btn-cfg-primario" id="btn-salvar-dados">
+            <div class="spinner-btn"></div>
+            <span class="material-icons-round btn-txt" style="font-size:16px;">save</span>
+            <span class="btn-txt">Salvar dados</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- LOGO -->
+      <div class="cfg-card">
+        <div class="cfg-card-header">
+          <span class="material-icons-round">image</span>
+          <span class="cfg-card-titulo">Logo da escola</span>
+        </div>
+        <div class="cfg-card-corpo">
+          <div class="cfg-alerta" id="cfg-alerta-logo">
+            <span class="material-icons-round">check_circle</span>
+            <span id="cfg-alerta-logo-msg"></span>
+          </div>
+          <div class="logo-preview-wrap">
+            <div class="logo-preview" id="logo-preview">
+              <span class="material-icons-round">image</span>
+            </div>
+            <div class="logo-upload-info">
+              <p>Faça upload de uma imagem PNG ou JPG (recomendado: fundo transparente).</p>
+              <small>Tamanho máximo: 200KB. A imagem será convertida para Base64.</small>
+            </div>
+          </div>
+          <input type="file" id="cfg-logo-file" accept="image/png,image/jpeg,image/svg+xml">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+            <label class="btn-logo-upload" for="cfg-logo-file">
+              <span class="material-icons-round">upload</span>Escolher imagem
+            </label>
+            <button class="btn-cfg-sec btn-cfg" id="btn-remover-logo" style="height:34px;padding:0 12px;font-size:12.5px;">
+              <span class="material-icons-round" style="font-size:16px;">delete</span>Remover
+            </button>
+          </div>
+          <div class="cfg-field">
+            <label>Ou cole uma URL pública de imagem</label>
+            <input type="url" class="cfg-input" id="cfg-logo-url" placeholder="https://…">
+            <span class="cfg-hint">Alternativa ao upload. Será convertida para Base64 ao salvar.</span>
+          </div>
+          <button class="btn-cfg btn-cfg-primario" id="btn-salvar-logo">
+            <div class="spinner-btn"></div>
+            <span class="material-icons-round btn-txt" style="font-size:16px;">save</span>
+            <span class="btn-txt">Salvar logo</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- SEMESTRES -->
+      <div class="cfg-card cfg-span2">
+        <div class="cfg-card-header">
+          <span class="material-icons-round">calendar_today</span>
+          <span class="cfg-card-titulo">Gestão de semestres</span>
+        </div>
+        <div class="cfg-card-corpo">
+          <div class="cfg-alerta" id="cfg-alerta-sem">
+            <span class="material-icons-round">check_circle</span>
+            <span id="cfg-alerta-sem-msg"></span>
+          </div>
+
+          <div class="sem-lista" id="sem-lista">
+            <div class="cfg-spinner"><div class="cfg-spinner-anim"></div><span>Carregando…</span></div>
+          </div>
+
+          <!-- Form novo semestre -->
+          <div class="novo-sem-form" id="novo-sem-form">
+            <div style="font-size:13px;font-weight:600;color:var(--c-text-1,#1A1A2E);margin-bottom:12px;">Registrar novo semestre</div>
+            <div class="novo-sem-grid">
+              <div class="novo-sem-field">
+                <label>SemestreID <span style="color:#E63946;">*</span></label>
+                <input type="number" class="novo-sem-input" id="ns-id" placeholder="Ex: 261">
+              </div>
+              <div class="novo-sem-field">
+                <label>Semestre <span style="color:#E63946;">*</span></label>
+                <input type="text" class="novo-sem-input" id="ns-nome" placeholder="Ex: 2026.1">
+              </div>
+              <div class="novo-sem-field" style="grid-column:span 2;">
+                <label>ID da planilha do semestre</label>
+                <input type="text" class="novo-sem-input" id="ns-planilha" placeholder="ID do Google Sheets (da URL)">
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+              <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+                <input type="checkbox" id="ns-atual" style="accent-color:#E63946;"> Definir como semestre atual
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+                <input type="checkbox" id="ns-edicao" checked style="accent-color:#E63946;"> Edição ativa
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+                <input type="checkbox" id="ns-vis" checked style="accent-color:#E63946;"> Visualização ativa
+              </label>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button class="btn-cfg btn-cfg-primario" id="btn-registrar-sem">
+                <div class="spinner-btn"></div>
+                <span class="btn-txt">Registrar semestre</span>
+              </button>
+              <button class="btn-cfg btn-cfg-sec" id="btn-cancelar-novo-sem">Cancelar</button>
+            </div>
+          </div>
+
+          <button class="btn-cfg btn-cfg-sec" id="btn-novo-sem" style="margin-top:8px;">
+            <span class="material-icons-round">add</span>Registrar novo semestre
+          </button>
+        </div>
+      </div>
+
+    </div><!-- /cfg-secoes -->
+  </div><!-- /cfg-conteudo -->
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var _logoBase64 = null; // Base64 da logo atual
+
+  function postApi(acao, dados) {
+    return window.postApi(acao, dados);
+  }
+
+  function el(id) { return document.getElementById(id); }
+  function val(id) { return el(id) ? el(id).value.trim() : ''; }
+
+  function alerta(id, msgId, msg, tipo) {
+    var a = el(id), m = el(msgId); if (!a||!m) return;
+    a.className = 'cfg-alerta show ' + (tipo||'sucesso'); m.textContent = msg;
+    var ic = a.querySelector('.material-icons-round');
+    if (ic) ic.textContent = tipo === 'erro' ? 'error_outline' : 'check_circle';
+    setTimeout(function() { a.classList.remove('show'); }, 4000);
+  }
+
+  function setBotao(id, carregando) {
+    var b = el(id); if (!b) return;
+    b.disabled = carregando; b.classList.toggle('loading', carregando);
+  }
+
+  // =========================================================
+  // INIT
+  // =========================================================
+  function init() {
+    // Bloqueio client-side (defesa em profundidade). A validação real e
+    // definitiva já está no back-end: m4_getConfig/m4_salvarConfig chamam
+    // m3_autenticarEAutorizar(token, 'Config', 'Read'/'Update'). Hoje a aba
+    // Papeis libera 'Config'/'Read' também para coordenacao — verifique essa
+    // célula na planilha, pois este bloqueio aqui não impede uma chamada
+    // direta a postApi('sistema.config', {}) pelo console do navegador.
+    var _usuario = (typeof App !== 'undefined') ? App.usuario : null;
+    if (!_usuario || _usuario.Papel !== 'admin') {
+      el('cfg-loading').style.display = 'none';
+      el('cfg-conteudo').style.display = 'none';
+      el('cfg-acesso-negado').style.display = 'block';
+      return;
+    }
+    postApi('sistema.config', {})
+      .then(function(res) {
+        el('cfg-loading').style.display = 'none';
+        el('cfg-conteudo').style.display = 'block';
+        if (res.sucesso && res.dados) preencherDados(res.dados);
+        carregarLogo();
+        carregarSemestres();
+      })
+      .catch(function() {
+        el('cfg-loading').innerHTML = '<span style="color:#E63946;">Erro ao carregar configurações.</span>';
+      });
+    registrarEventos();
+  }
+
+  // =========================================================
+  // DADOS DA ESCOLA
+  // =========================================================
+  function preencherDados(cfg) {
+    el('cfg-nome').value     = cfg.nome_escola || '';
+    el('cfg-sigla').value    = cfg.sigla_escola || '';
+    el('cfg-endereco').value = cfg.endereco || '';
+    el('cfg-telefone').value = cfg.telefone || '';
+    el('cfg-email').value    = cfg.email || '';
+    el('cfg-site').value     = cfg.site || '';
+  }
+
+  function salvarDados() {
+    setBotao('btn-salvar-dados', true);
+    postApi('config.salvar', {
+      nome_escola:  val('cfg-nome'),
+      sigla_escola: val('cfg-sigla'),
+      endereco:     val('cfg-endereco'),
+      telefone:     val('cfg-telefone'),
+      email:        val('cfg-email'),
+      site:         val('cfg-site'),
+    })
+      .then(function(res) {
+        setBotao('btn-salvar-dados', false);
+        alerta('cfg-alerta-dados','cfg-alerta-dados-msg', res.sucesso ? 'Dados salvos com sucesso!' : (res.mensagem||'Erro.'), res.sucesso ? 'sucesso' : 'erro');
+        if (typeof toast === 'function' && res.sucesso) toast('Configurações salvas!','success');
+      })
+      .catch(function() {
+        setBotao('btn-salvar-dados', false);
+        alerta('cfg-alerta-dados','cfg-alerta-dados-msg','Erro de comunicação.','erro');
+      });
+  }
+
+  // =========================================================
+  // LOGO
+  // =========================================================
+  function carregarLogo() {
+    postApi('sistema.logo', {})
+      .then(function(res) {
+        if (res.sucesso && res.dados && res.dados.logo_base64) {
+          _logoBase64 = res.dados.logo_base64;
+          mostrarPreviewLogo(_logoBase64);
+        }
+      })
+      .catch(function() {});
+  }
+
+  function mostrarPreviewLogo(src) {
+    var preview = el('logo-preview');
+    if (src) {
+      preview.innerHTML = '<img src="' + src + '" alt="Logo">';
+    } else {
+      preview.innerHTML = '<span class="material-icons-round">image</span>';
+    }
+  }
+
+  function salvarLogo() {
+    var base64 = _logoBase64;
+    if (!base64 && !val('cfg-logo-url')) {
+      alerta('cfg-alerta-logo','cfg-alerta-logo-msg','Selecione uma imagem ou informe uma URL.','erro');
+      return;
+    }
+
+    setBotao('btn-salvar-logo', true);
+
+    // Se há URL mas não base64, tentamos usar a URL diretamente
+    var logoParaSalvar = base64 || val('cfg-logo-url');
+
+    postApi('config.salvar', { logo_base64: logoParaSalvar })
+      .then(function(res) {
+        setBotao('btn-salvar-logo', false);
+        alerta('cfg-alerta-logo','cfg-alerta-logo-msg', res.sucesso ? 'Logo salva com sucesso!' : (res.mensagem||'Erro.'), res.sucesso ? 'sucesso' : 'erro');
+        if (typeof toast === 'function' && res.sucesso) toast('Logo atualizada!','success');
+      })
+      .catch(function() {
+        setBotao('btn-salvar-logo', false);
+        alerta('cfg-alerta-logo','cfg-alerta-logo-msg','Erro de comunicação.','erro');
+      });
+  }
+
+  // =========================================================
+  // SEMESTRES
+  // =========================================================
+  function carregarSemestres() {
+    el('sem-lista').innerHTML = '<div class="cfg-spinner"><div class="cfg-spinner-anim"></div><span>Carregando…</span></div>';
+
+    postApi('semestres.listar', {})
+      .then(function(res) {
+        if (!res.sucesso) { el('sem-lista').innerHTML = '<p style="color:var(--c-text-3);font-size:13px;">Erro ao carregar semestres.</p>'; return; }
+        renderizarSemestres(res.dados || []);
+      })
+      .catch(function() { el('sem-lista').innerHTML = '<p style="color:var(--c-text-3);font-size:13px;">Erro de comunicação.</p>'; });
+  }
+
+  function renderizarSemestres(semestres) {
+    var lista = el('sem-lista'); lista.innerHTML = '';
+    if (semestres.length === 0) {
+      lista.innerHTML = '<p style="color:var(--c-text-3);font-size:13px;">Nenhum semestre registrado.</p>';
+      return;
+    }
+
+    // Ordena: atual primeiro, depois por ID decrescente
+    semestres.sort(function(a,b) {
+      if (a.SemestreAtual && !b.SemestreAtual) return -1;
+      if (!a.SemestreAtual && b.SemestreAtual) return 1;
+      return Number(b.SemestreID) - Number(a.SemestreID);
+    });
+
+    semestres.forEach(function(s) {
+      var div = document.createElement('div');
+      div.className = 'sem-item' + (s.SemestreAtual ? ' atual' : '');
+
+      var badges = '';
+      if (s.SemestreAtual)   badges += '<span class="sem-badge atual">Atual</span>';
+      if (s.EdicaoAtiva)     badges += '<span class="sem-badge edicao">Edição aberta</span>';
+      else                   badges += '<span class="sem-badge fechado">Edição fechada</span>';
+      if (s.VisualizacaoAtiva) badges += '<span class="sem-badge vis">Visível</span>';
+
+      div.innerHTML =
+        '<div class="sem-info">' +
+          '<div class="sem-nome">' + (s.Semestre||s.SemestreID) + '</div>' +
+          '<div class="sem-id">ID: ' + s.SemestreID + (s.PlanilhaID ? ' · Planilha vinculada' : ' · Sem planilha') + '</div>' +
+          '<div class="sem-badges">' + badges + '</div>' +
+        '</div>' +
+        '<div class="sem-acoes">' +
+          (!s.SemestreAtual ? '<button class="btn-sem" data-id="'+s.SemestreID+'" data-acao="definir-atual"><span class="material-icons-round">star</span>Definir atual</button>' : '') +
+          (s.EdicaoAtiva ? '<button class="btn-sem" data-id="'+s.SemestreID+'" data-acao="fechar-edicao"><span class="material-icons-round">lock</span>Fechar edição</button>' :
+                           '<button class="btn-sem" data-id="'+s.SemestreID+'" data-acao="abrir-edicao"><span class="material-icons-round">lock_open</span>Abrir edição</button>') +
+        '</div>';
+
+      div.querySelectorAll('[data-acao]').forEach(function(btn) {
+        btn.addEventListener('click', function() { acaoSemestre(s, btn.dataset.acao); });
+      });
+
+      lista.appendChild(div);
+    });
+  }
+
+  function acaoSemestre(sem, acao) {
+    var dados = { semestreId: sem.SemestreID };
+    if (acao === 'definir-atual') dados.SemestreAtual = true;
+    if (acao === 'fechar-edicao') dados.EdicaoAtiva = false;
+    if (acao === 'abrir-edicao')  dados.EdicaoAtiva = true;
+
+    postApi('semestres.atualizar', dados)
+      .then(function(res) {
+        if (typeof toast === 'function') toast(res.sucesso ? 'Semestre atualizado!' : (res.mensagem||'Erro.'), res.sucesso ? 'success' : 'error');
+        if (res.sucesso) carregarSemestres();
+      })
+      .catch(function() { if (typeof toast==='function') toast('Erro de comunicação.','error'); });
+  }
+
+  function registrarNovoSemestre() {
+    var id   = val('ns-id');
+    var nome = val('ns-nome');
+    if (!id || !nome) { alerta('cfg-alerta-sem','cfg-alerta-sem-msg','Informe o SemestreID e o nome.','erro'); return; }
+
+    setBotao('btn-registrar-sem', true);
+
+    postApi('semestres.registrar', {
+      SemestreID:       Number(id),
+      Semestre:         nome,
+      PlanilhaID:       val('ns-planilha') || null,
+      SemestreAtual:    el('ns-atual').checked,
+      EdicaoAtiva:      el('ns-edicao').checked,
+      VisualizacaoAtiva:el('ns-vis').checked,
+    })
+      .then(function(res) {
+        setBotao('btn-registrar-sem', false);
+        if (!res.sucesso) { alerta('cfg-alerta-sem','cfg-alerta-sem-msg', res.mensagem||'Erro.','erro'); return; }
+        el('novo-sem-form').classList.remove('show');
+        ['ns-id','ns-nome','ns-planilha'].forEach(function(i){if(el(i))el(i).value='';});
+        if (typeof toast==='function') toast('Semestre registrado!','success');
+        carregarSemestres();
+      })
+      .catch(function() {
+        setBotao('btn-registrar-sem', false);
+        alerta('cfg-alerta-sem','cfg-alerta-sem-msg','Erro de comunicação.','erro');
+      });
+  }
+
+  // =========================================================
+  // EVENTOS
+  // =========================================================
+  function registrarEventos() {
+    el('btn-salvar-dados') && el('btn-salvar-dados').addEventListener('click', salvarDados);
+    el('btn-salvar-logo')  && el('btn-salvar-logo').addEventListener('click', salvarLogo);
+
+    // Upload de logo por arquivo
+    el('cfg-logo-file') && el('cfg-logo-file').addEventListener('change', function() {
+      var file = this.files[0];
+      if (!file) return;
+      if (file.size > 200 * 1024) {
+        alerta('cfg-alerta-logo','cfg-alerta-logo-msg','A imagem deve ter menos de 200KB.','erro');
+        return;
+      }
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        _logoBase64 = e.target.result;
+        mostrarPreviewLogo(_logoBase64);
+        el('cfg-logo-url').value = '';
+      };
+      reader.readAsDataURL(file);
+    });
+
+    // Remover logo
+    el('btn-remover-logo') && el('btn-remover-logo').addEventListener('click', function() {
+      _logoBase64 = null;
+      mostrarPreviewLogo(null);
+      el('cfg-logo-url').value = '';
+      el('cfg-logo-file').value = '';
+    });
+
+    // Semestres
+    el('btn-novo-sem') && el('btn-novo-sem').addEventListener('click', function() {
+      el('novo-sem-form').classList.add('show');
+      this.style.display = 'none';
+    });
+    el('btn-cancelar-novo-sem') && el('btn-cancelar-novo-sem').addEventListener('click', function() {
+      el('novo-sem-form').classList.remove('show');
+      el('btn-novo-sem').style.display = 'inline-flex';
+    });
+    el('btn-registrar-sem') && el('btn-registrar-sem').addEventListener('click', registrarNovoSemestre);
+  }
+
+  if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', init); }
+  else { init(); }
+}());
+</script>

@@ -1,0 +1,666 @@
+<!--
+  F6_DiarioAula.html — versão corrigida
+  postApi usa getSessaoAtiva() no back-end para obter o token,
+  evitando dependência de variáveis globais entre iframes do Apps Script.
+-->
+<style>
+  .diario-wrap{max-width:900px;}
+  .diario-secao-titulo{font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--c-text-3,#9898B0);margin-bottom:12px;}
+  .diario-turma-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-bottom:28px;}
+  .turma-card{background:#FFFFFF;border:1.5px solid var(--c-border,#E8E7E2);border-radius:10px;padding:16px 18px;cursor:pointer;transition:border-color 150ms ease,box-shadow 150ms ease,transform 150ms ease;}
+  .turma-card:hover{border-color:#C8C7C2;box-shadow:0 3px 10px rgba(26,26,46,0.08);transform:translateY(-1px);}
+  .turma-card.selecionada{border-color:#E63946;background:rgba(230,57,70,0.03);box-shadow:0 0 0 3px rgba(230,57,70,0.10);}
+  .turma-card-id{font-size:11px;font-family:var(--font-mono,monospace);color:var(--c-text-3,#9898B0);margin-bottom:4px;}
+  .turma-card-estagio{font-size:14.5px;font-weight:600;color:var(--c-text-1,#1A1A2E);margin-bottom:2px;}
+  .turma-card-detalhe{font-size:12px;color:var(--c-text-2,#5C5C7A);}
+  /* Turmas encerradas/inativas: exibidas com tom avermelhado sombreado quando o filtro está ligado */
+  .turma-card.turma-nao-ativa{background:rgba(230,57,70,0.045);border-color:rgba(230,57,70,0.28);}
+  .turma-card.turma-nao-ativa:hover{border-color:rgba(230,57,70,0.45);box-shadow:0 3px 10px rgba(230,57,70,0.10);}
+  .turma-card-badge-status{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;font-weight:600;color:#A32D2D;background:rgba(230,57,70,0.12);border-radius:10px;padding:2px 8px;margin-top:8px;}
+  .turma-card-badge-status .material-icons-round{font-size:12px;}
+  .diario-filtro-row{display:flex;align-items:center;margin-bottom:14px;}
+  .diario-filtro-row label{display:inline-flex;align-items:center;gap:7px;font-size:13px;color:var(--c-text-2,#5C5C7A);cursor:pointer;user-select:none;}
+  .diario-filtro-row input[type="checkbox"]{width:15px;height:15px;accent-color:#E63946;cursor:pointer;}
+  .diario-data-row{display:flex;align-items:flex-end;gap:12px;margin-bottom:28px;flex-wrap:wrap;}
+  .diario-field{display:flex;flex-direction:column;gap:6px;}
+  .diario-field label{font-size:11.5px;font-weight:500;color:var(--c-text-2,#5C5C7A);letter-spacing:0.3px;text-transform:uppercase;}
+  .diario-field select,.diario-field input[type="datetime-local"]{height:40px;border:1.5px solid var(--c-border,#E8E7E2);border-radius:8px;padding:0 12px;font-family:var(--font-sans,sans-serif);font-size:13.5px;color:var(--c-text-1,#1A1A2E);background:#FFFFFF;outline:none;transition:border-color 150ms ease;min-width:220px;}
+  .diario-field select:focus,.diario-field input[type="datetime-local"]:focus{border-color:#E63946;box-shadow:0 0 0 3px rgba(230,57,70,0.10);}
+  .btn-diario{height:40px;padding:0 18px;border-radius:8px;font-family:var(--font-sans,sans-serif);font-size:13.5px;font-weight:500;cursor:pointer;border:none;transition:background 150ms ease,box-shadow 150ms ease,transform 150ms ease;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;}
+  .btn-diario .material-icons-round{font-size:17px;}
+  .btn-primario{background:#E63946;color:#fff;}
+  .btn-primario:hover:not(:disabled){background:#C1121F;box-shadow:0 3px 10px rgba(230,57,70,0.28);transform:translateY(-1px);}
+  .btn-primario:disabled{opacity:0.55;cursor:not-allowed;}
+  .btn-secundario{background:#F5F4F0;color:var(--c-text-1,#1A1A2E);border:1.5px solid var(--c-border,#E8E7E2);}
+  .btn-secundario:hover{background:#ECEAE5;}
+  .btn-primario .spinner-btn{width:15px;height:15px;border:2px solid rgba(255,255,255,0.35);border-top-color:#fff;border-radius:50%;animation:spin-d6 0.7s linear infinite;display:none;}
+  .btn-primario.loading .spinner-btn{display:block;}
+  .btn-primario.loading .btn-txt{display:none;}
+  @keyframes spin-d6{to{transform:rotate(360deg);}}
+  .diario-aula-wrap{display:none;}
+  .diario-aula-wrap.visivel{display:block;}
+  .diario-aula-header{background:#1A1A2E;border-radius:10px;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:12px;flex-wrap:wrap;}
+  .diario-aula-header-info{flex:1;}
+  .diario-aula-header-turma{font-size:12px;color:rgba(255,255,255,0.45);font-family:var(--font-mono,monospace);margin-bottom:2px;}
+  .diario-aula-header-data{font-size:17px;font-weight:600;color:#fff;}
+  .diario-aula-header-badge{display:inline-flex;align-items:center;gap:5px;background:rgba(230,57,70,0.18);color:#ff8087;border-radius:20px;padding:4px 12px;font-size:11.5px;font-weight:500;}
+  .diario-aula-header-badge.salvo{background:rgba(42,157,143,0.18);color:#5DCAA5;}
+  .diario-aula-header-badge .material-icons-round{font-size:13px;}
+  .diario-paineis{display:grid;grid-template-columns:1fr 340px;gap:16px;margin-bottom:16px;}
+  @media(max-width:720px){.diario-paineis{grid-template-columns:1fr;}}
+  .painel{background:#FFFFFF;border:1px solid var(--c-border,#E8E7E2);border-radius:10px;overflow:hidden;}
+  .painel-header{padding:12px 16px;border-bottom:1px solid var(--c-border,#E8E7E2);display:flex;align-items:center;justify-content:space-between;gap:8px;}
+  .painel-titulo{font-size:13px;font-weight:600;color:var(--c-text-1,#1A1A2E);display:flex;align-items:center;gap:6px;}
+  .painel-titulo .material-icons-round{font-size:16px;color:#E63946;}
+  .painel-corpo{padding:0;}
+  .freq-acoes-rapidas{display:flex;gap:8px;padding:10px 16px;border-bottom:1px solid var(--c-border,#E8E7E2);background:#FAFAF8;}
+  .btn-freq-rapido{height:30px;padding:0 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1.5px solid;transition:all 120ms ease;font-family:var(--font-sans,sans-serif);}
+  .btn-freq-rapido.p{border-color:#2A9D8F;color:#2A9D8F;background:rgba(42,157,143,0.07);}
+  .btn-freq-rapido.p:hover{background:#2A9D8F;color:#fff;}
+  .btn-freq-rapido.f{border-color:#E63946;color:#E63946;background:rgba(230,57,70,0.07);}
+  .btn-freq-rapido.f:hover{background:#E63946;color:#fff;}
+  .freq-tabela{width:100%;border-collapse:collapse;}
+  .freq-tabela thead tr{background:#F8F7F3;border-bottom:1px solid var(--c-border,#E8E7E2);}
+  .freq-tabela th{padding:9px 16px;font-size:11px;font-weight:600;letter-spacing:0.6px;text-transform:uppercase;color:var(--c-text-3,#9898B0);text-align:left;}
+  .freq-tabela th.col-freq{text-align:center;width:120px;}
+  .freq-tabela th.col-faltas{text-align:center;width:70px;}
+  .freq-tabela tbody tr{border-bottom:1px solid var(--c-border,#E8E7E2);transition:background 120ms ease;}
+  .freq-tabela tbody tr:last-child{border-bottom:none;}
+  .freq-tabela tbody tr:hover{background:#FAFAF8;}
+  .freq-tabela td{padding:10px 16px;font-size:13.5px;color:var(--c-text-1,#1A1A2E);vertical-align:middle;}
+  .freq-tabela td.col-freq{text-align:center;}
+  .freq-tabela td.col-faltas{text-align:center;}
+  .aluno-nome{font-weight:500;}
+  .badge-faltas{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;border-radius:11px;font-size:11.5px;font-weight:600;padding:0 6px;}
+  .badge-faltas.zero{background:#EAF3DE;color:#3B6D11;}
+  .badge-faltas.baixo{background:#FAEEDA;color:#854F0B;}
+  .badge-faltas.alto{background:rgba(230,57,70,0.12);color:#A32D2D;}
+  .freq-btns{display:flex;gap:4px;justify-content:center;}
+  .freq-btn{width:30px;height:30px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;border:1.5px solid var(--c-border,#E8E7E2);background:#F5F4F0;color:var(--c-text-2,#5C5C7A);transition:all 120ms ease;font-family:var(--font-mono,monospace);}
+  .freq-btn:hover{border-color:#B0AFAA;background:#ECEAE5;}
+  .freq-btn.ativo-p{background:#2A9D8F;border-color:#2A9D8F;color:#fff;}
+  .freq-btn.ativo-f{background:#E63946;border-color:#E63946;color:#fff;}
+  .freq-btn.ativo-j{background:#E9C46A;border-color:#D4A843;color:#5C4200;}
+  .freq-justificativa{margin-top:6px;display:none;}
+  .freq-justificativa.show{display:block;}
+  .freq-justificativa input{width:100%;height:32px;border:1.5px solid #E9C46A;border-radius:6px;padding:0 10px;font-size:12px;font-family:var(--font-sans,sans-serif);background:#FEFBF0;color:var(--c-text-1,#1A1A2E);outline:none;}
+  .freq-justificativa input:focus{border-color:#D4A843;}
+  .freq-justificativa input::placeholder{color:var(--c-text-3,#9898B0);}
+  .painel-direito{display:flex;flex-direction:column;gap:16px;}
+  .conteudo-textarea{width:100%;min-height:120px;border:none;border-radius:0;padding:14px 16px;font-family:var(--font-sans,sans-serif);font-size:13.5px;color:var(--c-text-1,#1A1A2E);resize:vertical;outline:none;line-height:1.6;}
+  .conteudo-textarea::placeholder{color:var(--c-text-3,#9898B0);}
+  .conteudo-contador{padding:8px 16px;font-size:11px;color:var(--c-text-3,#9898B0);border-top:1px solid var(--c-border,#E8E7E2);text-align:right;background:#FAFAF8;}
+  .historico-item{padding:12px 16px;border-bottom:1px solid var(--c-border,#E8E7E2);}
+  .historico-item:last-child{border-bottom:none;}
+  .historico-data{font-size:11px;font-family:var(--font-mono,monospace);color:var(--c-text-3,#9898B0);margin-bottom:3px;}
+  .historico-conteudo{font-size:13px;color:var(--c-text-1,#1A1A2E);line-height:1.45;margin-bottom:4px;}
+  .historico-vazio{padding:20px 16px;text-align:center;font-size:13px;color:var(--c-text-3,#9898B0);}
+  .diario-rodape{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+  .diario-rodape-info{font-size:12.5px;color:var(--c-text-3,#9898B0);display:flex;align-items:center;gap:5px;}
+  .diario-rodape-info .material-icons-round{font-size:15px;}
+  .diario-alerta{border-radius:8px;padding:10px 14px;font-size:13px;display:none;align-items:center;gap:8px;margin-bottom:14px;}
+  .diario-alerta.show{display:flex;}
+  .diario-alerta.erro{background:rgba(230,57,70,0.08);border:1px solid rgba(230,57,70,0.20);color:#B01020;}
+  .diario-alerta.sucesso{background:rgba(42,157,143,0.08);border:1px solid rgba(42,157,143,0.20);color:#1A6E65;}
+  .diario-alerta .material-icons-round{font-size:16px;flex-shrink:0;}
+  .diario-loading{display:flex;align-items:center;justify-content:center;gap:10px;padding:32px 0;color:var(--c-text-3,#9898B0);font-size:13.5px;}
+  .diario-loading .spinner-sm{width:20px;height:20px;border:2px solid var(--c-border,#E8E7E2);border-top-color:#E63946;border-radius:50%;animation:spin-d6 0.7s linear infinite;}
+</style>
+
+<div class="diario-wrap">
+  <div id="diario-step-turma">
+    <div class="diario-secao-titulo">Selecione a turma</div>
+    <div class="diario-filtro-row" id="diario-filtro-row" style="display:none;">
+      <label>
+        <input type="checkbox" id="diario-chk-encerradas">
+        Mostrar turmas encerradas/inativas
+      </label>
+    </div>
+    <div id="diario-turmas-loading" class="diario-loading">
+      <div class="spinner-sm"></div><span>Carregando turmas…</span>
+    </div>
+    <div class="diario-turma-grid" id="diario-turma-grid" style="display:none;"></div>
+  </div>
+
+  <div id="diario-step-data" style="display:none;">
+    <div class="diario-secao-titulo">Data da aula</div>
+    <div class="diario-data-row">
+      <div class="diario-field">
+        <label for="diario-select-data">Data do calendário letivo</label>
+        <select id="diario-select-data"><option value="">Selecione uma data…</option></select>
+      </div>
+      <div class="diario-field">
+        <label for="diario-data-manual">Ou informe manualmente</label>
+        <input type="datetime-local" id="diario-data-manual">
+      </div>
+      <button class="btn-diario btn-primario" id="diario-btn-abrir">
+        <span class="material-icons-round">menu_book</span><span class="btn-txt">Abrir diário</span>
+      </button>
+      <button class="btn-diario btn-secundario" id="diario-btn-trocar-turma">
+        <span class="material-icons-round">swap_horiz</span>Trocar turma
+      </button>
+    </div>
+  </div>
+
+  <div id="diario-step-aula" class="diario-aula-wrap">
+    <div class="diario-aula-header">
+      <div class="diario-aula-header-info">
+        <div class="diario-aula-header-turma" id="diario-header-turma">—</div>
+        <div class="diario-aula-header-data" id="diario-header-data">—</div>
+      </div>
+      <div class="diario-aula-header-badge" id="diario-header-badge">
+        <span class="material-icons-round">edit</span><span>Novo registro</span>
+      </div>
+    </div>
+
+    <div class="diario-alerta" id="diario-alerta">
+      <span class="material-icons-round">info</span>
+      <span id="diario-alerta-msg"></span>
+    </div>
+
+    <div class="diario-paineis">
+      <div class="painel">
+        <div class="painel-header">
+          <div class="painel-titulo"><span class="material-icons-round">fact_check</span>Frequência</div>
+          <div style="font-size:12px;color:var(--c-text-3);">
+            <span id="diario-cont-p" style="color:#2A9D8F;font-weight:600;">0</span> P &nbsp;
+            <span id="diario-cont-f" style="color:#E63946;font-weight:600;">0</span> F &nbsp;
+            <span id="diario-cont-j" style="color:#D4A843;font-weight:600;">0</span> J
+          </div>
+        </div>
+        <div class="freq-acoes-rapidas">
+          <button class="btn-freq-rapido p" id="btn-todos-p">Todos P</button>
+          <button class="btn-freq-rapido f" id="btn-todos-f">Todos F</button>
+        </div>
+        <div class="painel-corpo">
+          <div id="freq-loading" class="diario-loading"><div class="spinner-sm"></div><span>Carregando alunos…</span></div>
+          <table class="freq-tabela" id="freq-tabela" style="display:none;">
+            <thead><tr><th>Aluno</th><th class="col-faltas">Faltas</th><th class="col-freq">Frequência</th></tr></thead>
+            <tbody id="freq-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="painel-direito">
+        <div class="painel">
+          <div class="painel-header">
+            <div class="painel-titulo"><span class="material-icons-round">edit_note</span>Conteúdo ministrado</div>
+          </div>
+          <div class="painel-corpo">
+            <textarea class="conteudo-textarea" id="diario-conteudo" placeholder="Descreva o conteúdo ministrado nesta aula…" maxlength="1000"></textarea>
+            <div class="conteudo-contador"><span id="diario-conteudo-cont">0</span>/1000 caracteres</div>
+          </div>
+        </div>
+        <div class="painel">
+          <div class="painel-header">
+            <div class="painel-titulo"><span class="material-icons-round">history</span>Últimas aulas</div>
+          </div>
+          <div class="painel-corpo" id="historico-corpo">
+            <div class="historico-vazio">Carregando histórico…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="diario-rodape">
+      <div class="diario-rodape-info">
+        <span class="material-icons-round">info</span>
+        Registros anteriores serão substituídos ao salvar.
+      </div>
+      <div style="display:flex;gap:10px;">
+        <button class="btn-diario btn-secundario" id="diario-btn-voltar-data">
+          <span class="material-icons-round">arrow_back</span>Outra data
+        </button>
+        <button class="btn-diario btn-primario" id="diario-btn-salvar">
+          <div class="spinner-btn"></div>
+          <span class="material-icons-round btn-txt">save</span>
+          <span class="btn-txt">Salvar registro</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // Cache de token em memória
+
+  var state = {
+    turmas:[], turmaSel:null, dataSel:null,
+    matriculas:[], frequencias:{}, contFaltas:{}, jaRegistrado:false,
+  };
+
+  // =========================================================
+  // postApi — usa api.js carregado pelo index.html
+  // =========================================================
+  function postApi(acao, dados) {
+    return window.postApi(acao, dados);
+  }
+
+  function el(id) { return document.getElementById(id); }
+
+  function formatarDataHora(dt) {
+    if (!dt) return '';
+    var d = (dt instanceof Date) ? dt : new Date(dt);
+    if (isNaN(d.getTime())) return String(dt);
+    var pad = function(n){return String(n).padStart(2,'0');};
+    return pad(d.getDate())+'/'+pad(d.getMonth()+1)+'/'+d.getFullYear()+' '+pad(d.getHours())+':'+pad(d.getMinutes());
+  }
+
+  function dataParaInputLocal(dataStr) {
+    if (!dataStr) return '';
+    var p = dataStr.split(' ');
+    if (p.length < 2) return '';
+    var d = p[0].split('/');
+    if (d.length < 3) return '';
+    return d[2]+'-'+d[1]+'-'+d[0]+'T'+p[1];
+  }
+
+  function inputLocalParaData(val) {
+    if (!val) return '';
+    var p = val.split('T');
+    if (p.length < 2) return '';
+    var d = p[0].split('-');
+    return d[2]+'/'+d[1]+'/'+d[0]+' '+p[1];
+  }
+
+  function mostrarAlerta(msg, tipo) {
+    var a=el('diario-alerta'),m=el('diario-alerta-msg'); if(!a||!m)return;
+    tipo=tipo||'erro'; a.className='diario-alerta show '+tipo; m.textContent=msg;
+    var ic=a.querySelector('.material-icons-round');
+    if(ic)ic.textContent=tipo==='sucesso'?'check_circle':'error_outline';
+    setTimeout(function(){a.classList.remove('show');},5000);
+  }
+
+  // Encontra o Timestamp mais recente entre os registros de frequência de
+  // uma data, para exibir "Já registrado em DD/MM/AAAA HH:MM" no badge.
+  function ultimoTimestamp(lista) {
+    var max = null;
+    (lista||[]).forEach(function(item) {
+      var ts = item.Timestamp;
+      if (!ts) return;
+      var partes = String(ts).split(' ');
+      var d  = (partes[0]||'').split('/');
+      var hm = (partes[1]||'00:00').split(':');
+      if (d.length !== 3) return;
+      var dt = new Date(Number(d[2]), Number(d[1])-1, Number(d[0]), Number(hm[0])||0, Number(hm[1])||0);
+      if (isNaN(dt.getTime())) return;
+      if (!max || dt > max.dt) max = { dt: dt, texto: ts };
+    });
+    return max ? max.texto : null;
+  }
+
+  function atualizarContador() {
+    var ta=el('diario-conteudo'),c=el('diario-conteudo-cont');
+    if(ta&&c)c.textContent=ta.value.length;
+  }
+
+  // =========================================================
+  // PASSO 1 — TURMAS
+  // =========================================================
+  function carregarTurmas() {
+    postApi('turmas.listar',{tamanhoPagina:300}).then(function(res){
+      el('diario-turmas-loading').style.display='none';
+      if(!res.sucesso||!res.dados||!res.dados.dados||res.dados.dados.length===0){
+        el('diario-turma-grid').style.display='grid';
+        el('diario-turma-grid').innerHTML='<p style="color:var(--c-text-3);font-size:13px;grid-column:1/-1;">Nenhuma turma encontrada.</p>';
+        return;
+      }
+      state.turmas=res.dados.dados;
+      if (el('diario-filtro-row')) el('diario-filtro-row').style.display='flex';
+      renderizarTurmas();
+    }).catch(function(){
+      el('diario-turmas-loading').innerHTML='<span style="color:#E63946;">Erro ao carregar turmas.</span>';
+    });
+  }
+
+  // Turma "ativa" = SituacaoTurma true/'true' e diferente de 'ENCERRADA'.
+  // Qualquer outro valor (false/'false' ou 'ENCERRADA') é considerado não-ativa.
+  function turmaEstaAtiva(t) {
+    return (t.SituacaoTurma === true || t.SituacaoTurma === 'true') && String(t.SituacaoTurma) !== 'ENCERRADA';
+  }
+
+  function turmasFiltradasDiario() {
+    var mostrarNaoAtivas = el('diario-chk-encerradas') && el('diario-chk-encerradas').checked;
+    if (mostrarNaoAtivas) return state.turmas;
+    return state.turmas.filter(turmaEstaAtiva);
+  }
+
+  function renderizarTurmas() {
+    var grid=el('diario-turma-grid');
+    var lista=turmasFiltradasDiario();
+    grid.innerHTML='';
+    if (lista.length===0) {
+      grid.innerHTML='<p style="color:var(--c-text-3);font-size:13px;grid-column:1/-1;">Nenhuma turma ativa encontrada. Marque "Mostrar turmas encerradas/inativas" para ver todas.</p>';
+      grid.style.display='grid';
+      return;
+    }
+    lista.forEach(function(t){
+      var ativa = turmaEstaAtiva(t);
+      var encerrada = String(t.SituacaoTurma) === 'ENCERRADA';
+      var card=document.createElement('div');
+      card.className='turma-card'+(ativa?'':' turma-nao-ativa');
+      card.dataset.turmaId=t.TurmaID;
+      card.innerHTML='<div class="turma-card-id">'+t.TurmaID+'</div>'+
+        '<div class="turma-card-estagio">'+(t.Estagio||t.CursoID)+'</div>'+
+        '<div class="turma-card-detalhe">'+(t.DiaSemana||'')+(t.Horario?' · '+t.Horario:'')+'</div>'+
+        '<div class="turma-card-detalhe" style="margin-top:2px;">'+(t.Modalidade||'')+'</div>'+
+        (!ativa ? '<div class="turma-card-badge-status"><span class="material-icons-round">'+(encerrada?'lock':'block')+'</span>'+(encerrada?'Encerrada':'Inativa')+'</div>' : '');
+      card.addEventListener('click',function(){selecionarTurma(t);});
+      grid.appendChild(card);
+    });
+    grid.style.display='grid';
+  }
+
+  function selecionarTurma(turma) {
+    state.turmaSel=turma;
+    document.querySelectorAll('.turma-card').forEach(function(c){
+      c.classList.toggle('selecionada',c.dataset.turmaId===turma.TurmaID);
+    });
+    el('diario-step-turma').style.display='none';
+    el('diario-step-data').style.display='block';
+    carregarDatas(turma);
+  }
+
+  // =========================================================
+  // PASSO 2 — DATAS
+  // =========================================================
+  function carregarDatas(turma) {
+    var sel=el('diario-select-data');
+    sel.innerHTML='<option value="">Carregando datas…</option>';
+    // turmaId: back-end filtra as datas pelo período letivo efetivo da turma
+    // (DataInicioTurma/DataFimTurma se definidos, senão o padrão do calendário
+    // do semestre). O filtro por dia da semana abaixo continua no front-end.
+    postApi('calendario.listar',{turmaId:turma.TurmaID}).then(function(res){
+      sel.innerHTML='<option value="">Selecione uma data…</option>';
+      if(!res.sucesso||!res.dados||res.dados.length===0){
+        sel.innerHTML+='<option disabled>Nenhuma data encontrada</option>'; return;
+      }
+
+      // Mapa de nome do dia em maiúsculas → número getDay()
+      // Cobre grafia com e sem acento (vinda de m7_maiusculas que faz toUpperCase)
+      var diasSemana={
+        'SEGUNDA-FEIRA':1,'SEGUNDA':1,
+        'TERCA-FEIRA':2,'TERÇA-FEIRA':2,'TERCA':2,'TERÇA':2,
+        'QUARTA-FEIRA':3,'QUARTA':3,
+        'QUINTA-FEIRA':4,'QUINTA':4,
+        'SEXTA-FEIRA':5,'SEXTA':5,
+        'SABADO':6,'SÁBADO':6,
+        'DOMINGO':0,
+      };
+
+      // DiaSemana vem de m7_maiusculas → sempre CAIXA ALTA
+      // Pode ser "SEGUNDA-FEIRA" ou "SEGUNDA-FEIRA,QUINTA-FEIRA"
+      var diasTurma = [];
+      if (turma.DiaSemana) {
+        turma.DiaSemana.toUpperCase().split(',').forEach(function(d) {
+          var num = diasSemana[d.trim()];
+          if (num !== undefined) diasTurma.push(num);
+        });
+      }
+
+      var matchH=(turma.Horario||'').match(/(\d+)h/);
+      var horario=matchH?String(matchH[1]).padStart(2,'0')+':00':'08:00';
+
+      res.dados.forEach(function(d){
+        // Filtra dias não letivos
+        if(!d.DiaLetivo) return;
+
+        // DataAula vem no formato DD/MM/YYYY (de m7_dataParaString)
+        // new Date("DD/MM/YYYY") é Invalid Date no navegador — parsear manualmente
+        if(diasTurma.length > 0) {
+          var dataStr = String(d.DataAula || '');
+          var partes  = dataStr.split('/');   // ["15","04","2025"]
+          var diaSem  = NaN;
+          if (partes.length === 3) {
+            // Constrói como YYYY-MM-DD que o navegador reconhece corretamente
+            var dataObj = new Date(partes[2] + '-' + partes[1] + '-' + partes[0] + 'T12:00:00');
+            diaSem = dataObj.getDay();
+          }
+          if (isNaN(diaSem) || diasTurma.indexOf(diaSem) === -1) return;
+        }
+
+        var opt=document.createElement('option');
+        var dataStr2=String(d.DataAula||'');   // já está em DD/MM/YYYY
+        var label=dataStr2;
+        if(d.DiaSemana) label+=' ('+d.DiaSemana+')';
+        if(d.Informacao) label+=' — '+d.Informacao;
+        opt.value=dataStr2.split(' ')[0]+' '+horario;
+        opt.textContent=label;
+        sel.appendChild(opt);
+      });
+    }).catch(function(){sel.innerHTML='<option value="">Erro ao carregar datas</option>';});
+
+    var agora=new Date();
+    var pad=function(n){return String(n).padStart(2,'0');};
+    el('diario-data-manual').value=agora.getFullYear()+'-'+pad(agora.getMonth()+1)+'-'+pad(agora.getDate())+'T'+pad(agora.getHours())+':'+pad(agora.getMinutes());
+  }
+
+  function abrirDiario() {
+    var sel=el('diario-select-data'),manual=el('diario-data-manual');
+    var dataFinal=sel.value||(manual.value?inputLocalParaData(manual.value):'');
+    if(!dataFinal){mostrarAlerta('Selecione ou informe uma data.','erro');return;}
+    state.dataSel=dataFinal;
+    el('diario-step-data').style.display='none';
+    el('diario-step-aula').classList.add('visivel');
+    el('diario-header-turma').textContent=state.turmaSel.TurmaID+' · '+(state.turmaSel.Estagio||state.turmaSel.CursoID);
+    el('diario-header-data').textContent=dataFinal;
+    carregarDadosAula();
+  }
+
+  // =========================================================
+  // PASSO 3 — DADOS DA AULA
+  // =========================================================
+  function carregarDadosAula() {
+    el('freq-loading').style.display='flex';
+    el('freq-tabela').style.display='none';
+    el('historico-corpo').innerHTML='<div class="historico-vazio">Carregando…</div>';
+    // Limpa o campo de conteúdo imediatamente — evita mostrar, ainda que
+    // brevemente, o texto de outra turma/data vista antes na mesma sessão.
+    el('diario-conteudo').value=''; atualizarContador();
+    var turmaId=state.turmaSel.TurmaID, data=state.dataSel;
+    Promise.all([
+      postApi('matriculas.listar',{turmaId:turmaId,situacao:'ATIVA',tamanhoPagina:300}),
+      postApi('frequencias.listar',{turmaId:turmaId,dataAula:data}),
+      postApi('conteudo.listar',{turmaId:turmaId}),
+    ]).then(function(res){
+      state.matriculas=(res[0].sucesso&&res[0].dados&&res[0].dados.dados)?res[0].dados.dados:[];
+      state.frequencias={}; state.jaRegistrado=false;
+      if(res[1].sucesso&&res[1].dados&&res[1].dados.length>0){
+        state.jaRegistrado=true;
+        res[1].dados.forEach(function(f){state.frequencias[f.MatriculaID]={freq:f.Frequencia,anotacao:f.Anotacao||''};});
+        var ts=ultimoTimestamp(res[1].dados);
+        el('diario-header-badge').className='diario-aula-header-badge salvo';
+        el('diario-header-badge').innerHTML='<span class="material-icons-round">check_circle</span><span>Já registrado'+(ts?' em '+ts:'')+'</span>';
+      }
+      // Sempre define (ou limpa) o campo de conteúdo com base no que existe
+      // para ESTA turma+data — nunca deixa o valor anterior (de outra
+      // turma/data, ou de uma aula futura sem registro) permanecer visível.
+      var conteudosLista = (res[2].sucesso && res[2].dados) ? res[2].dados : [];
+      var dataBase = data.split(' ')[0];
+      var aulasData = conteudosLista.filter(function(c){return String(c.DataAula||'').indexOf(dataBase)!==-1;});
+      el('diario-conteudo').value = aulasData.length>0 ? (aulasData[0].ConteudoMinistrado||'') : '';
+      atualizarContador();
+      var historico = conteudosLista.filter(function(c){return String(c.DataAula||'').indexOf(dataBase)===-1;}).slice(-3).reverse();
+      renderizarHistorico(historico);
+      calcularTotalFaltas(turmaId);
+    }).catch(function(){mostrarAlerta('Erro ao carregar dados da aula.','erro');el('freq-loading').style.display='none';});
+  }
+
+  function calcularTotalFaltas(turmaId) {
+    postApi('frequencias.listar',{turmaId:turmaId}).then(function(res){
+      state.contFaltas={};
+      if(res.sucesso&&res.dados){res.dados.forEach(function(f){if(f.Frequencia==='F')state.contFaltas[f.MatriculaID]=(state.contFaltas[f.MatriculaID]||0)+1;});}
+      renderizarTabela();
+    }).catch(function(){renderizarTabela();});
+  }
+
+  function renderizarTabela() {
+    el('freq-loading').style.display='none';
+    var tbody=el('freq-tbody'); tbody.innerHTML='';
+    if(state.matriculas.length===0){
+      tbody.innerHTML='<tr><td colspan="3" style="text-align:center;padding:20px;color:var(--c-text-3);">Nenhum aluno matriculado.</td></tr>';
+      el('freq-tabela').style.display='table'; atualizarContadores(); return;
+    }
+    state.matriculas.forEach(function(m){
+      var matId=m.MatriculaID, nome=m.NomeExibicao||m.AlunoID||matId;
+      var freqAtual=state.frequencias[matId]?state.frequencias[matId].freq:'P';
+      var anotacao=state.frequencias[matId]?(state.frequencias[matId].anotacao||''):'';  // fix: aspas balanceadas
+      if(!state.frequencias[matId])state.frequencias[matId]={freq:'P',anotacao:''};
+      var nFaltas=state.contFaltas[matId]||0;
+      var badgeClass=nFaltas===0?'zero':(nFaltas<=2?'baixo':'alto');
+      var tr=document.createElement('tr');
+      tr.innerHTML='<td><div class="aluno-nome">'+nome+'</div>'+
+        '<div id="just-wrap-'+matId+'" class="freq-justificativa'+(freqAtual==='J'?' show':'')+'">'+
+          '<input type="text" id="just-'+matId+'" placeholder="Motivo da justificativa…" value="'+anotacao+'">'+
+        '</div></td>'+
+        '<td class="col-faltas"><span class="badge-faltas '+badgeClass+'">'+nFaltas+'</span></td>'+
+        '<td class="col-freq"><div class="freq-btns">'+
+          '<button class="freq-btn '+(freqAtual==='P'?'ativo-p':'')+'" data-mat="'+matId+'" data-freq="P">P</button>'+
+          '<button class="freq-btn '+(freqAtual==='F'?'ativo-f':'')+'" data-mat="'+matId+'" data-freq="F">F</button>'+
+          '<button class="freq-btn '+(freqAtual==='J'?'ativo-j':'')+'" data-mat="'+matId+'" data-freq="J">J</button>'+
+        '</div></td>';
+      tbody.appendChild(tr);
+      tr.querySelectorAll('.freq-btn').forEach(function(btn){
+        btn.addEventListener('click',function(){marcarFrequencia(btn.dataset.mat,btn.dataset.freq,tr);});
+      });
+      var justInput=document.getElementById('just-'+matId);
+      if(justInput)justInput.addEventListener('input',function(){state.frequencias[matId].anotacao=this.value;});
+    });
+    el('freq-tabela').style.display='table';
+    atualizarContadores();
+  }
+
+  function marcarFrequencia(matId,freq,tr) {
+    state.frequencias[matId]=state.frequencias[matId]||{anotacao:''};
+    state.frequencias[matId].freq=freq;
+    tr.querySelectorAll('.freq-btn').forEach(function(b){
+      b.className='freq-btn';
+      if(b.dataset.freq===freq)b.classList.add(freq==='P'?'ativo-p':freq==='F'?'ativo-f':'ativo-j');
+    });
+    var justWrap=document.getElementById('just-wrap-'+matId);
+    if(justWrap)justWrap.classList.toggle('show',freq==='J');
+    atualizarContadores();
+  }
+
+  function atualizarContadores() {
+    var p=0,f=0,j=0;
+    Object.keys(state.frequencias).forEach(function(k){
+      var freq=state.frequencias[k].freq;
+      if(freq==='P')p++; else if(freq==='F')f++; else if(freq==='J')j++;
+    });
+    if(el('diario-cont-p'))el('diario-cont-p').textContent=p;
+    if(el('diario-cont-f'))el('diario-cont-f').textContent=f;
+    if(el('diario-cont-j'))el('diario-cont-j').textContent=j;
+  }
+
+  function renderizarHistorico(historico) {
+    var corpo=el('historico-corpo');
+    if(!historico||historico.length===0){corpo.innerHTML='<div class="historico-vazio">Nenhuma aula anterior registrada.</div>';return;}
+    corpo.innerHTML='';
+    historico.forEach(function(c){
+      var div=document.createElement('div'); div.className='historico-item';
+      var data=c.DataAula?String(c.DataAula).substring(0,16):'—';
+      div.innerHTML='<div class="historico-data">'+data+'</div><div class="historico-conteudo">'+(c.ConteudoMinistrado||'—')+'</div>';
+      corpo.appendChild(div);
+    });
+  }
+
+  function todosPresente() {
+    state.matriculas.forEach(function(m){
+      state.frequencias[m.MatriculaID]=state.frequencias[m.MatriculaID]||{anotacao:''};
+      state.frequencias[m.MatriculaID].freq='P';
+      var btn=document.querySelector('[data-mat="'+m.MatriculaID+'"][data-freq="P"]');
+      if(btn)marcarFrequencia(m.MatriculaID,'P',btn.closest('tr'));
+    });
+  }
+
+  function todosFalta() {
+    state.matriculas.forEach(function(m){
+      state.frequencias[m.MatriculaID]=state.frequencias[m.MatriculaID]||{anotacao:''};
+      state.frequencias[m.MatriculaID].freq='F';
+      var btn=document.querySelector('[data-mat="'+m.MatriculaID+'"][data-freq="F"]');
+      if(btn)marcarFrequencia(m.MatriculaID,'F',btn.closest('tr'));
+    });
+  }
+
+  // =========================================================
+  // NAVEGAÇÃO — volta para a etapa de seleção de data
+  // (mesma turma; o professor pode escolher outra data ou trocar de turma)
+  // =========================================================
+  function voltarParaSelecaoData() {
+    el('diario-step-aula').classList.remove('visivel');
+    el('diario-step-data').style.display='block';
+    state.dataSel=null; state.jaRegistrado=false;
+    el('diario-header-badge').className='diario-aula-header-badge';
+    el('diario-header-badge').innerHTML='<span class="material-icons-round">edit</span><span>Novo registro</span>';
+  }
+
+  function salvarRegistro() {
+    if(state.matriculas.length===0){mostrarAlerta('Não há alunos para registrar.','erro');return;}
+    var conteudo=el('diario-conteudo')?el('diario-conteudo').value.trim():'';
+    var lista=state.matriculas.map(function(m){
+      var f=state.frequencias[m.MatriculaID]||{freq:'P',anotacao:''};
+      return{MatriculaID:m.MatriculaID,Frequencia:f.freq||'P',Anotacao:f.anotacao||''};
+    });
+    var btn=el('diario-btn-salvar'); btn.disabled=true; btn.classList.add('loading');
+    var turmaId=state.turmaSel.TurmaID, data=state.dataSel;
+    Promise.all([
+      postApi('frequencias.salvar',{turmaId:turmaId,dataAula:data,lista:lista}),
+      conteudo?postApi('conteudo.salvar',{turmaId:turmaId,dataAula:data,conteudoMinistrado:conteudo}):Promise.resolve({sucesso:true}),
+    ]).then(function(res){
+      btn.disabled=false; btn.classList.remove('loading');
+      var erros=[];
+      if(!res[0].sucesso)erros.push('frequência: '+res[0].mensagem);
+      if(!res[1].sucesso)erros.push('conteúdo: '+res[1].mensagem);
+      if(erros.length>0){mostrarAlerta('Erro ao salvar: '+erros.join('; '),'erro');return;}
+      mostrarAlerta('Registro salvo com sucesso!','sucesso');
+      state.jaRegistrado=true;
+      el('diario-header-badge').className='diario-aula-header-badge salvo';
+      el('diario-header-badge').innerHTML='<span class="material-icons-round">check_circle</span><span>Salvo</span>';
+      if(typeof toast==='function')toast('Diário de aula salvo!','success');
+      // Volta automaticamente para a seleção de data da mesma turma, dando
+      // tempo do professor ver a confirmação antes da tela mudar.
+      setTimeout(voltarParaSelecaoData, 1400);
+    }).catch(function(){
+      btn.disabled=false; btn.classList.remove('loading');
+      mostrarAlerta('Erro de comunicação. Tente novamente.','erro');
+    });
+  }
+
+  // =========================================================
+  // EVENTOS E INIT
+  // =========================================================
+  function init() {
+    el('diario-btn-abrir')&&el('diario-btn-abrir').addEventListener('click',abrirDiario);
+    el('diario-btn-trocar-turma')&&el('diario-btn-trocar-turma').addEventListener('click',function(){
+      state.turmaSel=null;
+      el('diario-step-data').style.display='none';
+      el('diario-step-turma').style.display='block';
+    });
+    el('diario-btn-voltar-data')&&el('diario-btn-voltar-data').addEventListener('click',voltarParaSelecaoData);
+    el('diario-btn-salvar')&&el('diario-btn-salvar').addEventListener('click',salvarRegistro);
+    el('btn-todos-p')&&el('btn-todos-p').addEventListener('click',todosPresente);
+    el('btn-todos-f')&&el('btn-todos-f').addEventListener('click',todosFalta);
+    el('diario-conteudo')&&el('diario-conteudo').addEventListener('input',atualizarContador);
+    el('diario-select-data')&&el('diario-select-data').addEventListener('change',function(){
+      if(this.value)el('diario-data-manual').value=dataParaInputLocal(this.value);
+    });
+    el('diario-data-manual')&&el('diario-data-manual').addEventListener('change',function(){
+      if(this.value)el('diario-select-data').value='';
+    });
+    el('diario-chk-encerradas')&&el('diario-chk-encerradas').addEventListener('change',renderizarTurmas);
+    // No GitHub Pages, usuario disponivel em App.usuario
+    var usuario = (typeof App !== 'undefined' && App.usuario) ? App.usuario : null;
+    if (usuario) {
+      state.papel     = usuario.Papel     || '';
+      state.usuarioId = usuario.UsuarioID || '';
+    }
+    carregarTurmas();
+  }
+
+  if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',init);}else{init();}
+}());
+</script>

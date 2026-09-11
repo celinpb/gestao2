@@ -1,0 +1,1758 @@
+<!--
+  F5_Turmas.html
+  Listagem de turmas com painel lateral, matrículas e links.
+  Admin/coordenação: botão "Editar turma" abre modal com todos os campos editáveis,
+  incluindo select de professores carregado dinamicamente da aba Usuários.
+-->
+<style>
+  .turmas-wrap{display:flex;gap:20px;align-items:flex-start;}
+  .turmas-main{flex:1;min-width:0;transition:margin-right 280ms cubic-bezier(0.4,0,0.2,1);}
+  .turmas-main.com-painel{margin-right:400px;}
+  .t5-toolbar{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
+  .t5-busca-wrap{flex:1;min-width:200px;position:relative;}
+  .t5-busca-wrap .material-icons-round{position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:18px;color:var(--c-text-3,#9898B0);pointer-events:none;}
+  .t5-busca{width:100%;height:38px;border:1.5px solid var(--c-border,#E8E7E2);border-radius:8px;padding:0 12px 0 36px;font-family:var(--font-sans,sans-serif);font-size:13.5px;color:var(--c-text-1,#1A1A2E);background:#fff;outline:none;transition:border-color 150ms ease;}
+  .t5-busca:focus{border-color:#E63946;box-shadow:0 0 0 3px rgba(230,57,70,0.09);}
+  .t5-busca::placeholder{color:var(--c-text-3,#9898B0);}
+  .t5-select{height:38px;border:1.5px solid var(--c-border,#E8E7E2);border-radius:8px;padding:0 11px;font-family:var(--font-sans,sans-serif);font-size:13px;color:var(--c-text-1,#1A1A2E);background:#fff;outline:none;cursor:pointer;}
+  .t5-select:focus{border-color:#E63946;}
+
+  .t5-card{background:#fff;border:1px solid var(--c-border,#E8E7E2);border-radius:10px;overflow:hidden;}
+  .t5-tabela{width:100%;border-collapse:collapse;font-size:13px;}
+  .t5-tabela thead tr{background:#F8F7F3;border-bottom:1px solid var(--c-border,#E8E7E2);}
+  .t5-tabela th{padding:10px 14px;font-size:11px;font-weight:600;letter-spacing:0.6px;text-transform:uppercase;color:var(--c-text-3,#9898B0);text-align:left;white-space:nowrap;}
+  .t5-tabela tbody tr{border-bottom:1px solid var(--c-border,#E8E7E2);cursor:pointer;transition:background 120ms ease;}
+  .t5-tabela tbody tr:last-child{border-bottom:none;}
+  .t5-tabela tbody tr:hover{background:#FAFAF8;}
+  .t5-tabela tbody tr.selecionada{background:rgba(230,57,70,0.04);}
+  .t5-tabela td{padding:10px 14px;color:var(--c-text-1,#1A1A2E);vertical-align:middle;}
+  .t5-id{font-family:var(--font-mono,monospace);font-size:11.5px;color:var(--c-text-3,#9898B0);}
+  .t5-estagio{font-weight:600;}
+  .badge-modal{display:inline-flex;align-items:center;padding:2px 8px;border-radius:5px;font-size:11px;font-weight:600;}
+  .badge-modal.presencial{background:rgba(42,157,143,0.12);color:#1A6E65;}
+  .badge-modal.ead{background:rgba(69,123,157,0.12);color:#185FA5;}
+  .badge-modal.hibrido{background:rgba(233,196,106,0.20);color:#5C4200;}
+  .badge-sit-turma{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500;}
+  .badge-sit-turma.ativa{background:rgba(42,157,143,0.12);color:#1A6E65;}
+  .badge-sit-turma.inativa{background:rgba(230,57,70,0.10);color:#A32D2D;}
+  .badge-sit-turma .material-icons-round{font-size:11px;}
+  .vagas-bar{display:flex;align-items:center;gap:6px;font-size:12px;}
+  .vagas-progresso{flex:1;height:5px;background:#E8E7E2;border-radius:3px;overflow:hidden;min-width:40px;}
+  .vagas-fill{height:100%;border-radius:3px;background:#2A9D8F;transition:width 300ms ease;}
+  .vagas-fill.cheio{background:#E63946;}
+  .vagas-fill.quase{background:#E9C46A;}
+  .t5-estado{padding:48px 24px;text-align:center;color:var(--c-text-3,#9898B0);font-size:13.5px;}
+  .t5-estado .material-icons-round{font-size:36px;display:block;margin:0 auto 10px;}
+  .t5-spinner{width:24px;height:24px;border:2.5px solid var(--c-border,#E8E7E2);border-top-color:#E63946;border-radius:50%;animation:spin-t5 0.7s linear infinite;margin:0 auto 10px;}
+  @keyframes spin-t5{to{transform:rotate(360deg);}}
+
+  /* ── PAINEL LATERAL ── */
+  .t5-painel{position:fixed;top:var(--header-h,56px);right:0;width:400px;height:calc(100vh - var(--header-h,56px));background:#fff;border-left:1px solid var(--c-border,#E8E7E2);box-shadow:-4px 0 20px rgba(26,26,46,0.08);display:flex;flex-direction:column;z-index:40;transform:translateX(100%);transition:transform 280ms cubic-bezier(0.4,0,0.2,1);overflow:hidden;}
+  .t5-painel.aberto{transform:translateX(0);}
+  .t5-painel-topo{padding:14px 16px;border-bottom:1px solid var(--c-border,#E8E7E2);flex-shrink:0;}
+  .t5-painel-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;}
+  .t5-painel-titulo{font-size:14px;font-weight:600;color:var(--c-text-1,#1A1A2E);}
+  .t5-painel-sub{font-size:11.5px;color:var(--c-text-3,#9898B0);font-family:var(--font-mono,monospace);}
+  .t5-painel-acoes{display:flex;gap:6px;margin-top:10px;}
+  .btn-painel-t5{height:32px;padding:0 12px;border-radius:6px;font-size:12.5px;font-weight:500;cursor:pointer;border:none;display:inline-flex;align-items:center;gap:5px;font-family:var(--font-sans,sans-serif);transition:background 120ms ease;}
+  .btn-painel-t5 .material-icons-round{font-size:15px;}
+  .btn-painel-editar{background:#F5F4F0;color:var(--c-text-1,#1A1A2E);}
+  .btn-painel-editar:hover{background:#ECEAE5;}
+  .btn-fechar-t5{width:28px;height:28px;border-radius:6px;border:none;background:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--c-text-3,#9898B0);transition:background 120ms ease;}
+  .btn-fechar-t5:hover{background:#F5F4F0;}
+  .btn-fechar-t5 .material-icons-round{font-size:18px;}
+  .t5-painel-abas{display:flex;border-bottom:1px solid var(--c-border,#E8E7E2);flex-shrink:0;}
+  .t5-tab{flex:1;padding:10px 8px;font-size:12px;font-weight:500;color:var(--c-text-2,#5C5C7A);cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;margin-bottom:-1px;font-family:var(--font-sans,sans-serif);transition:color 150ms ease,border-color 150ms ease;display:flex;align-items:center;justify-content:center;gap:5px;}
+  .t5-tab .material-icons-round{font-size:15px;}
+  .t5-tab.ativa{color:#E63946;border-bottom-color:#E63946;}
+  .t5-tab-corpo{flex:1;overflow-y:auto;scrollbar-width:thin;}
+  .t5-tab-secao{display:none;padding:14px 16px;}
+  .t5-tab-secao.ativa{display:block;}
+  .info-grupo{margin-bottom:14px;}
+  .info-label{font-size:10px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:var(--c-text-3,#9898B0);margin-bottom:6px;}
+  .info-campo{display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid var(--c-border,#E8E7E2);}
+  .info-campo:last-child{border-bottom:none;}
+  .info-campo-label{color:var(--c-text-2,#5C5C7A);}
+  .info-campo-valor{font-weight:500;color:var(--c-text-1,#1A1A2E);}
+  .link-campo{margin-bottom:12px;}
+  .link-label{font-size:11px;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;color:var(--c-text-3,#9898B0);margin-bottom:5px;}
+  .link-input-wrap{display:flex;gap:6px;}
+  .link-input{flex:1;height:36px;border:1.5px solid var(--c-border,#E8E7E2);border-radius:7px;padding:0 10px;font-family:var(--font-sans,sans-serif);font-size:12.5px;color:var(--c-text-1,#1A1A2E);background:#FAFAF8;outline:none;transition:border-color 150ms ease;}
+  .link-input:focus{border-color:#E63946;background:#fff;}
+  .btn-link{height:36px;width:36px;border-radius:7px;border:1.5px solid var(--c-border,#E8E7E2);background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--c-text-2,#5C5C7A);transition:background 120ms ease;flex-shrink:0;}
+  .btn-link:hover{background:#F5F4F0;}
+  .btn-link .material-icons-round{font-size:16px;}
+  .btn-salvar-links{width:100%;height:38px;background:#E63946;color:#fff;border:none;border-radius:8px;font-family:var(--font-sans,sans-serif);font-size:13.5px;font-weight:500;cursor:pointer;margin-top:8px;display:flex;align-items:center;justify-content:center;gap:6px;transition:background 150ms ease;}
+  .btn-salvar-links:hover{background:#C1121F;}
+  .btn-salvar-links:disabled{opacity:0.55;cursor:not-allowed;}
+  .btn-salvar-links .spinner-sm{width:15px;height:15px;border:2px solid rgba(255,255,255,0.35);border-top-color:#fff;border-radius:50%;animation:spin-t5 0.7s linear infinite;display:none;}
+  .btn-salvar-links.loading .spinner-sm{display:block;}
+  .btn-salvar-links.loading .btn-txt{display:none;}
+  .mat-item{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--c-border,#E8E7E2);gap:8px;}
+  .mat-item:last-child{border-bottom:none;}
+  .mat-nome{font-size:13px;font-weight:500;color:var(--c-text-1,#1A1A2E);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .mat-id{font-size:10.5px;font-family:var(--font-mono,monospace);color:var(--c-text-3,#9898B0);}
+  .badge-sit-mat{display:inline-flex;padding:2px 7px;border-radius:4px;font-size:10.5px;font-weight:600;}
+  .badge-sit-mat.ATIVA{background:rgba(42,157,143,0.12);color:#1A6E65;}
+  .badge-sit-mat.CANCELADA{background:rgba(230,57,70,0.10);color:#A32D2D;}
+  .badge-sit-mat.TRANCADA{background:rgba(233,196,106,0.20);color:#5C4200;}
+  .badge-sit-mat.CONCLUIDA{background:rgba(69,123,157,0.12);color:#185FA5;}
+  .btn-mat-acao{height:26px;padding:0 8px;border-radius:5px;font-size:11px;cursor:pointer;border:1.5px solid var(--c-border,#E8E7E2);background:#fff;color:var(--c-text-2,#5C5C7A);font-family:var(--font-sans,sans-serif);display:inline-flex;align-items:center;gap:3px;transition:background 120ms ease,border-color 120ms ease;}
+  .btn-mat-acao:hover{background:#F5F4F0;}
+  .btn-mat-acao .material-icons-round{font-size:13px;}
+  .btn-sit-mat{border-color:#D4A843;color:#7A5C00;background:rgba(233,196,106,0.08);}
+  .btn-sit-mat:hover{background:rgba(233,196,106,0.18);}
+  .btn-sit-mat .material-icons-round{color:#B8860B;}
+  .btn-mat-acao.btn-trans{border-color:#457B9D;color:#185FA5;background:rgba(69,123,157,0.08);}
+  .btn-mat-acao.btn-trans:hover{background:rgba(69,123,157,0.18);}
+  .btn-mat-acao.btn-trans .material-icons-round{color:#2563A8;font-size:14px;}
+  .mat-vazio{padding:24px 0;text-align:center;color:var(--c-text-3,#9898B0);font-size:13px;}
+  .add-mat-wrap{background:#F8F7F3;border-radius:8px;padding:14px;margin-bottom:16px;}
+  .add-mat-titulo{font-size:12px;font-weight:600;color:var(--c-text-1,#1A1A2E);margin-bottom:10px;}
+  .add-mat-field{margin-bottom:10px;}
+  .add-mat-field label{display:block;font-size:11px;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;color:var(--c-text-3,#9898B0);margin-bottom:4px;}
+  .add-mat-input{width:100%;height:36px;border:1.5px solid var(--c-border,#E8E7E2);border-radius:7px;padding:0 10px;font-family:var(--font-sans,sans-serif);font-size:13px;color:var(--c-text-1,#1A1A2E);background:#fff;outline:none;}
+  .add-mat-input:focus{border-color:#E63946;}
+  .add-mat-input::placeholder{color:var(--c-text-3,#9898B0);}
+  .btn-add-mat{width:100%;height:36px;background:#1A1A2E;color:#fff;border:none;border-radius:7px;font-family:var(--font-sans,sans-serif);font-size:13px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;transition:background 150ms ease;}
+  .btn-add-mat:hover{background:#2D2D4A;}
+  .btn-add-mat:disabled{opacity:0.55;cursor:not-allowed;}
+  .btn-add-mat .spinner-sm{width:14px;height:14px;border:2px solid rgba(255,255,255,0.35);border-top-color:#fff;border-radius:50%;animation:spin-t5 0.7s linear infinite;display:none;}
+  .btn-add-mat.loading .spinner-sm{display:block;}
+  .btn-add-mat.loading .btn-txt{display:none;}
+  .add-mat-field{position:relative;}
+  .t5-aluno-dropdown{position:absolute;top:100%;left:0;right:0;background:#fff;border:1.5px solid var(--c-border,#E8E7E2);border-top:none;border-radius:0 0 7px 7px;max-height:200px;overflow-y:auto;z-index:50;box-shadow:0 6px 16px rgba(26,26,46,0.10);display:none;}
+  .t5-aluno-dropdown.show{display:block;}
+  .t5-aluno-item{padding:8px 10px;cursor:pointer;font-size:12.5px;transition:background 100ms ease;border-bottom:1px solid #F0EEE8;}
+  .t5-aluno-item:last-child{border-bottom:none;}
+  .t5-aluno-item:hover{background:#F5F4F0;}
+  .t5-aluno-item .m5-ai-nome{font-weight:500;color:var(--c-text-1,#1A1A2E);}
+  .t5-aluno-item .m5-ai-id{font-size:10.5px;font-family:var(--font-mono,monospace);color:var(--c-text-3,#9898B0);margin-left:6px;}
+  .t5-aluno-item.vazio{color:var(--c-text-3,#9898B0);cursor:default;}
+  .t5-aluno-item.vazio:hover{background:none;}
+  .t5-aluno-selecionado{display:none;align-items:center;justify-content:space-between;gap:8px;margin-top:6px;padding:6px 9px;background:rgba(42,157,143,0.07);border:1px solid rgba(42,157,143,0.25);border-radius:6px;font-size:12px;color:#1A6E65;}
+  .t5-aluno-selecionado.show{display:flex;}
+  .t5-aluno-selecionado button{border:none;background:none;cursor:pointer;color:#1A6E65;display:flex;align-items:center;}
+  .t5-aluno-selecionado button .material-icons-round{font-size:15px;}
+  .t5-mat-aviso-vaga{font-size:12px;color:#A32D2D;background:rgba(230,57,70,0.07);border:1px solid rgba(230,57,70,0.18);border-radius:6px;padding:9px 10px;margin-top:8px;display:none;}
+  .t5-mat-aviso-vaga.show{display:block;}
+  .t5-mat-aviso-vaga .acoes{display:flex;gap:6px;margin-top:8px;}
+  .btn-t5-mat-forcar{height:28px;padding:0 10px;border-radius:6px;font-size:11.5px;font-weight:500;cursor:pointer;border:1.5px solid #E63946;background:#fff;color:#A32D2D;font-family:var(--font-sans,sans-serif);}
+  .btn-t5-mat-forcar:hover{background:rgba(230,57,70,0.08);}
+  .btn-t5-mat-forcar-cancelar{height:28px;padding:0 10px;border-radius:6px;font-size:11.5px;cursor:pointer;border:1.5px solid var(--c-border,#E8E7E2);background:#fff;color:var(--c-text-2,#5C5C7A);font-family:var(--font-sans,sans-serif);}
+  .btn-t5-mat-forcar-cancelar:hover{background:#F5F4F0;}
+  .t5-alerta{border-radius:7px;padding:8px 12px;font-size:12.5px;margin-bottom:10px;display:none;align-items:center;gap:7px;}
+  .t5-alerta.show{display:flex;}
+  .t5-alerta.erro{background:rgba(230,57,70,0.08);border:1px solid rgba(230,57,70,0.18);color:#B01020;}
+  .t5-alerta.sucesso{background:rgba(42,157,143,0.08);border:1px solid rgba(42,157,143,0.18);color:#1A6E65;}
+  .t5-alerta .material-icons-round{font-size:15px;flex-shrink:0;}
+
+  /* modal situação matrícula */
+  .t5-modal-overlay{position:fixed;inset:0;background:rgba(26,26,46,0.45);z-index:300;display:flex;align-items:center;justify-content:center;padding:24px;backdrop-filter:blur(2px);}
+  .t5-modal{background:#fff;border-radius:12px;width:100%;max-width:400px;box-shadow:0 12px 48px rgba(26,26,46,0.18);animation:modal-in-t5 200ms cubic-bezier(0.34,1.3,0.64,1);overflow:hidden;}
+  @keyframes modal-in-t5{from{opacity:0;transform:scale(0.95);}to{opacity:1;transform:scale(1);}}
+  .t5-modal-header{padding:16px 18px;border-bottom:1px solid var(--c-border,#E8E7E2);font-size:14px;font-weight:600;color:var(--c-text-1,#1A1A2E);}
+  .t5-modal-corpo{padding:16px 18px;}
+  .t5-modal-corpo p{font-size:13.5px;color:var(--c-text-2,#5C5C7A);margin-bottom:14px;}
+  .sit-opcoes{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .sit-opcao{padding:10px 12px;border-radius:8px;border:1.5px solid var(--c-border,#E8E7E2);background:#fff;cursor:pointer;text-align:center;font-size:13px;font-weight:500;font-family:var(--font-sans,sans-serif);transition:border-color 150ms ease,background 150ms ease;color:var(--c-text-1,#1A1A2E);}
+  .sit-opcao:hover{border-color:#C8C7C2;background:#FAFAF8;}
+  .sit-opcao.ATIVA{border-color:#2A9D8F;color:#1A6E65;background:rgba(42,157,143,0.06);}
+  .sit-opcao.CANCELADA{border-color:#E63946;color:#A32D2D;background:rgba(230,57,70,0.06);}
+  .sit-opcao.TRANCADA{border-color:#D4A843;color:#5C4200;background:rgba(233,196,106,0.10);}
+  .sit-opcao.CONCLUIDA{border-color:#457B9D;color:#185FA5;background:rgba(69,123,157,0.06);}
+  .t5-modal-footer{padding:12px 18px;border-top:1px solid var(--c-border,#E8E7E2);display:flex;justify-content:flex-end;}
+  .btn-cancelar-t5{height:36px;padding:0 16px;border-radius:7px;border:1.5px solid var(--c-border,#E8E7E2);background:#fff;font-family:var(--font-sans,sans-serif);font-size:13px;cursor:pointer;color:var(--c-text-1,#1A1A2E);}
+  .btn-cancelar-t5:hover{background:#F5F4F0;}
+
+  /* ── MODAL DE EDIÇÃO DE TURMA ── */
+  .t5-edit-overlay{position:fixed;inset:0;background:rgba(26,26,46,0.45);z-index:400;display:flex;align-items:flex-start;justify-content:center;padding:24px 16px;overflow-y:auto;backdrop-filter:blur(2px);}
+  .t5-edit-modal{background:#fff;border-radius:14px;width:100%;max-width:560px;margin:auto;box-shadow:0 12px 48px rgba(26,26,46,0.20);animation:modal-in-t5 220ms cubic-bezier(0.34,1.3,0.64,1);}
+  .t5-edit-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--c-border,#E8E7E2);}
+  .t5-edit-titulo{font-size:15px;font-weight:600;color:var(--c-text-1,#1A1A2E);}
+  .t5-edit-corpo{padding:20px;}
+  .t5-edit-alerta{border-radius:8px;padding:10px 14px;font-size:13px;display:none;align-items:center;gap:8px;margin-bottom:16px;}
+  .t5-edit-alerta.show{display:flex;}
+  .t5-edit-alerta.erro{background:rgba(230,57,70,0.08);border:1px solid rgba(230,57,70,0.20);color:#B01020;}
+  .t5-edit-alerta .material-icons-round{font-size:16px;flex-shrink:0;}
+  .t5-edit-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  .t5-edit-field{display:flex;flex-direction:column;gap:5px;}
+  .t5-edit-field.span2{grid-column:span 2;}
+  .t5-edit-field label{font-size:11px;font-weight:600;letter-spacing:0.6px;text-transform:uppercase;color:var(--c-text-3,#9898B0);}
+  .t5-edit-input,.t5-edit-select{height:38px;border:1.5px solid var(--c-border,#E8E7E2);border-radius:7px;padding:0 11px;font-family:var(--font-sans,sans-serif);font-size:13.5px;color:var(--c-text-1,#1A1A2E);background:#FAFAF8;outline:none;transition:border-color 150ms ease;width:100%;box-sizing:border-box;}
+  .t5-edit-input:focus,.t5-edit-select:focus{border-color:#E63946;box-shadow:0 0 0 3px rgba(230,57,70,0.09);background:#fff;}
+  .t5-edit-select{cursor:pointer;}
+  .t5-edit-divisor{grid-column:1/-1;margin:4px 0 2px;padding-top:10px;border-top:1px solid var(--c-border,#E8E7E2);font-size:11px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:var(--c-text-3,#9898B0);}
+  .t5-edit-footer{display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:14px 20px;border-top:1px solid var(--c-border,#E8E7E2);background:#FAFAF8;border-radius:0 0 14px 14px;}
+  .btn-edit{height:38px;padding:0 18px;border-radius:8px;font-family:var(--font-sans,sans-serif);font-size:13.5px;font-weight:500;cursor:pointer;border:none;display:inline-flex;align-items:center;gap:6px;transition:background 150ms ease;}
+  .btn-edit .spinner-btn{width:15px;height:15px;border:2px solid rgba(255,255,255,0.35);border-top-color:#fff;border-radius:50%;animation:spin-t5 0.7s linear infinite;display:none;}
+  .btn-edit.loading .spinner-btn{display:block;}
+  .btn-edit.loading .btn-txt{display:none;}
+  .btn-edit-primario{background:#E63946;color:#fff;}
+  .btn-edit-primario:hover:not(:disabled){background:#C1121F;}
+  .btn-edit-primario:disabled{opacity:0.55;cursor:not-allowed;}
+  .btn-edit-sec{background:#fff;color:var(--c-text-1,#1A1A2E);border:1.5px solid var(--c-border,#E8E7E2);}
+  .btn-edit-sec:hover{background:#F5F4F0;}
+
+  .t5-dias-check{display:flex;flex-wrap:wrap;gap:8px;padding:4px 0;}
+  .t5-dia-item{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--c-text-1,#1A1A2E);cursor:pointer;padding:4px 8px;border:1.5px solid var(--c-border,#E8E7E2);border-radius:6px;transition:border-color 120ms ease,background 120ms ease;user-select:none;}
+  .t5-dia-item:has(input:checked){border-color:#E63946;background:rgba(230,57,70,0.06);color:#E63946;font-weight:500;}
+  .t5-dia-item input{accent-color:#E63946;width:14px;height:14px;cursor:pointer;}
+  .badge-sit-turma.encerrada{background:rgba(100,100,120,0.12);color:#3A3A5C;}
+  .btn-painel-encerrar{background:rgba(230,57,70,0.08);color:#A32D2D;}
+  .btn-painel-encerrar:hover{background:rgba(230,57,70,0.15);}
+  .btn-painel-reabrir{background:rgba(42,157,143,0.08);color:#1A6E65;}
+  .btn-painel-reabrir:hover{background:rgba(42,157,143,0.15);}
+
+  /* Modal transferência */
+  .t5-trans-lista{max-height:260px;overflow-y:auto;border:1px solid var(--c-border,#E8E7E2);border-radius:7px;margin-top:6px;}
+  .t5-trans-item{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--c-border,#E8E7E2);cursor:pointer;transition:background 120ms ease;gap:8px;}
+  .t5-trans-item:last-child{border-bottom:none;}
+  .t5-trans-item:hover{background:#FAFAF8;}
+  .t5-trans-item.selecionado{background:rgba(230,57,70,0.04);border-left:3px solid #E63946;}
+  .t5-trans-nome{font-size:13px;font-weight:500;color:var(--c-text-1,#1A1A2E);}
+  .t5-trans-meta{font-size:11.5px;color:var(--c-text-3,#9898B0);}
+  .t5-trans-vagas{font-size:11px;padding:2px 7px;border-radius:4px;font-weight:600;flex-shrink:0;}
+  .t5-trans-vagas.ok{background:rgba(42,157,143,0.12);color:#1A6E65;}
+  .t5-trans-vagas.cheio{background:rgba(230,57,70,0.10);color:#A32D2D;}
+  .t5-trans-aviso{font-size:12px;color:#A32D2D;background:rgba(230,57,70,0.07);border:1px solid rgba(230,57,70,0.18);border-radius:6px;padding:8px 10px;margin-top:8px;display:none;}
+  .t5-trans-aviso.show{display:block;}
+  .btn-trans{display:inline-flex;align-items:center;gap:4px;height:26px;padding:0 10px;border-radius:5px;font-size:11.5px;font-weight:500;cursor:pointer;border:1.5px solid var(--c-border,#E8E7E2);background:#fff;color:var(--c-text-2,#5C5C7A);font-family:var(--font-sans,sans-serif);transition:background 120ms ease;}
+  .btn-trans:hover{background:#F5F4F0;}
+  .btn-trans .material-icons-round{font-size:13px;}
+</style>
+
+<div class="turmas-wrap">
+  <div class="turmas-main" id="turmas-main">
+    <div class="t5-toolbar">
+      <div class="t5-busca-wrap">
+        <span class="material-icons-round">search</span>
+        <input type="text" class="t5-busca" id="t5-busca" placeholder="Buscar por TurmaID, estágio ou professor…">
+      </div>
+      <select class="t5-select" id="t5-filtro-modalidade">
+        <option value="">Todas as modalidades</option>
+        <option value="PRESENCIAL">Presencial</option>
+        <option value="EAD">EAD</option>
+        <option value="HÍBRIDO">Híbrido</option>
+      </select>
+      <select class="t5-select" id="t5-filtro-situacao">
+        <option value="ativas">Ativas</option>
+        <option value="todas">Todas</option>
+        <option value="inativas">Inativas</option>
+        <option value="encerradas">Encerradas</option>
+      </select>
+      <button class="btn-t5 btn-t5-primario" id="btn-nova-turma" style="display:none;">
+        <span class="material-icons-round">add</span>Nova turma
+      </button>
+    </div>
+    <div class="t5-card">
+      <div id="t5-estado" class="t5-estado">
+        <div class="t5-spinner"></div><p>Carregando turmas…</p>
+      </div>
+      <table class="t5-tabela" id="t5-tabela" style="display:none;">
+        <thead>
+          <tr>
+            <th>TurmaID</th><th>Estágio</th><th>Professor</th>
+            <th>Dia / Horário</th><th>Modalidade</th><th>Vagas</th><th>Situação</th>
+          </tr>
+        </thead>
+        <tbody id="t5-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- PAINEL LATERAL -->
+  <div class="t5-painel" id="t5-painel">
+    <div class="t5-painel-topo">
+      <div class="t5-painel-header">
+        <div>
+          <div class="t5-painel-titulo" id="t5-painel-titulo">—</div>
+          <div class="t5-painel-sub" id="t5-painel-sub">—</div>
+        </div>
+        <button class="btn-fechar-t5" id="btn-fechar-t5" title="Fechar">
+          <span class="material-icons-round">close</span>
+        </button>
+      </div>
+      <!-- Botões de ação: visíveis apenas para admin/coordenação -->
+      <div class="t5-painel-acoes" id="t5-painel-acoes" style="display:none;">
+        <button class="btn-painel-t5 btn-painel-editar" id="btn-editar-turma">
+          <span class="material-icons-round">edit</span>Editar
+        </button>
+        <button class="btn-painel-t5 btn-painel-encerrar" id="btn-encerrar-turma" style="display:none;">
+          <span class="material-icons-round">lock</span>Encerrar
+        </button>
+        <button class="btn-painel-t5 btn-painel-reabrir" id="btn-reabrir-turma" style="display:none;">
+          <span class="material-icons-round">lock_open</span>Reabrir
+        </button>
+      </div>
+    </div>
+    <div class="t5-painel-abas">
+      <button class="t5-tab ativa" data-tab="info">
+        <span class="material-icons-round">info</span>Informações
+      </button>
+      <button class="t5-tab" data-tab="alunos">
+        <span class="material-icons-round">people</span>Alunos
+      </button>
+      <button class="t5-tab" data-tab="links">
+        <span class="material-icons-round">link</span>Links
+      </button>
+    </div>
+    <div class="t5-tab-corpo">
+
+      <!-- ABA: INFO -->
+      <div class="t5-tab-secao ativa" id="tab-info">
+        <div class="info-grupo">
+          <div class="info-label">Identificação</div>
+          <div class="info-campo"><span class="info-campo-label">TurmaID</span><span class="info-campo-valor" id="inf-id">—</span></div>
+          <div class="info-campo"><span class="info-campo-label">Curso</span><span class="info-campo-valor" id="inf-curso">—</span></div>
+          <div class="info-campo"><span class="info-campo-label">Estágio</span><span class="info-campo-valor" id="inf-estagio">—</span></div>
+          <div class="info-campo"><span class="info-campo-label">Modalidade</span><span class="info-campo-valor" id="inf-modalidade">—</span></div>
+          <div class="info-campo"><span class="info-campo-label">Situação</span><span class="info-campo-valor" id="inf-situacao">—</span></div>
+        </div>
+        <div class="info-grupo">
+          <div class="info-label">Horário</div>
+          <div class="info-campo"><span class="info-campo-label">Dia</span><span class="info-campo-valor" id="inf-dia">—</span></div>
+          <div class="info-campo"><span class="info-campo-label">Horário</span><span class="info-campo-valor" id="inf-horario">—</span></div>
+          <div class="info-campo"><span class="info-campo-label">Turno</span><span class="info-campo-valor" id="inf-turno">—</span></div>
+        </div>
+        <div class="info-grupo">
+          <div class="info-label">Professor e vagas</div>
+          <div class="info-campo"><span class="info-campo-label">Professor</span><span class="info-campo-valor" id="inf-prof">—</span></div>
+          <div class="info-campo"><span class="info-campo-label">Vagas totais</span><span class="info-campo-valor" id="inf-vagas">—</span></div>
+          <div class="info-campo"><span class="info-campo-label">Matriculados ativos</span><span class="info-campo-valor" id="inf-matriculados">—</span></div>
+        </div>
+        <div class="info-grupo">
+          <div class="info-label">Período letivo</div>
+          <div class="info-campo"><span class="info-campo-label">Início</span><span class="info-campo-valor" id="inf-data-inicio">—</span></div>
+          <div class="info-campo"><span class="info-campo-label">Fim</span><span class="info-campo-valor" id="inf-data-fim">—</span></div>
+        </div>
+      </div>
+
+      <!-- ABA: ALUNOS -->
+      <div class="t5-tab-secao" id="tab-alunos">
+        <div class="t5-alerta" id="t5-mat-alerta">
+          <span class="material-icons-round">info</span>
+          <span id="t5-mat-alerta-msg"></span>
+        </div>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--c-text-2,#5C5C7A);cursor:pointer;user-select:none;margin-bottom:12px;">
+          <input type="checkbox" id="chk-mat-inativos" style="accent-color:#E63946;width:14px;height:14px;cursor:pointer;">
+          Mostrar alunos/matrículas inativos
+        </label>
+        <div class="add-mat-wrap" id="add-mat-wrap">
+          <div class="add-mat-titulo">Adicionar matrícula</div>
+          <div class="add-mat-field">
+            <label>Aluno (nome ou AlunoID)</label>
+            <input type="text" class="add-mat-input" id="add-mat-aluno-id" placeholder="Digite o nome ou o AlunoID (ex: A261.0001)…" autocomplete="off">
+            <div class="t5-aluno-dropdown" id="add-mat-aluno-dropdown"></div>
+            <div class="t5-aluno-selecionado" id="add-mat-aluno-selecionado">
+              <span id="add-mat-aluno-selecionado-txt"></span>
+              <button type="button" id="add-mat-aluno-limpar" title="Trocar aluno">
+                <span class="material-icons-round">close</span>
+              </button>
+            </div>
+          </div>
+          <div class="t5-mat-aviso-vaga" id="t5-mat-aviso-vaga">
+            <span id="t5-mat-aviso-vaga-msg"></span>
+            <div class="acoes">
+              <button class="btn-t5-mat-forcar-cancelar" id="btn-t5-mat-forcar-cancelar" type="button">Cancelar</button>
+              <button class="btn-t5-mat-forcar" id="btn-t5-mat-forcar-confirmar" type="button">Matricular mesmo assim</button>
+            </div>
+          </div>
+          <button class="btn-add-mat" id="btn-add-mat">
+            <div class="spinner-sm"></div>
+            <span class="material-icons-round btn-txt" style="font-size:16px;">person_add</span>
+            <span class="btn-txt">Matricular</span>
+          </button>
+        </div>
+        <div id="lista-matriculados"><div class="mat-vazio">Selecione uma turma para ver os alunos.</div></div>
+      </div>
+
+      <!-- ABA: LINKS -->
+      <div class="t5-tab-secao" id="tab-links">
+        <div class="t5-alerta" id="t5-links-alerta">
+          <span class="material-icons-round">info</span>
+          <span id="t5-links-alerta-msg"></span>
+        </div>
+        <div class="link-campo">
+          <div class="link-label">WhatsApp</div>
+          <div class="link-input-wrap">
+            <input type="url" class="link-input" id="link-whatsapp" placeholder="https://chat.whatsapp.com/…">
+            <button class="btn-link" id="btn-abrir-whatsapp" title="Abrir link"><span class="material-icons-round">open_in_new</span></button>
+          </div>
+        </div>
+        <div class="link-campo">
+          <div class="link-label">Google Meet</div>
+          <div class="link-input-wrap">
+            <input type="url" class="link-input" id="link-meet" placeholder="https://meet.google.com/…">
+            <button class="btn-link" id="btn-abrir-meet" title="Abrir link"><span class="material-icons-round">open_in_new</span></button>
+          </div>
+        </div>
+        <div class="link-campo">
+          <div class="link-label">Google Classroom</div>
+          <div class="link-input-wrap">
+            <input type="url" class="link-input" id="link-classroom" placeholder="https://classroom.google.com/…">
+            <button class="btn-link" id="btn-abrir-classroom" title="Abrir link"><span class="material-icons-round">open_in_new</span></button>
+          </div>
+        </div>
+        <button class="btn-salvar-links" id="btn-salvar-links">
+          <div class="spinner-sm"></div>
+          <span class="material-icons-round btn-txt" style="font-size:16px;">save</span>
+          <span class="btn-txt">Salvar links</span>
+        </button>
+      </div>
+
+    </div><!-- /t5-tab-corpo -->
+  </div><!-- /t5-painel -->
+</div><!-- /turmas-wrap -->
+
+
+<!-- Modal: criar nova turma -->
+<div class="t5-edit-overlay" id="t5-criar-overlay" style="display:none;">
+  <div class="t5-edit-modal">
+    <div class="t5-edit-header">
+      <span class="t5-edit-titulo">Nova turma</span>
+      <button class="btn-fechar-t5" id="btn-fechar-criar"><span class="material-icons-round">close</span></button>
+    </div>
+    <div class="t5-edit-corpo">
+      <div class="t5-edit-alerta" id="t5-criar-alerta">
+        <span class="material-icons-round">error_outline</span>
+        <span id="t5-criar-alerta-msg"></span>
+      </div>
+      <div class="t5-edit-grid">
+        <div class="t5-edit-field span2">
+          <label>Curso <span style="color:#E63946">*</span></label>
+          <select class="t5-edit-select" id="cr-curso">
+            <option value="">Carregando...</option>
+          </select>
+        </div>
+        <div class="t5-edit-field span2">
+          <label>Professor <span style="color:#E63946">*</span></label>
+          <select class="t5-edit-select" id="cr-professor">
+            <option value="">Selecione um professor...</option>
+          </select>
+        </div>
+        <div class="t5-edit-field">
+          <label>Estagio / Nivel <span style="color:#E63946">*</span></label>
+          <input type="text" class="t5-edit-input" id="cr-estagio" placeholder="Ex: Basico 1">
+        </div>
+        <div class="t5-edit-field">
+          <label>Modalidade <span style="color:#E63946">*</span></label>
+          <select class="t5-edit-select" id="cr-modalidade">
+            <option value="PRESENCIAL">Presencial</option>
+            <option value="EAD">EAD</option>
+            <option value="HIBRIDO">Hibrido</option>
+          </select>
+        </div>
+        <div class="t5-edit-field span2">
+          <label>Dias de aula</label>
+          <div class="t5-dias-check" id="cr-dias-check">
+            <label class="t5-dia-item"><input type="checkbox" value="Segunda-Feira"> Segunda</label>
+            <label class="t5-dia-item"><input type="checkbox" value="Terca-Feira"> Terca</label>
+            <label class="t5-dia-item"><input type="checkbox" value="Quarta-Feira"> Quarta</label>
+            <label class="t5-dia-item"><input type="checkbox" value="Quinta-Feira"> Quinta</label>
+            <label class="t5-dia-item"><input type="checkbox" value="Sexta-Feira"> Sexta</label>
+            <label class="t5-dia-item"><input type="checkbox" value="Sabado"> Sabado</label>
+          </div>
+        </div>
+        <div class="t5-edit-field">
+          <label>Turno</label>
+          <select class="t5-edit-select" id="cr-turno">
+            <option value="">Selecione...</option>
+            <option>Manha</option>
+            <option>Tarde</option>
+            <option>Noite</option>
+          </select>
+        </div>
+        <div class="t5-edit-field">
+          <label>Horario</label>
+          <input type="text" class="t5-edit-input" id="cr-horario" placeholder="Ex: 08h00 - 09h30">
+        </div>
+        <div class="t5-edit-field">
+          <label>Vagas totais</label>
+          <input type="number" class="t5-edit-input" id="cr-vagas" min="1" max="99" value="20">
+        </div>
+        <div class="t5-edit-divisor">Período letivo (opcional)</div>
+        <div class="t5-edit-field">
+          <label>Data de início da turma</label>
+          <input type="date" class="t5-edit-input" id="cr-data-inicio">
+        </div>
+        <div class="t5-edit-field">
+          <label>Data de fim da turma</label>
+          <input type="date" class="t5-edit-input" id="cr-data-fim">
+        </div>
+        <div class="t5-edit-field span2" style="margin-top:-6px;">
+          <span style="font-size:11.5px;color:var(--c-text-3,#9898B0);">Deixe em branco para usar automaticamente o 1º e o último dia letivo do calendário do semestre. Preencha apenas se esta turma começar depois do início do semestre.</span>
+        </div>
+      </div>
+    </div>
+    <div class="t5-edit-footer">
+      <button class="btn-edit btn-edit-sec" id="btn-cancelar-criar">Cancelar</button>
+      <button class="btn-edit btn-edit-primario" id="btn-salvar-criar">
+        <div class="spinner-btn"></div>
+        <span class="material-icons-round btn-txt" style="font-size:16px;">add</span>
+        <span class="btn-txt">Criar turma</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+
+<!-- Modal: transferir aluno de turma -->
+<div class="t5-modal-overlay" id="modal-trans-overlay" style="display:none;">
+  <div class="t5-modal" style="max-width:480px;">
+    <div class="t5-modal-header">Transferir aluno de turma</div>
+    <div class="t5-modal-corpo">
+      <p id="modal-trans-aluno" style="font-size:13px;color:var(--c-text-2,#5C5C7A);margin-bottom:12px;"></p>
+      <div class="t5-alerta" id="trans-alerta">
+        <span class="material-icons-round">error_outline</span>
+        <span id="trans-alerta-msg"></span>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+        <label style="font-size:11px;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;color:var(--c-text-3,#9898B0);">Turma de destino</label>
+        <label id="trans-toggle-wrap" style="display:none;align-items:center;gap:6px;font-size:12px;color:var(--c-text-2,#5C5C7A);cursor:pointer;">
+          <span>Outros cursos</span>
+          <input type="checkbox" id="trans-outros-cursos" style="accent-color:#E63946;width:14px;height:14px;">
+        </label>
+      </div>
+      <div class="t5-trans-lista" id="trans-lista-turmas">
+        <div class="mat-vazio">Carregando turmas...</div>
+      </div>
+      <div class="t5-trans-aviso" id="trans-aviso-vaga">
+        Turma sem vagas. Apenas coordenacao e admin podem forcar esta transferencia.
+      </div>
+    </div>
+    <div class="t5-modal-footer" style="gap:8px;">
+      <button class="btn-cancelar-t5" id="btn-cancelar-trans">Cancelar</button>
+      <button class="btn-t5 btn-t5-primario" id="btn-confirmar-trans" disabled style="height:36px;font-size:13px;">
+        <span class="material-icons-round" style="font-size:16px;">swap_horiz</span>
+        Confirmar transferencia
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: alterar situação de matrícula -->
+<div class="t5-modal-overlay" id="modal-sit-overlay" style="display:none;">
+  <div class="t5-modal">
+    <div class="t5-modal-header">Alterar situação da matrícula</div>
+    <div class="t5-modal-corpo">
+      <p id="modal-sit-aluno"></p>
+      <div class="sit-opcoes" id="t5-sit-opcoes">
+        <button class="sit-opcao ATIVA"     data-sit="ATIVA">✓ Ativa</button>
+        <button class="sit-opcao TRANCADA"  data-sit="TRANCADA">⏸ Trancada</button>
+        <button class="sit-opcao CONCLUIDA" data-sit="CONCLUIDA">🎓 Concluída</button>
+        <button class="sit-opcao CANCELADA" data-sit="CANCELADA">✕ Cancelada</button>
+      </div>
+      <div id="t5-motivo-wrap" style="display:none;margin-top:14px;">
+        <label style="display:block;font-size:11px;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;color:var(--c-text-3,#9898B0);margin-bottom:6px;">
+          Motivo do cancelamento <span style="color:#E63946;">*</span>
+        </label>
+        <textarea id="t5-motivo-texto" rows="3" placeholder="Descreva o motivo do cancelamento…"
+          style="width:100%;border:1.5px solid var(--c-border,#E8E7E2);border-radius:7px;padding:8px 10px;font-family:var(--font-sans,sans-serif);font-size:13px;color:var(--c-text-1,#1A1A2E);background:#FAFAF8;outline:none;resize:vertical;box-sizing:border-box;"></textarea>
+        <div id="t5-motivo-erro" style="display:none;color:#E63946;font-size:11.5px;margin-top:4px;">Informe o motivo do cancelamento.</div>
+        <div style="display:flex;gap:8px;margin-top:12px;">
+          <button class="btn-cancelar-t5" id="btn-t5-motivo-voltar">Voltar</button>
+          <button class="sit-opcao CANCELADA" id="btn-t5-confirmar-cancelamento" style="flex:1;">Confirmar cancelamento</button>
+        </div>
+      </div>
+    </div>
+    <div class="t5-modal-footer">
+      <button class="btn-cancelar-t5" id="btn-cancelar-sit">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: editar turma (admin/coordenação) -->
+<div class="t5-edit-overlay" id="t5-edit-overlay" style="display:none;">
+  <div class="t5-edit-modal">
+    <div class="t5-edit-header">
+      <span class="t5-edit-titulo" id="t5-edit-titulo">Editar turma</span>
+      <button class="btn-fechar-t5" id="btn-fechar-edit"><span class="material-icons-round">close</span></button>
+    </div>
+    <div class="t5-edit-corpo">
+      <div class="t5-edit-alerta" id="t5-edit-alerta">
+        <span class="material-icons-round">error_outline</span>
+        <span id="t5-edit-alerta-msg"></span>
+      </div>
+      <div class="t5-edit-grid">
+
+        <!-- Professor -->
+        <div class="t5-edit-field span2">
+          <label>Professor</label>
+          <select class="t5-edit-select" id="et-professor">
+            <option value="">Carregando…</option>
+          </select>
+        </div>
+
+        <!-- Modalidade + Situação -->
+        <div class="t5-edit-field">
+          <label>Modalidade</label>
+          <select class="t5-edit-select" id="et-modalidade">
+            <option value="PRESENCIAL">Presencial</option>
+            <option value="EAD">EAD</option>
+            <option value="HÍBRIDO">Híbrido</option>
+          </select>
+        </div>
+        <div class="t5-edit-field">
+          <label>Situação da turma</label>
+          <select class="t5-edit-select" id="et-situacao">
+            <option value="true">Ativa</option>
+            <option value="false">Inativa</option>
+          </select>
+        </div>
+
+        <!-- Dia + Turno -->
+        <div class="t5-edit-field">
+          <label>Dias de aula</label>
+          <div class="t5-dias-check" id="et-dias-check">
+            <label class="t5-dia-item"><input type="checkbox" value="Segunda-Feira"> Segunda</label>
+            <label class="t5-dia-item"><input type="checkbox" value="Terça-Feira"> Terça</label>
+            <label class="t5-dia-item"><input type="checkbox" value="Quarta-Feira"> Quarta</label>
+            <label class="t5-dia-item"><input type="checkbox" value="Quinta-Feira"> Quinta</label>
+            <label class="t5-dia-item"><input type="checkbox" value="Sexta-Feira"> Sexta</label>
+            <label class="t5-dia-item"><input type="checkbox" value="Sábado"> Sábado</label>
+          </div>
+        </div>
+        <div class="t5-edit-field">
+          <label>Turno</label>
+          <select class="t5-edit-select" id="et-turno">
+            <option value="">Selecione…</option>
+            <option>Manhã</option>
+            <option>Tarde</option>
+            <option>Noite</option>
+          </select>
+        </div>
+
+        <!-- Horário + Vagas -->
+        <div class="t5-edit-field">
+          <label>Horário</label>
+          <input type="text" class="t5-edit-input" id="et-horario" placeholder="Ex: 08h00 – 09h30">
+        </div>
+        <div class="t5-edit-field">
+          <label>Vagas totais</label>
+          <input type="number" class="t5-edit-input" id="et-vagas" min="1" max="99">
+        </div>
+
+        <!-- Período letivo -->
+        <div class="t5-edit-divisor">Período letivo (opcional)</div>
+        <div class="t5-edit-field">
+          <label>Data de início da turma</label>
+          <input type="date" class="t5-edit-input" id="et-data-inicio">
+        </div>
+        <div class="t5-edit-field">
+          <label>Data de fim da turma</label>
+          <input type="date" class="t5-edit-input" id="et-data-fim">
+        </div>
+        <div class="t5-edit-field span2" style="margin-top:-6px;">
+          <span style="font-size:11.5px;color:var(--c-text-3,#9898B0);">Em branco = usa automaticamente o 1º e o último dia letivo do calendário do semestre.</span>
+        </div>
+
+        <!-- Links -->
+        <div class="t5-edit-divisor">Links (opcional)</div>
+        <div class="t5-edit-field span2">
+          <label>WhatsApp</label>
+          <input type="url" class="t5-edit-input" id="et-whatsapp" placeholder="https://chat.whatsapp.com/…">
+        </div>
+        <div class="t5-edit-field">
+          <label>Google Meet</label>
+          <input type="url" class="t5-edit-input" id="et-meet" placeholder="https://meet.google.com/…">
+        </div>
+        <div class="t5-edit-field">
+          <label>Google Classroom</label>
+          <input type="url" class="t5-edit-input" id="et-classroom" placeholder="https://classroom.google.com/…">
+        </div>
+
+      </div>
+    </div>
+    <div class="t5-edit-footer">
+      <button class="btn-edit btn-edit-sec" id="btn-cancelar-edit">Cancelar</button>
+      <button class="btn-edit btn-edit-primario" id="btn-salvar-edit">
+        <div class="spinner-btn"></div>
+        <span class="material-icons-round btn-txt" style="font-size:16px;">save</span>
+        <span class="btn-txt">Salvar alterações</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ── postApi — usa api.js carregado pelo index.html ──────────────────────────
+  // No GitHub Pages, postApi() vem do api.js global. Não há google.script.run.
+  // O token é obtido do Auth (localStorage) diretamente pelo api.js.
+  // Esta função local redireciona para a global para manter compatibilidade
+  // com o restante do código do módulo.
+  function postApi(acao, dados) {
+    return window.postApi(acao, dados);
+  }
+
+  function el(id) { return document.getElementById(id); }
+
+  // Conversão para uso com <input type="date">, que exige AAAA-MM-DD.
+  // O back-end trabalha e devolve datas no formato DD/MM/AAAA (m7_dataParaString).
+  function brParaIso(br) {
+    if (!br) return '';
+    var p = String(br).trim().split('/');
+    return p.length === 3 ? (p[2] + '-' + p[1].padStart(2,'0') + '-' + p[0].padStart(2,'0')) : '';
+  }
+  function isoParaBr(iso) {
+    if (!iso) return '';
+    var p = String(iso).trim().split('-');
+    return p.length === 3 ? (p[2] + '/' + p[1] + '/' + p[0]) : '';
+  }
+
+  // ── estado ───────────────────────────────────────────────
+  var S = {
+    turmas: [], turmaSel: null,
+    matriculas: [], matriculaParaSit: null,
+    papel: '', podeEditar: false, podeCriarMat: false, podeForcarVaga: false,
+    professores: [], cursos: [],
+    matriculaParaTrans: null, turmaTrans: null, transCursoAtual: '',
+    // Estado do combobox "Adicionar matrícula" (aba Alunos do painel de turma)
+    matAlunoSel: null,       // { AlunoID, NomeExibicao } escolhido na busca
+  };
+  var buscaAlunoMatTimer = null;
+
+  // ============================================================
+  // INIT
+  // ============================================================
+  function init() {
+    // No GitHub Pages, o usuario ja esta disponivel em App.usuario
+    // (definido pelo Shell apos o login). Nao e necessario chamar getSessaoAtiva.
+    var usuario = (typeof App !== 'undefined' && App.usuario) ? App.usuario : null;
+    if (usuario) {
+      S.papel        = usuario.Papel || '';
+      S.podeEditar   = S.papel === 'admin' || S.papel === 'coordenacao';
+      S.podeCriarMat = S.papel === 'admin' || S.papel === 'coordenacao' || S.papel === 'secretaria';
+      S.podeForcarVaga = S.papel === 'admin' || S.papel === 'coordenacao';
+      if (S.papel === 'professor') {
+        var w = el('add-mat-wrap'); if (w) w.style.display = 'none';
+      }
+    }
+    bindEventos();
+    carregarTurmas();
+    if (S.podeEditar) {
+      carregarProfessores();
+      carregarCursos();
+      var btnNova = el('btn-nova-turma');
+      if (btnNova) btnNova.style.display = 'inline-flex';
+    }
+  }
+
+  // ============================================================
+  // PROFESSORES
+  // ============================================================
+  function carregarProfessores() {
+    postApi('usuarios.listar', {})
+      .then(function (res) {
+        if (!res.sucesso || !res.dados) return;
+        S.professores = (res.dados || []).filter(function (u) {
+          return u.Papel === 'professor' &&
+                 (u.SituacaoUsuario === true || u.SituacaoUsuario === 'true');
+        });
+      })
+      .catch(function () {});
+  }
+
+  function popularSelectProfessores(profIdSel) {
+    var sel = el('et-professor');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">Selecione um professor…</option>';
+    S.professores.forEach(function (p) {
+      var opt = document.createElement('option');
+      opt.value       = p.UsuarioID;
+      opt.textContent = p.Nome + ' (' + p.UsuarioID + ')';
+      if (profIdSel && p.UsuarioID === profIdSel) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    // Se ainda não carregou (usuário abriu modal antes do load): avisa
+    if (S.professores.length === 0) {
+      sel.innerHTML = '<option value="">Nenhum professor encontrado</option>';
+    }
+  }
+
+  // ============================================================
+  // TURMAS
+  // ============================================================
+  function carregarTurmas() {
+    el('t5-estado').style.display = 'block';
+    el('t5-estado').innerHTML = '<div class="t5-spinner"></div><p>Carregando turmas…</p>';
+    el('t5-tabela').style.display = 'none';
+
+    postApi('turmas.listar', { tamanhoPagina: 300 })
+      .then(function (res) {
+        if (!res.sucesso) { mostrarEstado('Erro: ' + (res.mensagem || '')); return; }
+        S.turmas = (res.dados && res.dados.dados) ? res.dados.dados : [];
+        renderTurmas();
+      })
+      .catch(function (e) { mostrarEstado('Erro de comunicação: ' + (e.message || '')); });
+  }
+
+  function turmasFiltradas() {
+    var busca  = (el('t5-busca').value || '').toLowerCase();
+    var modal  = el('t5-filtro-modalidade').value;
+    var sit    = el('t5-filtro-situacao').value;
+    return S.turmas.filter(function (t) {
+      var okB = !busca ||
+        (t.TurmaID     || '').toLowerCase().indexOf(busca) !== -1 ||
+        (t.Estagio     || '').toLowerCase().indexOf(busca) !== -1 ||
+        (t.ProfessorNome|| '').toLowerCase().indexOf(busca) !== -1;
+      var okM = !modal || (t.Modalidade || '').toUpperCase() === modal;
+      var enc   = String(t.SituacaoTurma) === 'ENCERRADA';
+      var ativo = !enc && (t.SituacaoTurma === true || t.SituacaoTurma === 'true');
+      var okS = sit === 'todas' ||
+                (sit === 'ativas'     &&  ativo) ||
+                (sit === 'inativas'   && !ativo && !enc) ||
+                (sit === 'encerradas' &&  enc);
+      return okB && okM && okS;
+    });
+  }
+
+  function renderTurmas() {
+    var lista = turmasFiltradas();
+    if (lista.length === 0) {
+      mostrarEstado('Nenhuma turma encontrada.');
+      return;
+    }
+    el('t5-estado').style.display = 'none';
+    el('t5-tabela').style.display = 'table';
+    var tbody = el('t5-tbody');
+    tbody.innerHTML = '';
+
+    lista.forEach(function (t) {
+      var ativo = (t.SituacaoTurma === true || t.SituacaoTurma === 'true') && String(t.SituacaoTurma) !== 'ENCERRADA';
+      var encerrada = String(t.SituacaoTurma) === 'ENCERRADA';
+      var mC    = { PRESENCIAL:'presencial', EAD:'ead', 'HÍBRIDO':'hibrido', HIBRIDO:'hibrido' };
+      var mc    = mC[(t.Modalidade || '').toUpperCase()] || 'presencial';
+      var vagas = Number(t.VagasTotais)         || 0;
+      var ocup  = Number(t._matriculasAtivas)   || 0;
+      var pct   = vagas > 0 ? Math.min(100, Math.round(ocup / vagas * 100)) : 0;
+      var fillC = pct >= 100 ? 'cheio' : pct >= 80 ? 'quase' : '';
+      var diaAbrev = (t.DiaSemana || '').split('-')[0];
+
+      var tr = document.createElement('tr');
+      if (S.turmaSel && S.turmaSel.TurmaID === t.TurmaID) tr.classList.add('selecionada');
+
+      tr.innerHTML =
+        '<td class="t5-id">'      + (t.TurmaID      || '—') + '</td>' +
+        '<td class="t5-estagio">' + (t.Estagio       || t.CursoID || '—') + '</td>' +
+        '<td style="font-size:12.5px;">' + (t.ProfessorNome || '—') + '</td>' +
+        '<td style="font-size:12.5px;">' + (diaAbrev || '—') +
+          (t.Horario ? '<br><span style="color:var(--c-text-3);font-size:11px;">' + t.Horario + '</span>' : '') +
+        '</td>' +
+        '<td><span class="badge-modal ' + mc + '">' + (t.Modalidade || '—') + '</span></td>' +
+        '<td><div class="vagas-bar">' +
+          '<div class="vagas-progresso"><div class="vagas-fill ' + fillC + '" style="width:' + pct + '%"></div></div>' +
+          '<span style="font-size:11.5px;white-space:nowrap;">' + ocup + '/' + vagas + '</span>' +
+        '</div></td>' +
+        (encerrada
+        ? '<td><span class="badge-sit-turma encerrada"><span class="material-icons-round">lock</span>Encerrada</span></td>'
+        : '<td><span class="badge-sit-turma ' + (ativo ? 'ativa' : 'inativa') + '">' +
+          '<span class="material-icons-round">' + (ativo ? 'check_circle' : 'cancel') + '</span>' +
+          (ativo ? 'Ativa' : 'Inativa') + '</span></td>');
+
+      (function (turma) {
+        tr.addEventListener('click', function () { selecionarTurma(turma); });
+      }(t));
+
+      tbody.appendChild(tr);
+    });
+  }
+
+  function mostrarEstado(msg) {
+    el('t5-estado').style.display = 'block';
+    el('t5-estado').innerHTML = '<span class="material-icons-round">groups</span><p>' + msg + '</p>';
+    el('t5-tabela').style.display = 'none';
+  }
+
+  // ============================================================
+  // PAINEL LATERAL
+  // ============================================================
+  function selecionarTurma(turma) {
+    S.turmaSel = turma;
+    // Atualiza linha selecionada
+    var lista = turmasFiltradas();
+    document.querySelectorAll('#t5-tbody tr').forEach(function (tr, i) {
+      if (lista[i]) tr.classList.toggle('selecionada', lista[i].TurmaID === turma.TurmaID);
+    });
+    el('t5-painel').classList.add('aberto');
+    el('turmas-main').classList.add('com-painel');
+    if (S.podeEditar) {
+      el('t5-painel-acoes').style.display = 'flex';
+      var enc = String(turma.SituacaoTurma) === 'ENCERRADA';
+      el('btn-editar-turma').style.display    = enc ? 'none' : 'inline-flex';
+      el('btn-encerrar-turma').style.display  = enc ? 'none' : 'inline-flex';
+      el('btn-reabrir-turma').style.display   = enc ? 'inline-flex' : 'none';
+    } else {
+      el('t5-painel-acoes').style.display = 'none';
+    }
+    // Reseta a checkbox de inativos ao trocar de turma — cada turma abre
+    // mostrando apenas alunos/matrículas ativos por padrão.
+    if (el('chk-mat-inativos')) el('chk-mat-inativos').checked = false;
+    // Reseta o combobox de "adicionar matrícula" e o aviso de vaga excedida
+    S.matAlunoSel = null;
+    if (el('add-mat-aluno-selecionado')) el('add-mat-aluno-selecionado').classList.remove('show');
+    if (el('add-mat-aluno-id')) { el('add-mat-aluno-id').style.display = 'block'; el('add-mat-aluno-id').value = ''; }
+    if (el('t5-mat-aviso-vaga')) el('t5-mat-aviso-vaga').classList.remove('show');
+    preencherInfo(turma);
+    mostrarTab('info');
+  }
+
+  function fecharPainel() {
+    el('t5-painel').classList.remove('aberto');
+    el('turmas-main').classList.remove('com-painel');
+    S.turmaSel = null;
+    document.querySelectorAll('#t5-tbody tr').forEach(function (tr) { tr.classList.remove('selecionada'); });
+  }
+
+  function mostrarTab(id) {
+    document.querySelectorAll('.t5-tab').forEach(function (b) {
+      b.classList.toggle('ativa', b.dataset.tab === id);
+    });
+    document.querySelectorAll('.t5-tab-secao').forEach(function (s) {
+      s.classList.toggle('ativa', s.id === 'tab-' + id);
+    });
+    if (id === 'alunos') carregarMatriculas();
+    if (id === 'links')  preencherLinks();
+  }
+
+  function preencherInfo(t) {
+    el('t5-painel-titulo').textContent  = t.Estagio || t.CursoID || '—';
+    el('t5-painel-sub').textContent     = t.TurmaID || '—';
+    el('inf-id').textContent            = t.TurmaID       || '—';
+    el('inf-curso').textContent         = t.CursoID       || '—';
+    el('inf-estagio').textContent       = t.Estagio       || '—';
+    el('inf-modalidade').textContent    = t.Modalidade    || '—';
+    var ativo = t.SituacaoTurma === true || t.SituacaoTurma === 'true';
+    var enc = String(t.SituacaoTurma) === 'ENCERRADA';
+    el('inf-situacao').textContent = enc ? 'Encerrada' : (ativo ? 'Ativa' : 'Inativa');
+    el('inf-dia').textContent           = t.DiaSemana     || '—';
+    el('inf-horario').textContent       = t.Horario       || '—';
+    el('inf-turno').textContent         = t.Turno         || '—';
+    el('inf-prof').textContent          = t.ProfessorNome || '—';
+    el('inf-vagas').textContent         = t.VagasTotais   || '—';
+    el('inf-matriculados').textContent  = '…';
+    el('inf-data-inicio').textContent   = t.DataInicioTurma || 'Usa o padrão do calendário';
+    el('inf-data-fim').textContent      = t.DataFimTurma    || 'Usa o padrão do calendário';
+  }
+
+  // ============================================================
+  // MODAL DE EDIÇÃO DE TURMA
+  // ============================================================
+  function abrirModalEditar() {
+    var t = S.turmaSel;
+    if (!t) return;
+
+    el('t5-edit-titulo').textContent = 'Editar turma — ' + t.TurmaID;
+    el('t5-edit-alerta').classList.remove('show');
+
+    // Preenche campos com valores atuais da turma
+    popularSelectProfessores(t.ProfessorID);
+    el('et-modalidade').value = (t.Modalidade || '').toUpperCase();
+    var ativo = t.SituacaoTurma === true || t.SituacaoTurma === 'true';
+    el('et-situacao').value   = ativo ? 'true' : 'false';
+    // Preenche checkboxes de dias (DiaSemana pode ser "Segunda-Feira,Quarta-Feira")
+    var diasSel = String(t.DiaSemana || '').split(',').map(function(d){ return d.trim(); });
+    el('et-dias-check').querySelectorAll('input[type=checkbox]').forEach(function(cb) {
+      cb.checked = diasSel.indexOf(cb.value) !== -1;
+    });
+    el('et-turno').value      = t.Turno        || '';
+    el('et-horario').value    = t.Horario      || '';
+    el('et-vagas').value      = t.VagasTotais  || '';
+    el('et-whatsapp').value   = t.GrupoWhatsapp|| '';
+    el('et-meet').value       = t.LinkMeet     || '';
+    el('et-classroom').value  = t.LinkClassroom|| '';
+    el('et-data-inicio').value = brParaIso(t.DataInicioTurma);
+    el('et-data-fim').value    = brParaIso(t.DataFimTurma);
+
+    el('t5-edit-overlay').style.display = 'flex';
+  }
+
+  function fecharModalEditar() {
+    el('t5-edit-overlay').style.display = 'none';
+  }
+
+  function salvarEdicaoTurma() {
+    if (!S.turmaSel) return;
+
+    var btn = el('btn-salvar-edit');
+    btn.disabled = true;
+    btn.classList.add('loading');
+    el('t5-edit-alerta').classList.remove('show');
+
+    var profSel  = el('et-professor');
+    var profId   = profSel.value;
+    var profNome = profId && profSel.selectedIndex > 0
+      ? profSel.options[profSel.selectedIndex].text.replace(/\s*\(.*\)\s*$/, '')
+      : S.turmaSel.ProfessorNome || '';
+
+    var vagasVal = parseInt(el('et-vagas').value, 10);
+    if (isNaN(vagasVal) || vagasVal < 1) {
+      mostrarErroEdit('Vagas totais deve ser um número maior que zero.');
+      btn.disabled = false; btn.classList.remove('loading');
+      return;
+    }
+
+    var dataInicioIso = el('et-data-inicio').value;
+    var dataFimIso    = el('et-data-fim').value;
+    if (dataInicioIso && dataFimIso && dataInicioIso > dataFimIso) {
+      mostrarErroEdit('A data de início da turma não pode ser posterior à data de fim.');
+      btn.disabled = false; btn.classList.remove('loading');
+      return;
+    }
+
+    var dados = {
+      turmaId:       S.turmaSel.TurmaID,
+      ProfessorID:   profId   || S.turmaSel.ProfessorID,
+      ProfessorNome: profNome,
+      Modalidade:    el('et-modalidade').value,
+      SituacaoTurma: el('et-situacao').value === 'true',
+      DiaSemana:     (function() {
+        var checked = [];
+        el('et-dias-check').querySelectorAll('input:checked').forEach(function(cb){ checked.push(cb.value); });
+        return checked.join(',');
+      }()),
+      Turno:         el('et-turno').value,
+      Horario:       el('et-horario').value.trim(),
+      VagasTotais:   vagasVal,
+      GrupoWhatsapp: el('et-whatsapp').value.trim(),
+      LinkMeet:      el('et-meet').value.trim(),
+      LinkClassroom: el('et-classroom').value.trim(),
+      DataInicioTurma: isoParaBr(dataInicioIso),
+      DataFimTurma:    isoParaBr(dataFimIso),
+    };
+
+    postApi('turmas.atualizar', dados)
+      .then(function (res) {
+        btn.disabled = false; btn.classList.remove('loading');
+        if (!res.sucesso) {
+          mostrarErroEdit(res.mensagem || 'Erro ao salvar alterações.');
+          return;
+        }
+        fecharModalEditar();
+        // Atualiza objeto local e painel
+        Object.assign(S.turmaSel, dados);
+        preencherInfo(S.turmaSel);
+        renderTurmas();
+        if (typeof toast === 'function') toast('Turma atualizada com sucesso!', 'success');
+      })
+      .catch(function () {
+        btn.disabled = false; btn.classList.remove('loading');
+        mostrarErroEdit('Erro de comunicação. Tente novamente.');
+      });
+  }
+
+  function mostrarErroEdit(msg) {
+    var a = el('t5-edit-alerta'), m = el('t5-edit-alerta-msg');
+    a.className = 't5-edit-alerta show erro'; m.textContent = msg;
+  }
+
+  // ============================================================
+  // MATRÍCULAS
+  // ============================================================
+  function carregarMatriculas() {
+    if (!S.turmaSel) return;
+    el('lista-matriculados').innerHTML = '<div class="mat-vazio">Carregando…</div>';
+    var mostrarInativos = el('chk-mat-inativos') && el('chk-mat-inativos').checked;
+    var params = { turmaId: S.turmaSel.TurmaID, tamanhoPagina: 200 };
+    if (!mostrarInativos) params.somenteAtivos = true;
+    postApi('matriculas.listar', params)
+      .then(function (res) {
+        if (!res.sucesso || !res.dados) {
+          el('lista-matriculados').innerHTML = '<div class="mat-vazio">Erro ao carregar matrículas.</div>';
+          return;
+        }
+        S.matriculas = res.dados.dados || [];
+        renderMatriculas();
+        var ativas = S.matriculas.filter(function (m) { return m.SituacaoMatricula === 'ATIVA'; }).length;
+        el('inf-matriculados').textContent = ativas + ' ativo(s)';
+      })
+      .catch(function () {
+        el('lista-matriculados').innerHTML = '<div class="mat-vazio">Erro de comunicação.</div>';
+      });
+  }
+
+  function badgeSituacaoMatT5(m, sit) {
+    if (sit === 'CANCELADA' && (m.MotivoCancelamento || m.DataCancelamento)) {
+      var titulo = 'Cancelada em ' + (m.DataCancelamento || '—') +
+        (m.MotivoCancelamento ? '\nMotivo: ' + m.MotivoCancelamento : '') +
+        (m.CanceladoPor ? '\nPor: ' + m.CanceladoPor : '');
+      return '<span class="badge-sit-mat ' + sit + '" title="' + titulo.replace(/"/g, '&quot;') + '" style="cursor:help;border-bottom:1px dotted currentColor;">' + sit + '</span>';
+    }
+    return '<span class="badge-sit-mat ' + sit + '">' + sit + '</span>';
+  }
+
+  function renderMatriculas() {
+    var cont = el('lista-matriculados');
+    if (!S.matriculas.length) {
+      cont.innerHTML = '<div class="mat-vazio">Nenhum aluno matriculado nesta turma.</div>';
+      return;
+    }
+    cont.innerHTML = '';
+    S.matriculas.forEach(function (m) {
+      var sit = m.SituacaoMatricula || 'ATIVA';
+      var div = document.createElement('div');
+      div.className = 'mat-item';
+      div.innerHTML =
+        '<div style="flex:1;min-width:0;">' +
+          '<div class="mat-nome">' + (m.NomeExibicao || m.AlunoID || m.MatriculaID) + '</div>' +
+          '<div class="mat-id">' + m.MatriculaID + '</div>' +
+        '</div>' +
+        badgeSituacaoMatT5(m, sit) +
+        (S.podeEditar || S.podeCriarMat
+          ? '<div class="mat-acoes">' +
+              '<button class="btn-mat-acao btn-sit-mat" title="Alterar situacao"><span class="material-icons-round">swap_horiz</span></button>' +
+              (sit === 'ATIVA'
+                ? '<button class="btn-mat-acao btn-trans" title="Transferir de turma"><span class="material-icons-round">compare_arrows</span></button>'
+                : '') +
+            '</div>'
+          : '');
+      var btnSit   = div.querySelector('.btn-sit-mat');
+      var btnTrans = div.querySelector('.btn-trans');
+      if (btnSit) {
+        (function (mat) {
+          btnSit.addEventListener('click', function () {
+            S.matriculaParaSit = mat;
+            el('modal-sit-aluno').textContent = 'Aluno: ' + (mat.NomeExibicao || mat.AlunoID || mat.MatriculaID);
+            resetarModalSitT5();
+            el('modal-sit-overlay').style.display = 'flex';
+          });
+        }(m));
+      }
+      if (btnTrans) {
+        (function (mat) {
+          btnTrans.addEventListener('click', function () {
+            abrirModalTransferir(mat);
+          });
+        }(m));
+      }
+      cont.appendChild(div);
+    });
+  }
+
+  // ── Busca/autocomplete de aluno por nome (reaproveita alunos.listar) ──────
+  function buscarAlunosParaComboT5(termo) {
+    var dropdown = el('add-mat-aluno-dropdown');
+    if (!termo || termo.length < 2) {
+      dropdown.classList.remove('show');
+      dropdown.innerHTML = '';
+      return;
+    }
+    postApi('alunos.listar', { busca: termo, somenteAtivos: true, tamanhoPagina: 8 })
+      .then(function (res) {
+        var lista = (res.sucesso && res.dados && res.dados.dados) ? res.dados.dados : [];
+        renderizarDropdownAlunoT5(lista, termo);
+      })
+      .catch(function () { renderizarDropdownAlunoT5([], termo); });
+  }
+
+  function renderizarDropdownAlunoT5(lista, termo) {
+    var dropdown = el('add-mat-aluno-dropdown');
+    dropdown.innerHTML = '';
+
+    if (lista.length === 0) {
+      dropdown.innerHTML = '<div class="t5-aluno-item vazio">Nenhum aluno encontrado para "' + termo + '".</div>';
+      dropdown.classList.add('show');
+      return;
+    }
+
+    lista.forEach(function (a) {
+      var item = document.createElement('div');
+      item.className = 't5-aluno-item';
+      item.innerHTML = '<span class="m5-ai-nome">' + (a.NomeExibicao || a.NomeCompleto || '—') + '</span>' +
+        '<span class="m5-ai-id">' + a.AlunoID + '</span>';
+      item.addEventListener('click', function () {
+        selecionarAlunoComboT5(a.AlunoID, a.NomeExibicao || a.NomeCompleto || a.AlunoID);
+      });
+      dropdown.appendChild(item);
+    });
+    dropdown.classList.add('show');
+  }
+
+  function selecionarAlunoComboT5(alunoId, nomeExibicao) {
+    S.matAlunoSel = { AlunoID: alunoId, NomeExibicao: nomeExibicao };
+    el('add-mat-aluno-dropdown').classList.remove('show');
+    el('add-mat-aluno-id').value = '';
+    el('add-mat-aluno-id').style.display = 'none';
+    el('add-mat-aluno-selecionado-txt').textContent = nomeExibicao + ' (' + alunoId + ')';
+    el('add-mat-aluno-selecionado').classList.add('show');
+  }
+
+  function limparAlunoComboT5() {
+    S.matAlunoSel = null;
+    el('add-mat-aluno-selecionado').classList.remove('show');
+    el('add-mat-aluno-id').style.display = 'block';
+    el('add-mat-aluno-id').value = '';
+    el('add-mat-aluno-id').focus();
+  }
+
+  // ── Matricular ─────────────────────────────────────────────────────────
+  function adicionarMatricula(forcarVaga) {
+    // Resolve o AlunoID: veio do combobox (busca por nome) ou foi digitado
+    // diretamente como AlunoID no campo de texto — o sistema aceita os dois.
+    var alunoId = S.matAlunoSel
+      ? S.matAlunoSel.AlunoID
+      : (el('add-mat-aluno-id').value || '').trim().toUpperCase();
+
+    if (!alunoId) {
+      mostrarAlerta('t5-mat-alerta', 't5-mat-alerta-msg', 'Informe o aluno pelo nome (e selecione na lista) ou pelo AlunoID.', 'erro');
+      return;
+    }
+
+    el('t5-mat-aviso-vaga').classList.remove('show');
+    var btn = el('btn-add-mat');
+    btn.disabled = true; btn.classList.add('loading');
+
+    var dados = { AlunoID: alunoId, TurmaID: S.turmaSel.TurmaID };
+    if (forcarVaga) dados.forcarVaga = true;
+
+    postApi('matriculas.criar', dados)
+      .then(function (res) {
+        btn.disabled = false; btn.classList.remove('loading');
+
+        if (!res.sucesso) {
+          // Vaga acima do limite: back-end pede confirmação explícita
+          // (somente para admin/coordenação — outros papéis recebem erro comum).
+          if (res.dados && res.dados.confirmacaoNecessaria && S.podeForcarVaga) {
+            el('t5-mat-aviso-vaga-msg').textContent = res.mensagem;
+            el('t5-mat-aviso-vaga').classList.add('show');
+            return;
+          }
+          mostrarAlerta('t5-mat-alerta', 't5-mat-alerta-msg', res.mensagem || 'Erro ao matricular.', 'erro');
+          return;
+        }
+
+        limparAlunoComboT5();
+        el('add-mat-aluno-id').value = '';
+        var msg = 'Matrícula realizada com sucesso!';
+        if (res.dados && res.dados.vagaForcada) msg += ' (Vaga forçada.)';
+        mostrarAlerta('t5-mat-alerta', 't5-mat-alerta-msg', msg, 'sucesso');
+        carregarMatriculas();
+      })
+      .catch(function () {
+        btn.disabled = false; btn.classList.remove('loading');
+        mostrarAlerta('t5-mat-alerta', 't5-mat-alerta-msg', 'Erro de comunicação.', 'erro');
+      });
+  }
+
+  function resetarModalSitT5() {
+    el('t5-sit-opcoes').style.display = 'grid';
+    el('t5-motivo-wrap').style.display = 'none';
+    el('t5-motivo-texto').value = '';
+    el('t5-motivo-erro').style.display = 'none';
+  }
+
+  function fecharModalSitT5() {
+    el('modal-sit-overlay').style.display = 'none';
+    resetarModalSitT5();
+  }
+
+  function confirmarCancelamentoT5() {
+    var motivo = (el('t5-motivo-texto').value || '').trim();
+    if (!motivo) {
+      el('t5-motivo-erro').style.display = 'block';
+      return;
+    }
+    alterarSituacaoMatricula('CANCELADA', motivo);
+  }
+
+  function alterarSituacaoMatricula(novaSit, motivo) {
+    if (!S.matriculaParaSit) return;
+    el('modal-sit-overlay').style.display = 'none';
+    resetarModalSitT5();
+    postApi('matriculas.atualizarSituacao', {
+      matriculaId: S.matriculaParaSit.MatriculaID,
+      novaSituacao: novaSit,
+      motivo: motivo || undefined,
+    }).then(function (res) {
+      if (typeof toast === 'function') toast(
+        res.sucesso ? 'Situação atualizada para ' + novaSit + '.' : (res.mensagem || 'Erro.'),
+        res.sucesso ? 'success' : 'error'
+      );
+      if (res.sucesso) carregarMatriculas();
+    }).catch(function () {
+      if (typeof toast === 'function') toast('Erro de comunicação.', 'error');
+    });
+  }
+
+  // ============================================================
+  // LINKS
+  // ============================================================
+  function preencherLinks() {
+    if (!S.turmaSel) return;
+    el('link-whatsapp').value  = S.turmaSel.GrupoWhatsapp || '';
+    el('link-meet').value      = S.turmaSel.LinkMeet       || '';
+    el('link-classroom').value = S.turmaSel.LinkClassroom  || '';
+  }
+
+  function salvarLinks() {
+    if (!S.turmaSel) return;
+    var btn = el('btn-salvar-links');
+    btn.disabled = true; btn.classList.add('loading');
+    postApi('turmas.atualizar', {
+      turmaId:       S.turmaSel.TurmaID,
+      GrupoWhatsapp: el('link-whatsapp').value.trim(),
+      LinkMeet:      el('link-meet').value.trim(),
+      LinkClassroom: el('link-classroom').value.trim(),
+    }).then(function (res) {
+      btn.disabled = false; btn.classList.remove('loading');
+      if (!res.sucesso) {
+        mostrarAlerta('t5-links-alerta', 't5-links-alerta-msg', res.mensagem || 'Erro.', 'erro');
+        return;
+      }
+      S.turmaSel.GrupoWhatsapp = el('link-whatsapp').value.trim();
+      S.turmaSel.LinkMeet      = el('link-meet').value.trim();
+      S.turmaSel.LinkClassroom = el('link-classroom').value.trim();
+      mostrarAlerta('t5-links-alerta', 't5-links-alerta-msg', 'Links salvos com sucesso!', 'sucesso');
+    }).catch(function () {
+      btn.disabled = false; btn.classList.remove('loading');
+      mostrarAlerta('t5-links-alerta', 't5-links-alerta-msg', 'Erro de comunicação.', 'erro');
+    });
+  }
+
+  // ============================================================
+  // UTILITÁRIOS
+  // ============================================================
+  function mostrarAlerta(alertaId, msgId, msg, tipo) {
+    var a = el(alertaId), m = el(msgId);
+    if (!a || !m) return;
+    a.className = 't5-alerta show ' + (tipo || 'erro');
+    m.textContent = msg;
+    var ic = a.querySelector('.material-icons-round');
+    if (ic) ic.textContent = tipo === 'sucesso' ? 'check_circle' : 'error_outline';
+    setTimeout(function () { a.classList.remove('show'); }, 4500);
+  }
+
+
+  // =========================================================
+  // CURSOS (para modal de criacao)
+  // =========================================================
+  function carregarCursos() {
+    postApi('cursos.listar', {})
+      .then(function (res) {
+        if (!res.sucesso || !res.dados) return;
+        S.cursos = res.dados || [];
+        var sel = el('cr-curso');
+        if (!sel) return;
+        sel.innerHTML = '<option value="">Selecione um curso...</option>';
+        S.cursos.forEach(function (c) {
+          var opt = document.createElement('option');
+          opt.value       = c.CursoID;
+          opt.textContent = c.Nome + ' (' + c.CursoID + ')';
+          sel.appendChild(opt);
+        });
+      })
+      .catch(function () {});
+  }
+
+  function popularSelectProfessoresCriar() {
+    var sel = el('cr-professor');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">Selecione um professor...</option>';
+    S.professores.forEach(function (p) {
+      var opt = document.createElement('option');
+      opt.value       = p.UsuarioID;
+      opt.textContent = p.Nome + ' (' + p.UsuarioID + ')';
+      sel.appendChild(opt);
+    });
+  }
+
+  // =========================================================
+  // MODAL CRIAR TURMA
+  // =========================================================
+  function abrirModalCriar() {
+    el('t5-criar-alerta').classList.remove('show');
+    if (el('cr-estagio'))    el('cr-estagio').value    = '';
+    if (el('cr-horario'))    el('cr-horario').value    = '';
+    if (el('cr-vagas'))      el('cr-vagas').value      = '20';
+    if (el('cr-turno'))      el('cr-turno').value      = '';
+    if (el('cr-modalidade')) el('cr-modalidade').value = 'PRESENCIAL';
+    if (el('cr-curso'))      el('cr-curso').value      = '';
+    if (el('cr-professor'))  el('cr-professor').value  = '';
+    if (el('cr-dias-check')) {
+      el('cr-dias-check').querySelectorAll('input').forEach(function (cb) { cb.checked = false; });
+    }
+    if (el('cr-data-inicio')) el('cr-data-inicio').value = '';
+    if (el('cr-data-fim'))    el('cr-data-fim').value    = '';
+    popularSelectProfessoresCriar();
+    el('t5-criar-overlay').style.display = 'flex';
+  }
+
+  function fecharModalCriar() {
+    el('t5-criar-overlay').style.display = 'none';
+  }
+
+  function salvarNovaTurma() {
+    var btn = el('btn-salvar-criar');
+    btn.disabled = true; btn.classList.add('loading');
+    el('t5-criar-alerta').classList.remove('show');
+
+    var cursoId    = el('cr-curso')     ? el('cr-curso').value         : '';
+    var profId     = el('cr-professor') ? el('cr-professor').value      : '';
+    var estagio    = el('cr-estagio')   ? el('cr-estagio').value.trim() : '';
+    var modalidade = el('cr-modalidade')? el('cr-modalidade').value     : '';
+
+    if (!cursoId || !profId || !estagio || !modalidade) {
+      btn.disabled = false; btn.classList.remove('loading');
+      var a = el('t5-criar-alerta'); var m = el('t5-criar-alerta-msg');
+      a.className = 't5-edit-alerta show erro';
+      m.textContent = 'Preencha Curso, Professor, Estagio e Modalidade.';
+      return;
+    }
+
+    var dias = [];
+    if (el('cr-dias-check')) {
+      el('cr-dias-check').querySelectorAll('input:checked').forEach(function (cb) { dias.push(cb.value); });
+    }
+
+    var profNome = '';
+    var profSel  = el('cr-professor');
+    if (profSel && profSel.selectedIndex > 0) {
+      profNome = profSel.options[profSel.selectedIndex].text.replace(/\s*\(.*\)\s*$/, '');
+    }
+
+    var dataInicioIso = el('cr-data-inicio') ? el('cr-data-inicio').value : '';
+    var dataFimIso    = el('cr-data-fim')    ? el('cr-data-fim').value    : '';
+    if (dataInicioIso && dataFimIso && dataInicioIso > dataFimIso) {
+      btn.disabled = false; btn.classList.remove('loading');
+      var a2 = el('t5-criar-alerta'); var m2 = el('t5-criar-alerta-msg');
+      a2.className = 't5-edit-alerta show erro';
+      m2.textContent = 'A data de início da turma não pode ser posterior à data de fim.';
+      return;
+    }
+
+    postApi('turmas.criar', {
+      CursoID:       cursoId,
+      Estagio:       estagio,
+      Modalidade:    modalidade,
+      ProfessorID:   profId,
+      ProfessorNome: profNome,
+      DiaSemana:     dias.join(','),
+      Turno:         el('cr-turno')   ? el('cr-turno').value           : '',
+      Horario:       el('cr-horario') ? el('cr-horario').value.trim()  : '',
+      VagasTotais:   parseInt(el('cr-vagas') ? el('cr-vagas').value : '20', 10) || 20,
+      DataInicioTurma: isoParaBr(dataInicioIso),
+      DataFimTurma:    isoParaBr(dataFimIso),
+    }).then(function (res) {
+      btn.disabled = false; btn.classList.remove('loading');
+      if (!res.sucesso) {
+        var a = el('t5-criar-alerta'); var m = el('t5-criar-alerta-msg');
+        a.className = 't5-edit-alerta show erro';
+        m.textContent = res.mensagem || 'Erro ao criar turma.';
+        return;
+      }
+      fecharModalCriar();
+      if (typeof toast === 'function') toast('Turma criada com sucesso!', 'success');
+      carregarTurmas();
+    }).catch(function () {
+      btn.disabled = false; btn.classList.remove('loading');
+      var a = el('t5-criar-alerta'); var m = el('t5-criar-alerta-msg');
+      a.className = 't5-edit-alerta show erro';
+      m.textContent = 'Erro de comunicacao. Tente novamente.';
+    });
+  }
+
+  // =========================================================
+  // ENCERRAR / REABRIR TURMA
+  // =========================================================
+  function encerrarTurma() {
+    if (!S.turmaSel) return;
+    var confirmMsg = 'Encerrar a turma ' + S.turmaSel.TurmaID + '?\n\n' +
+      'Todas as matriculas ATIVAS serao marcadas como CONCLUIDA.\n' +
+      'Esta acao pode ser desfeita reabrindo a turma.';
+    if (!confirm(confirmMsg)) return;
+    postApi('turmas.encerrar', { turmaId: S.turmaSel.TurmaID })
+      .then(function (res) {
+        if (!res.sucesso) { if (typeof toast === 'function') toast(res.mensagem || 'Erro.', 'error'); return; }
+        var msg = 'Turma encerrada.';
+        if (res.dados && res.dados.matriculasConcluidas) msg += ' ' + res.dados.matriculasConcluidas + ' matricula(s) concluida(s).';
+        if (typeof toast === 'function') toast(msg, 'success');
+        Object.assign(S.turmaSel, { SituacaoTurma: 'ENCERRADA' });
+        preencherInfo(S.turmaSel);
+        if (el('btn-editar-turma'))   el('btn-editar-turma').style.display   = 'none';
+        if (el('btn-encerrar-turma')) el('btn-encerrar-turma').style.display = 'none';
+        if (el('btn-reabrir-turma'))  el('btn-reabrir-turma').style.display  = 'inline-flex';
+        renderTurmas();
+      })
+      .catch(function () { if (typeof toast === 'function') toast('Erro de comunicacao.', 'error'); });
+  }
+
+  function reabrirTurma() {
+    if (!S.turmaSel) return;
+    var confirmMsg = 'Reabrir a turma ' + S.turmaSel.TurmaID + ' para edicao?\n\n' +
+      'As matriculas nao serao revertidas automaticamente.';
+    if (!confirm(confirmMsg)) return;
+    postApi('turmas.reabrir', { turmaId: S.turmaSel.TurmaID })
+      .then(function (res) {
+        if (!res.sucesso) { if (typeof toast === 'function') toast(res.mensagem || 'Erro.', 'error'); return; }
+        if (typeof toast === 'function') toast('Turma reaberta com sucesso.', 'success');
+        Object.assign(S.turmaSel, { SituacaoTurma: true });
+        preencherInfo(S.turmaSel);
+        if (el('btn-editar-turma'))   el('btn-editar-turma').style.display   = 'inline-flex';
+        if (el('btn-encerrar-turma')) el('btn-encerrar-turma').style.display = 'inline-flex';
+        if (el('btn-reabrir-turma'))  el('btn-reabrir-turma').style.display  = 'none';
+        renderTurmas();
+      })
+      .catch(function () { if (typeof toast === 'function') toast('Erro de comunicacao.', 'error'); });
+  }
+
+
+  // =========================================================
+  // TRANSFERENCIA DE TURMA
+  // =========================================================
+  function abrirModalTransferir(mat) {
+    S.matriculaParaTrans  = mat;
+    S.turmaTrans          = null;
+    S.transCursoAtual     = S.turmaSel ? (S.turmaSel.CursoID || '') : '';
+    el('modal-trans-aluno').textContent =
+      'Aluno: ' + (mat.NomeExibicao || mat.AlunoID) +
+      ' — Turma atual: ' + (S.turmaSel ? S.turmaSel.TurmaID : mat.TurmaID);
+    el('trans-alerta').classList.remove('show');
+    el('trans-aviso-vaga').classList.remove('show');
+    el('btn-confirmar-trans').disabled = true;
+    el('trans-lista-turmas').innerHTML = '<div class="mat-vazio">Carregando turmas...</div>';
+    // Toggle "outros cursos": visível apenas para admin/coordenacao
+    var toggle = el('trans-toggle-wrap');
+    if (toggle) {
+      toggle.style.display = (S.papel === 'admin' || S.papel === 'coordenacao') ? 'flex' : 'none';
+    }
+    var cb = el('trans-outros-cursos');
+    if (cb) cb.checked = false;
+    el('modal-trans-overlay').style.display = 'flex';
+    carregarTurmasParaTransferencia();
+  }
+
+  function fecharModalTransferir() {
+    el('modal-trans-overlay').style.display = 'none';
+    S.matriculaParaTrans = null;
+    S.turmaTrans         = null;
+  }
+
+  function carregarTurmasParaTransferencia() {
+    postApi('turmas.listar', { tamanhoPagina: 300 })
+      .then(function (res) {
+        if (!res.sucesso || !res.dados) { renderTurmasTransferencia([]); return; }
+        var todas        = res.dados.dados || [];
+        var turmaAtualId = S.turmaSel ? S.turmaSel.TurmaID : '';
+        var outrosCursos = el('trans-outros-cursos') && el('trans-outros-cursos').checked;
+        var ehSecretaria = S.papel === 'secretaria';
+
+        var filtradas = todas.filter(function (t) {
+          // Exclui turma atual e encerradas
+          if (t.TurmaID === turmaAtualId) return false;
+          if (String(t.SituacaoTurma) === 'ENCERRADA') return false;
+          if (!(t.SituacaoTurma === true || t.SituacaoTurma === 'true')) return false;
+          // Secretaria: apenas mesmo curso, apenas com vaga
+          if (ehSecretaria) {
+            if (t.CursoID !== S.transCursoAtual) return false;
+            var livre = (Number(t.VagasTotais) || 0) - (Number(t._matriculasAtivas) || 0);
+            if (livre <= 0) return false;
+          }
+          // Admin/coordenacao sem toggle: filtra pelo mesmo curso
+          // Admin/coordenacao com toggle ligado: mostra todos os cursos
+          if (!ehSecretaria && !outrosCursos) {
+            if (t.CursoID !== S.transCursoAtual) return false;
+          }
+          return true;
+        });
+        renderTurmasTransferencia(filtradas);
+      })
+      .catch(function () { renderTurmasTransferencia([]); });
+  }
+
+  function renderTurmasTransferencia(turmas) {
+    var cont = el('trans-lista-turmas');
+    if (!turmas.length) {
+      cont.innerHTML = '<div class="mat-vazio">Nenhuma turma disponivel para transferencia.</div>';
+      return;
+    }
+    cont.innerHTML = '';
+    turmas.forEach(function (t) {
+      var vagas  = Number(t.VagasTotais)       || 0;
+      var ocup   = Number(t._matriculasAtivas)  || 0;
+      var livre  = vagas - ocup;
+      var temVaga = livre > 0;
+      var div = document.createElement('div');
+      div.className = 't5-trans-item';
+      div.innerHTML =
+        '<div style="flex:1;min-width:0;">' +
+          '<div class="t5-trans-nome">' + (t.Estagio || t.CursoID) + '</div>' +
+          '<div class="t5-trans-meta">' + t.TurmaID +
+            (t.ProfessorNome ? ' · ' + t.ProfessorNome : '') +
+            (t.Modalidade    ? ' · ' + t.Modalidade    : '') +
+            (t.DiaSemana     ? ' · ' + t.DiaSemana      : '') +
+            (t.Horario       ? ' · ' + t.Horario        : '') +
+          '</div>' +
+        '</div>' +
+        '<span class="t5-trans-vagas ' + (temVaga ? 'ok' : 'cheio') + '">' +
+          (temVaga ? livre + ' vaga(s)' : 'Sem vagas') +
+        '</span>';
+      (function (turma, tv) {
+        div.addEventListener('click', function () {
+          cont.querySelectorAll('.t5-trans-item').forEach(function (el) {
+            el.classList.remove('selecionado');
+          });
+          div.classList.add('selecionado');
+          S.turmaTrans = turma;
+          // Aviso de sem vaga (secretaria nao pode forcar)
+          if (!tv) {
+            el('trans-aviso-vaga').classList.add('show');
+          } else {
+            el('trans-aviso-vaga').classList.remove('show');
+          }
+          el('btn-confirmar-trans').disabled = false;
+        });
+      }(t, temVaga));
+      cont.appendChild(div);
+    });
+  }
+
+  function confirmarTransferencia() {
+    if (!S.matriculaParaTrans || !S.turmaTrans) return;
+    var btn = el('btn-confirmar-trans');
+    btn.disabled = true;
+    el('trans-alerta').classList.remove('show');
+
+    postApi('matriculas.transferir', {
+      matriculaOrigemId: S.matriculaParaTrans.MatriculaID,
+      turmaDestinoId:    S.turmaTrans.TurmaID,
+    }).then(function (res) {
+      btn.disabled = false;
+      if (!res.sucesso) {
+        var a = el('trans-alerta'); var m = el('trans-alerta-msg');
+        a.className = 't5-alerta show erro'; m.textContent = res.mensagem || 'Erro ao transferir.';
+        return;
+      }
+      fecharModalTransferir();
+      var msgToast = 'Transferencia realizada com sucesso.';
+      if (res.dados && res.dados.vagaForcada) msgToast += ' (Vaga forcada.)';
+      if (typeof toast === 'function') toast(msgToast, 'success');
+      carregarMatriculas();
+    }).catch(function () {
+      btn.disabled = false;
+      var a = el('trans-alerta'); var m = el('trans-alerta-msg');
+      a.className = 't5-alerta show erro'; m.textContent = 'Erro de comunicacao. Tente novamente.';
+    });
+  }
+
+  // ============================================================
+  // EVENTOS
+  // ============================================================
+  function bindEventos() {
+    // Filtros da tabela
+    ['t5-busca', 't5-filtro-modalidade', 't5-filtro-situacao'].forEach(function (id) {
+      var e = el(id); if (!e) return;
+      e.addEventListener('input',  renderTurmas);
+      e.addEventListener('change', renderTurmas);
+    });
+
+    // Painel
+    el('btn-fechar-t5') && el('btn-fechar-t5').addEventListener('click', fecharPainel);
+
+    // Abas do painel
+    document.querySelectorAll('.t5-tab').forEach(function (btn) {
+      btn.addEventListener('click', function () { mostrarTab(this.dataset.tab); });
+    });
+
+    // Matrículas
+    el('btn-add-mat') && el('btn-add-mat').addEventListener('click', function () { adicionarMatricula(false); });
+    el('add-mat-aluno-id') && el('add-mat-aluno-id').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); adicionarMatricula(false); }
+    });
+    el('add-mat-aluno-id') && el('add-mat-aluno-id').addEventListener('input', function () {
+      var termo = this.value.trim();
+      clearTimeout(buscaAlunoMatTimer);
+      buscaAlunoMatTimer = setTimeout(function () { buscarAlunosParaComboT5(termo); }, 300);
+    });
+    document.addEventListener('click', function (e) {
+      var wrap = el('add-mat-aluno-dropdown');
+      if (wrap && !wrap.contains(e.target) && e.target.id !== 'add-mat-aluno-id') {
+        wrap.classList.remove('show');
+      }
+    });
+    el('add-mat-aluno-limpar') && el('add-mat-aluno-limpar').addEventListener('click', limparAlunoComboT5);
+    el('btn-t5-mat-forcar-confirmar') && el('btn-t5-mat-forcar-confirmar').addEventListener('click', function () {
+      adicionarMatricula(true);
+    });
+    el('btn-t5-mat-forcar-cancelar') && el('btn-t5-mat-forcar-cancelar').addEventListener('click', function () {
+      el('t5-mat-aviso-vaga').classList.remove('show');
+    });
+    el('chk-mat-inativos') && el('chk-mat-inativos').addEventListener('change', function () {
+      carregarMatriculas();
+    });
+
+    // Links
+    el('btn-salvar-links') && el('btn-salvar-links').addEventListener('click', salvarLinks);
+    ['whatsapp', 'meet', 'classroom'].forEach(function (tipo) {
+      el('btn-abrir-' + tipo) && el('btn-abrir-' + tipo).addEventListener('click', function () {
+        var url = el('link-' + tipo).value.trim();
+        if (url) window.open(url, '_blank');
+      });
+    });
+
+    // Situação matrícula — apenas as 4 opções principais em #t5-sit-opcoes
+    el('t5-sit-opcoes') && el('t5-sit-opcoes').querySelectorAll('.sit-opcao').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        if (this.dataset.sit === 'CANCELADA') {
+          el('t5-sit-opcoes').style.display = 'none';
+          el('t5-motivo-wrap').style.display = 'block';
+          el('t5-motivo-texto').focus();
+          return;
+        }
+        alterarSituacaoMatricula(this.dataset.sit);
+      });
+    });
+    el('btn-t5-confirmar-cancelamento') && el('btn-t5-confirmar-cancelamento').addEventListener('click', confirmarCancelamentoT5);
+    el('btn-t5-motivo-voltar') && el('btn-t5-motivo-voltar').addEventListener('click', resetarModalSitT5);
+    el('t5-motivo-texto') && el('t5-motivo-texto').addEventListener('input', function () {
+      el('t5-motivo-erro').style.display = 'none';
+    });
+    el('btn-cancelar-sit') && el('btn-cancelar-sit').addEventListener('click', fecharModalSitT5);
+    el('modal-sit-overlay') && el('modal-sit-overlay').addEventListener('click', function (e) {
+      if (e.target === this) fecharModalSitT5();
+    });
+
+    // Modal edição turma
+    el('btn-editar-turma')  && el('btn-editar-turma').addEventListener('click', abrirModalEditar);
+    el('btn-fechar-edit')   && el('btn-fechar-edit').addEventListener('click', fecharModalEditar);
+    el('btn-cancelar-edit') && el('btn-cancelar-edit').addEventListener('click', fecharModalEditar);
+    el('btn-salvar-edit')   && el('btn-salvar-edit').addEventListener('click', salvarEdicaoTurma);
+    el('t5-edit-overlay')   && el('t5-edit-overlay').addEventListener('click', function (e) {
+      if (e.target === this) fecharModalEditar();
+    });
+    // Nova turma
+    el('btn-nova-turma')    && el('btn-nova-turma').addEventListener('click', abrirModalCriar);
+    el('btn-fechar-criar')  && el('btn-fechar-criar').addEventListener('click', fecharModalCriar);
+    el('btn-cancelar-criar')&& el('btn-cancelar-criar').addEventListener('click', fecharModalCriar);
+    el('btn-salvar-criar')  && el('btn-salvar-criar').addEventListener('click', salvarNovaTurma);
+    el('t5-criar-overlay')  && el('t5-criar-overlay').addEventListener('click', function (e) {
+      if (e.target === this) fecharModalCriar();
+    });
+    // Encerrar / Reabrir
+    el('btn-encerrar-turma')&& el('btn-encerrar-turma').addEventListener('click', encerrarTurma);
+    el('btn-reabrir-turma') && el('btn-reabrir-turma').addEventListener('click', reabrirTurma);
+    // Transferencia
+    el('trans-outros-cursos') && el('trans-outros-cursos').addEventListener('change', function () {
+      S.turmaTrans = null;
+      el('btn-confirmar-trans').disabled = true;
+      el('trans-aviso-vaga').classList.remove('show');
+      el('trans-lista-turmas').innerHTML = '<div class="mat-vazio">Carregando turmas...</div>';
+      carregarTurmasParaTransferencia();
+    });
+    el('btn-cancelar-trans')  && el('btn-cancelar-trans').addEventListener('click', fecharModalTransferir);
+    el('btn-confirmar-trans') && el('btn-confirmar-trans').addEventListener('click', confirmarTransferencia);
+    el('modal-trans-overlay') && el('modal-trans-overlay').addEventListener('click', function (e) {
+      if (e.target === this) fecharModalTransferir();
+    });
+  }
+
+  // Inicializa
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+}());
+</script>
