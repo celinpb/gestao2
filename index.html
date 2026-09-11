@@ -191,18 +191,19 @@ function executarScripts(container) {
 // =========================================================
 // INICIALIZAÇÃO
 // =========================================================
-function init() {
-  // Verifica sessão salva no localStorage
-  if (!Auth.temSessao()) {
+async function init() {
+  // Verifica sessão ativa no Supabase Auth
+  var temSessao = await Auth.temSessao();
+  if (!temSessao) {
     carregarLogin();
     return;
   }
 
-  // Valida token com o servidor
+  // Valida sessão e carrega perfil SGE
   postApi('auth.verificarSessao', {})
     .then(function(res) {
-      if (res.sucesso && res.dados) {
-        App.usuario = res.dados;
+      if (res.sucesso && res.dados && res.dados.usuario) {
+        App.usuario = res.dados.usuario;
         carregarShell();
       } else {
         Auth.limpar();
@@ -241,7 +242,8 @@ function carregarLogin() {
 
 // Chamada pelo módulo de login após autenticação bem-sucedida
 function onLoginSucesso(token, usuario) {
-  Auth.salvar(token, usuario);
+  // token ignorado — sessão gerenciada pelo Supabase Auth SDK
+  if (usuario) Auth.salvar(usuario);
   App.usuario = usuario;
   document.getElementById('login-overlay').style.display = 'none';
   carregarShell();
@@ -255,28 +257,24 @@ function carregarShell() {
   preencherUsuarioSidebar();
   iniciarContadorSessao();
 
-  postApi('sistema.menu', {})
-    .then(function(res) {
-      if (res.sucesso && res.dados && res.dados.length > 0) {
-        renderizarMenu(normalizarMenu(res.dados));
-      } else {
-        renderizarMenuFallback();
-      }
-      return postApi('sistema.config', {});
-    })
-    .then(function(res) {
-      if (res.sucesso) aplicarConfig(res.dados);
-      return postApi('sistema.semestreAtual', {});
-    })
-    .then(function(res) {
-      if (res.sucesso && res.dados) {
-        App.semestre = res.dados;
-        document.getElementById('header-semestre').textContent = res.dados.Semestre || '—';
+  // Menu gerado localmente por papel (sem chamada de API)
+  renderizarMenuFallback();
+
+  Promise.all([
+    postApi('config.get', {}),
+    postApi('semestres.getAtual', {}),
+  ])
+    .then(function(resultados) {
+      var resConfig = resultados[0];
+      var resSem    = resultados[1];
+      if (resConfig.sucesso) aplicarConfig(resConfig.dados);
+      if (resSem.sucesso && resSem.dados) {
+        App.semestre = resSem.dados;
+        document.getElementById('header-semestre').textContent = resSem.dados.rotulo || '—';
       }
       navegarPara('dashboard', 'Início');
     })
     .catch(function() {
-      renderizarMenuFallback();
       navegarPara('dashboard', 'Início');
     });
 }
@@ -284,11 +282,12 @@ function carregarShell() {
 function preencherUsuarioSidebar() {
   var u = App.usuario;
   if (!u) return;
-  var iniciais = (u.Nome || '').split(' ').filter(Boolean).slice(0,2)
+  var nome = u.nome || u.Nome || '';
+  var iniciais = nome.split(' ').filter(Boolean).slice(0,2)
     .map(function(p){return p[0];}).join('').toUpperCase();
   document.getElementById('user-avatar').textContent = iniciais || '?';
-  document.getElementById('user-name').textContent   = u.Nome  || '—';
-  document.getElementById('user-role').textContent   = u.Papel || '—';
+  document.getElementById('user-name').textContent   = nome || '—';
+  document.getElementById('user-role').textContent   = u.papel || u.Papel || '—';
 }
 
 function aplicarConfig(config) {
