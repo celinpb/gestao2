@@ -616,7 +616,7 @@ async function _turmasAtualizar(sb, dados) {
 
 async function _matriculasListar(sb, dados) {
   var query = sb.from('matriculas')
-    .select('*, alunos(external_id, nome_completo, nome_social, pcd), turmas(id, external_id, estagio, curso_id, cursos(sigla))')
+    .select('*, alunos(external_id, nome_completo, nome_social, pcd), turmas(id, external_id, estagio, curso_id)')
     .order('data_matricula', { ascending: false, nullsFirst: false });
   if (dados && dados.turma_id)    query = query.eq('turma_id', dados.turma_id);
   if (dados && dados.aluno_id)    query = query.eq('aluno_id', dados.aluno_id);
