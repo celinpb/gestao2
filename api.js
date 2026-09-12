@@ -286,17 +286,12 @@ async function _usuariosCriar(sb, dados) {
   if (!dados.email || !dados.nome || !dados.papel) {
     return _err('Nome, e-mail e papel são obrigatórios.', 400);
   }
+  // Criar conta no Supabase Auth via convite (envia e-mail ao usuário)
+  var invite = await sb.auth.admin.inviteUserByEmail(dados.email);
+  if (invite.error) return _err(invite.error.message);
 
-  // Verificar duplicidade de e-mail
-  var dup = await sb.from('usuarios').select('id').eq('email', dados.email).maybeSingle();
-  if (dup.data) return _err('E-mail já cadastrado.', 409);
-
-  // Cria o registro na tabela usuarios sem auth_user_id vinculado.
-  // O vínculo com o Supabase Auth é feito manualmente pelo admin via SQL:
-  //   UPDATE usuarios SET auth_user_id = (SELECT id FROM auth.users WHERE email = 'EMAIL')
-  //   WHERE external_id = 'UXXX';
   var res = await sb.from('usuarios').insert({
-    auth_user_id:   null,
+    auth_user_id:   invite.data.user.id,
     login:          dados.login || dados.email,
     nome:           dados.nome,
     email:          dados.email,
@@ -304,7 +299,7 @@ async function _usuariosCriar(sb, dados) {
     situacao_ativo: true,
   }).select().single();
   if (res.error) return _err(res.error.message);
-  return _ok(res.data, 'Usuário criado. Vincule a conta no Supabase Auth e execute o SQL de vínculo para liberar o acesso.');
+  return _ok(res.data, 'Usuário criado. Convite enviado para ' + dados.email);
 }
 
 async function _usuariosAtualizar(sb, dados) {
@@ -353,7 +348,8 @@ async function _alunosListar(sb, dados) {
   if (res.error) return _err(res.error.message);
 
   // Normalizar para formato esperado pelos módulos HTML existentes (PascalCase + campos legados)
-  return _ok(res.data || []);
+  var lista = (res.data || []).map(_normalizarAluno);
+  return _ok({ dados: lista, totalRegistros: lista.length, totalPaginas: 1 });
 }
 
 // Normaliza um registro de aluno do banco (snake_case) para o formato dos módulos HTML (PascalCase)
@@ -409,7 +405,7 @@ async function _alunosBuscar(sb, dados) {
     .order('nome_completo')
     .limit(100);
   if (res.error) return _err(res.error.message);
-  return _ok(res.data || []);
+  return _ok((res.data || []).map(_normalizarAluno));
 }
 
 async function _alunosCriar(sb, dados) {
@@ -496,7 +492,7 @@ async function _salvarSensiveis(sb, alunoId, dados) {
 
 async function _cursosListar(sb, dados) {
   var query = sb.from('cursos')
-    .select('id, external_id, nome, sigla, idade_minima_meses, idade_maxima_meses, ativo, idioma_id, idiomas(nome), curso_avaliacoes(avaliacao_id, ordem, avaliacoes(componente_nota, tipo)), curso_proximos(proximo_id, ordem)')
+    .select('id, external_id, nome, sigla, idade_minima_meses, idade_maxima_meses, ativo, idioma_id, idiomas(id, nome), curso_avaliacoes(avaliacao_id, ordem)')
     .order('sigla');
   if (dados && dados.idioma) {
     query = query.eq('idiomas.nome', dados.idioma);
@@ -588,7 +584,7 @@ async function _semestresAtualizar(sb, dados) {
 
 async function _turmasListar(sb, dados) {
   var query = sb.from('turmas')
-    .select('*, semestres(rotulo), cursos(nome, sigla), usuarios(nome)')
+    .select('*, semestres(rotulo), cursos(nome, sigla, external_id), professor:usuarios!professor_id(id, nome, external_id)')
     .order('external_id');
   if (dados && dados.semestre_id) query = query.eq('semestre_id', dados.semestre_id);
   if (dados && dados.professor_id) query = query.eq('professor_id', dados.professor_id);
@@ -620,12 +616,12 @@ async function _turmasAtualizar(sb, dados) {
 
 async function _matriculasListar(sb, dados) {
   var query = sb.from('matriculas')
-    .select('*, alunos(nome_completo, nome_social, pcd), turmas(external_id, estagio, cursos(sigla))')
+    .select('*, alunos(external_id, nome_completo, nome_social, pcd), turmas(id, external_id, estagio, curso_id, cursos(sigla))')
     .order('data_matricula', { ascending: false, nullsFirst: false });
-  if (dados && dados.turma_id)   query = query.eq('turma_id', dados.turma_id);
-  if (dados && dados.aluno_id)   query = query.eq('aluno_id', dados.aluno_id);
+  if (dados && dados.turma_id)    query = query.eq('turma_id', dados.turma_id);
+  if (dados && dados.aluno_id)    query = query.eq('aluno_id', dados.aluno_id);
   if (dados && dados.semestre_id) query = query.eq('semestre_id', dados.semestre_id);
-  if (dados && dados.situacao)   query = query.eq('situacao', dados.situacao);
+  if (dados && dados.situacao)    query = query.eq('situacao', dados.situacao);
   var res = await query;
   if (res.error) return _err(res.error.message);
   return _ok(res.data);
@@ -778,7 +774,7 @@ async function _notasSalvar(sb, dados) {
 
 async function _ocorrenciasListar(sb, dados) {
   var query = sb.from('ocorrencias')
-    .select('*, alunos(nome_completo, nome_social), usuarios!criado_por_id(nome), ocorrencia_destinatarios(usuario_id), ocorrencia_respostas(id, texto, criado_em, usuarios(nome))')
+    .select('*, alunos(nome_completo, nome_social), usuarios!criado_por_id(nome), ocorrencia_destinatarios(usuario_id), ocorrencia_respostas(id, texto, criado_em, autor:usuarios!autor_id(nome))')
     .order('criado_em', { ascending: false });
   if (dados && dados.aluno_id)     query = query.eq('aluno_id', dados.aluno_id);
   if (dados && dados.status)       query = query.eq('status', dados.status);
@@ -898,7 +894,7 @@ async function _relatoriosFrequencia(sb, dados) {
 async function _ocorrenciasListarRespostas(sb, dados) {
   if (!dados.ocorrenciaId) return _err('ocorrenciaId é obrigatório.', 400);
   var res = await sb.from('ocorrencia_respostas')
-    .select('*, usuarios(nome)')
+    .select('*, autor:usuarios!autor_id(nome)')
     .eq('ocorrencia_id', dados.ocorrenciaId)
     .order('criado_em');
   if (res.error) return _err(res.error.message);
@@ -919,7 +915,7 @@ async function _ocorrenciasProfessoresDasTurmas(sb, dados) {
   var semAtual = await sb.from('semestres').select('id').eq('semestre_atual', true).single();
   if (semAtual.error || !semAtual.data) return _ok([]);
   var mats = await sb.from('matriculas')
-    .select('turma_id, turmas(professor_id, estagio, curso_id, cursos(sigla), usuarios(id, nome))')
+    .select('turma_id, turmas(professor_id, estagio, curso_id, cursos(sigla), professor:usuarios!professor_id(id, nome))')
     .eq('aluno_id', dados.alunoId)
     .eq('semestre_id', semAtual.data.id)
     .eq('situacao', 'ATIVA');
@@ -928,11 +924,11 @@ async function _ocorrenciasProfessoresDasTurmas(sb, dados) {
   var vistos = {};
   (mats.data || []).forEach(function(m) {
     var t = m.turmas;
-    if (!t || !t.usuarios) return;
-    var uid = t.usuarios.id;
+    if (!t || !t.professor) return;
+    var uid = t.professor.id;
     if (vistos[uid]) return;
     vistos[uid] = true;
-    profs.push({ UsuarioID: uid, Nome: t.usuarios.nome, Turma: m.turma_id, Estagio: t.estagio, CursoID: t.curso_id });
+    profs.push({ UsuarioID: uid, Nome: t.professor.nome, Turma: m.turma_id, Estagio: t.estagio, CursoID: t.curso_id });
   });
   return _ok(profs);
 }
@@ -942,7 +938,7 @@ async function _ocorrenciasTurmasAtivasDoAluno(sb, dados) {
   var semAtual = await sb.from('semestres').select('id').eq('semestre_atual', true).single();
   if (semAtual.error || !semAtual.data) return _ok([]);
   var mats = await sb.from('matriculas')
-    .select('turma_id, turmas(id, external_id, estagio, curso_id, professor_id, cursos(sigla), usuarios(nome))')
+    .select('turma_id, turmas(id, external_id, estagio, curso_id, professor_id, cursos(sigla), professor:usuarios!professor_id(nome))')
     .eq('aluno_id', dados.alunoId)
     .eq('semestre_id', semAtual.data.id)
     .eq('situacao', 'ATIVA');
@@ -954,7 +950,7 @@ async function _ocorrenciasTurmasAtivasDoAluno(sb, dados) {
       TurmaID:       t.external_id || t.id,
       id:            t.id,
       ProfessorID:   t.professor_id,
-      ProfessorNome: t.usuarios ? t.usuarios.nome : '',
+      ProfessorNome: t.professor ? t.professor.nome : '',
       Estagio:       t.estagio,
       CursoID:       t.curso_id,
     };
