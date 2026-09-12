@@ -665,13 +665,13 @@
 <script>
 (function(){
   'use strict';
-  var S={cursos:[],avaliacoes:[],busca:'',buscaAv:'',papel:'',podeEditar:false,modoCurso:'novo',modoAv:'novo',cursoSel:null,avSel:null};
+  var S={cursos:[],avaliacoes:[],idiomas:[],busca:'',buscaAv:'',papel:'',podeEditar:false,modoCurso:'novo',modoAv:'novo',cursoSel:null,avSel:null};
   function postApi(a,d){return window.postApi(a,d);}
   function el(id){return document.getElementById(id);}
   function val(id){return el(id)?el(id).value.trim():'';}
 
   function normC(c){
-    var idioma=(c.idiomas&&c.idiomas.nome)||'';
+    var idioma=(c.idiomas&&c.idiomas.nome)||c.idioma||'';
     var avIds=(c.curso_avaliacoes||[]).map(function(ca){return ca.avaliacao_id;});
     return{id:c.id,CursoID:c.external_id||c.id,Nome:c.nome||'',Sigla:c.sigla||'',Idioma:idioma,idioma_id:c.idioma_id,IdadeMin:c.idade_minima_meses||'',IdadeMax:c.idade_maxima_meses||'',AvaliacaoIDs:avIds,Ativo:c.ativo!==false};
   }
@@ -680,7 +680,9 @@
   function init(){
     var u=(typeof App!=='undefined'&&App.usuario)?App.usuario:null;
     if(u){S.papel=u.papel||u.Papel||'';S.podeEditar=['admin','coordenacao'].indexOf(S.papel)!==-1;}
-    carregarCursos(); carregarAvaliacoes(); carregarIdiomas();
+    carregarIdiomas();
+    carregarCursos();
+    carregarAvaliacoes();
     registrarEventos();
     if(!S.podeEditar){
       ['btn-novo-curso','btn-nova-av'].forEach(function(id){if(el(id))el(id).style.display='none';});
@@ -688,22 +690,33 @@
   }
 
   function carregarIdiomas(){
-    postApi('avaliacoes.listar',{}).then(function(){});// no-op, idiomas vêm dos cursos
-    // Popular select de idiomas com valores fixos + banco
-    var idiomas=['Alemão','Espanhol','Francês','Inglês','Português'];
-    ['fc-idioma'].forEach(function(selId){
-      var sel=el(selId);if(!sel)return;
-      sel.innerHTML='<option value="">Selecione…</option>';
-      idiomas.forEach(function(i){var opt=document.createElement('option');opt.value=i;opt.textContent=i;sel.appendChild(opt);});
+    // Busca idiomas da tabela via cursos (o join já traz idiomas.nome)
+    // Também popula o select do modal com valores fixos compatíveis com o banco
+    postApi('avaliacoes.listar',{}).then(function(){});
+  }
+
+  function popularSelectIdioma(selId, valorAtual){
+    var sel=el(selId); if(!sel) return;
+    sel.innerHTML='<option value="">Selecione…</option>';
+    // Idiomas extraídos dos cursos já carregados + lista padrão
+    var vistos={};
+    S.cursos.forEach(function(c){ if(c.Idioma&&!vistos[c.Idioma]){vistos[c.Idioma]=true;} });
+    ['English','Espanhol','Francês','Alemão','Português'].forEach(function(i){vistos[i]=true;});
+    Object.keys(vistos).sort().forEach(function(nome){
+      var opt=document.createElement('option');
+      opt.value=nome; opt.textContent=nome;
+      if(valorAtual&&nome===valorAtual) opt.selected=true;
+      sel.appendChild(opt);
     });
   }
 
   function carregarCursos(){
-    var tbody=el('f9-cursos-tbody');if(tbody)tbody.innerHTML='<tr><td colspan="5" style="text-align:center;padding:16px;"><div class="f9-spinner"></div></td></tr>';
+    if(el('cursos-estado')){el('cursos-estado').style.display='block';el('cursos-estado').innerHTML='<div class="f9-spinner"></div><p>Carregando cursos…</p>';}
+    if(el('cursos-tabela'))el('cursos-tabela').style.display='none';
     postApi('cursos.listar',{}).then(function(res){
       S.cursos=(res.sucesso&&res.dados)?res.dados.map(normC):[];
       renderizarCursos();
-    });
+    }).catch(function(){if(el('cursos-estado'))el('cursos-estado').innerHTML='<span class="material-icons-round">error_outline</span><p>Erro ao carregar cursos.</p>';});
   }
 
   function renderizarCursos(){
@@ -712,31 +725,38 @@
       var b=S.busca.toLowerCase();
       return (c.Nome||'').toLowerCase().indexOf(b)!==-1||(c.Sigla||'').toLowerCase().indexOf(b)!==-1||(c.Idioma||'').toLowerCase().indexOf(b)!==-1;
     });
-    var tbody=el('f9-cursos-tbody');if(!tbody)return;
+    var tbody=el('cursos-tbody');if(!tbody)return;
     tbody.innerHTML='';
-    if(!lista.length){tbody.innerHTML='<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--c-text-3);">Nenhum curso encontrado.</td></tr>';return;}
+    if(!lista.length){
+      if(el('cursos-tabela'))el('cursos-tabela').style.display='none';
+      if(el('cursos-estado')){el('cursos-estado').style.display='block';el('cursos-estado').innerHTML='<span class="material-icons-round">auto_stories</span><p>Nenhum curso encontrado.</p>';}
+      return;
+    }
+    if(el('cursos-estado'))el('cursos-estado').style.display='none';
+    if(el('cursos-tabela'))el('cursos-tabela').style.display='table';
     lista.forEach(function(c){
-      var idiomaClass={'alemão':'alemao','espanhol':'espanhol','francês':'frances','inglês':'ingles','português':'portugues'}[(c.Idioma||'').toLowerCase()]||'outro';
+      var idiomaClass={'alemão':'alemao','espanhol':'espanhol','francês':'frances','inglês':'english','english':'english','português':'portugues'}[(c.Idioma||'').toLowerCase()]||'outro';
       var tr=document.createElement('tr');
       tr.innerHTML=
         '<td><span class="badge-idioma '+idiomaClass+'">'+(c.Idioma||'—')+'</span></td>'+
         '<td class="f9-nome-cel">'+(c.Nome||'—')+'</td>'+
         '<td><code style="font-size:12px;background:#F5F4F0;padding:2px 7px;border-radius:4px;">'+(c.Sigla||'—')+'</code></td>'+
         '<td>'+(c.AvaliacaoIDs.length||'—')+'</td>'+
-        '<td class="f9-acoes">'+
-          (S.podeEditar?'<button class="btn-linha" data-id="'+c.id+'" data-acao="editar-curso"><span class="material-icons-round">edit</span>Editar</button>':'')+
+        '<td class="f9-acoes-cel">'+
+          (S.podeEditar?'<button class="btn-linha" data-id="'+c.id+'"><span class="material-icons-round">edit</span>Editar</button>':'')+
         '</td>';
-      tr.querySelector('button[data-id]')&&tr.querySelector('button[data-id]').addEventListener('click',function(){abrirModalCurso('editar',c);});
+      if(S.podeEditar){var btn=tr.querySelector('button[data-id]');if(btn)btn.addEventListener('click',function(){abrirModalCurso('editar',c);});}
       tbody.appendChild(tr);
     });
   }
 
   function carregarAvaliacoes(){
-    var tbody=el('f9-av-tbody');if(tbody)tbody.innerHTML='<tr><td colspan="5" style="text-align:center;padding:16px;"><div class="f9-spinner"></div></td></tr>';
+    if(el('av-estado')){el('av-estado').style.display='block';el('av-estado').innerHTML='<div class="f9-spinner"></div><p>Carregando avaliações…</p>';}
+    if(el('av-tabela'))el('av-tabela').style.display='none';
     postApi('avaliacoes.listar',{}).then(function(res){
       S.avaliacoes=(res.sucesso&&res.dados)?res.dados.map(normAv):[];
       renderizarAvaliacoes();
-    });
+    }).catch(function(){if(el('av-estado'))el('av-estado').innerHTML='<span class="material-icons-round">error_outline</span><p>Erro ao carregar avaliações.</p>';});
   }
 
   function renderizarAvaliacoes(){
@@ -745,9 +765,15 @@
       var b=S.buscaAv.toLowerCase();
       return (a.ComponenteNota||'').toLowerCase().indexOf(b)!==-1||(a.AvaliacaoID||'').toLowerCase().indexOf(b)!==-1;
     });
-    var tbody=el('f9-av-tbody');if(!tbody)return;
+    var tbody=el('av-tbody');if(!tbody)return;
     tbody.innerHTML='';
-    if(!lista.length){tbody.innerHTML='<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--c-text-3);">Nenhuma avaliação.</td></tr>';return;}
+    if(!lista.length){
+      if(el('av-tabela'))el('av-tabela').style.display='none';
+      if(el('av-estado')){el('av-estado').style.display='block';el('av-estado').innerHTML='<span class="material-icons-round">assessment</span><p>Nenhuma avaliação encontrada.</p>';}
+      return;
+    }
+    if(el('av-estado'))el('av-estado').style.display='none';
+    if(el('av-tabela'))el('av-tabela').style.display='table';
     lista.forEach(function(a){
       var tr=document.createElement('tr');
       tr.innerHTML=
@@ -756,78 +782,122 @@
         '<td>'+(a.Tipo||'—')+'</td>'+
         '<td>'+a.QntNotas+'</td>'+
         '<td>'+(a.NotaAprovacao||'—')+'</td>'+
-        '<td class="f9-acoes">'+
-          (S.podeEditar?'<button class="btn-linha" data-id="'+a.id+'" data-acao="editar-av"><span class="material-icons-round">edit</span>Editar</button>':'')+
+        '<td>'+(a.NotaMin!==undefined?a.NotaMin:'—')+'</td>'+
+        '<td>'+(a.Obrigatoria?'Sim':'Não')+'</td>'+
+        '<td class="f9-acoes-cel">'+
+          (S.podeEditar?'<button class="btn-linha" data-id="'+a.id+'"><span class="material-icons-round">edit</span>Editar</button>':'')+
         '</td>';
-      tr.querySelector('button[data-id]')&&tr.querySelector('button[data-id]').addEventListener('click',function(){abrirModalAv('editar',a);});
+      if(S.podeEditar){var btn=tr.querySelector('button[data-id]');if(btn)btn.addEventListener('click',function(){abrirModalAv('editar',a);});}
       tbody.appendChild(tr);
     });
   }
 
   function abrirModalCurso(modo,c){
     S.modoCurso=modo;S.cursoSel=c||null;
-    if(el('fc-modal-titulo'))el('fc-modal-titulo').textContent=modo==='novo'?'Novo curso':'Editar curso';
+    if(el('modal-curso-titulo'))el('modal-curso-titulo').textContent=modo==='novo'?'Novo curso':'Editar curso';
     if(el('fc-nome'))  el('fc-nome').value  =c?(c.Nome||''):'';
     if(el('fc-sigla')) el('fc-sigla').value =c?(c.Sigla||''):'';
-    if(el('fc-idioma'))el('fc-idioma').value=c?(c.Idioma||''):'';
     if(el('fc-id'))    el('fc-id').value    =c?(c.CursoID||''):'';
-    if(el('fc-overlay'))el('fc-overlay').style.display='flex';
+    if(el('modal-curso-alerta'))el('modal-curso-alerta').className='f9-modal-alerta';
+    popularSelectIdioma('fc-idioma',c?c.Idioma:'');
+    if(el('modal-curso-overlay'))el('modal-curso-overlay').style.display='flex';
   }
 
   function salvarCurso(){
-    var nome=val('fc-nome'),sigla=val('fc-sigla'),idioma=el('fc-idioma')?el('fc-idioma').value:'';
-    if(!nome||!sigla||!idioma){if(typeof toast==='function')toast('Nome, sigla e idioma são obrigatórios.','error');return;}
-    // Buscar idioma_id
-    postApi('avaliacoes.listar',{}).then(function(){
-      // Simplificado: usar nome do idioma, o backend faz o lookup
-      var dados={nome:nome,sigla:sigla.toUpperCase(),idioma_id:null};
-      // TODO: buscar idioma_id da tabela idiomas pelo nome
-      var acao=S.modoCurso==='novo'?'cursos.criar':'cursos.atualizar';
-      if(S.modoCurso==='editar')dados.id=S.cursoSel.id;
-      postApi(acao,dados).then(function(res){
-        if(!res.sucesso){if(typeof toast==='function')toast(res.mensagem||'Erro.','error');return;}
-        if(typeof toast==='function')toast(S.modoCurso==='novo'?'Curso criado.':'Curso atualizado.','success');
-        if(el('fc-overlay'))el('fc-overlay').style.display='none';
-        carregarCursos();
-      });
+    var nome=val('fc-nome'),sigla=val('fc-sigla'),idiomaNome=el('fc-idioma')?el('fc-idioma').value:'';
+    if(!nome||!sigla||!idiomaNome){
+      if(el('modal-curso-alerta')){el('modal-curso-alerta').className='f9-modal-alerta show erro';el('modal-curso-alerta').querySelector('span:last-child').textContent='Nome, sigla e idioma são obrigatórios.';}
+      return;
+    }
+    // Buscar idioma_id a partir do nome do idioma
+    // A tabela idiomas tem nome e id; cursos já carregados têm idioma_id
+    var idioma_id=null;
+    var cursoComIdioma=S.cursos.find(function(c){return c.Idioma===idiomaNome;});
+    if(cursoComIdioma) idioma_id=cursoComIdioma.idioma_id;
+
+    var dados={nome:nome,sigla:sigla.toUpperCase(),idioma_id:idioma_id};
+    var acao=S.modoCurso==='novo'?'cursos.criar':'cursos.atualizar';
+    if(S.modoCurso==='editar') dados.id=S.cursoSel.id;
+    if(el('btn-salvar-curso')){el('btn-salvar-curso').disabled=true;el('btn-salvar-curso').classList.add('loading');}
+    postApi(acao,dados).then(function(res){
+      if(el('btn-salvar-curso')){el('btn-salvar-curso').disabled=false;el('btn-salvar-curso').classList.remove('loading');}
+      if(!res.sucesso){
+        if(el('modal-curso-alerta')){el('modal-curso-alerta').className='f9-modal-alerta show erro';el('modal-curso-alerta').querySelector('span:last-child').textContent=res.mensagem||'Erro ao salvar.';}
+        return;
+      }
+      if(typeof toast==='function')toast(S.modoCurso==='novo'?'Curso criado.':'Curso atualizado.','success');
+      if(el('modal-curso-overlay'))el('modal-curso-overlay').style.display='none';
+      carregarCursos();
+    }).catch(function(){
+      if(el('btn-salvar-curso')){el('btn-salvar-curso').disabled=false;el('btn-salvar-curso').classList.remove('loading');}
+      if(typeof toast==='function')toast('Erro de comunicação.','error');
     });
   }
 
   function abrirModalAv(modo,a){
     S.modoAv=modo;S.avSel=a||null;
-    if(el('fa-modal-titulo'))el('fa-modal-titulo').textContent=modo==='novo'?'Nova avaliação':'Editar avaliação';
-    if(el('fa-comp'))  el('fa-comp').value  =a?(a.ComponenteNota||''):'';
-    if(el('fa-tipo'))  el('fa-tipo').value  =a?(a.Tipo||'Nota bruta'):'Nota bruta';
-    if(el('fa-qtd'))   el('fa-qtd').value   =a?(a.QntNotas||1):1;
-    if(el('fa-aprov')) el('fa-aprov').value =a?(a.NotaAprovacao||70):70;
-    if(el('fa-overlay'))el('fa-overlay').style.display='flex';
+    if(el('modal-av-titulo'))el('modal-av-titulo').textContent=modo==='novo'?'Nova avaliação':'Editar avaliação';
+    if(el('fa-componente'))el('fa-componente').value=a?(a.ComponenteNota||''):'';
+    if(el('fa-tipo'))      el('fa-tipo').value      =a?(a.Tipo||'Nota bruta'):'Nota bruta';
+    if(el('fa-qnt'))       el('fa-qnt').value       =a?(a.QntNotas||1):1;
+    if(el('fa-aprovacao')) el('fa-aprovacao').value =a?(a.NotaAprovacao||70):70;
+    if(el('fa-obrigatoria'))el('fa-obrigatoria').checked=a?!!a.Obrigatoria:true;
+    if(el('modal-av-alerta'))el('modal-av-alerta').className='f9-modal-alerta';
+    if(el('modal-av-overlay'))el('modal-av-overlay').style.display='flex';
   }
 
   function salvarAv(){
-    var comp=val('fa-comp'),tipo=el('fa-tipo')?el('fa-tipo').value:'',qtd=parseInt(val('fa-qtd'))||1,aprov=parseFloat(val('fa-aprov'))||70;
-    if(!comp||!tipo){if(typeof toast==='function')toast('Componente e tipo são obrigatórios.','error');return;}
-    var dados={componente_nota:comp,tipo:tipo,quantidade_notas:qtd,nota_minima:0,nota_maxima:100,nota_aprovacao:aprov,nota_obrigatoria:true};
+    var comp=val('fa-componente'),tipo=el('fa-tipo')?el('fa-tipo').value:'';
+    var qtd=parseInt(val('fa-qnt'))||1,aprov=parseFloat(val('fa-aprovacao'))||70;
+    var obrig=el('fa-obrigatoria')?el('fa-obrigatoria').checked:true;
+    if(!comp||!tipo){
+      if(el('modal-av-alerta')){el('modal-av-alerta').className='f9-modal-alerta show erro';el('modal-av-alerta').querySelector('span:last-child').textContent='Componente e tipo são obrigatórios.';}
+      return;
+    }
+    var dados={componente_nota:comp,tipo:tipo,quantidade_notas:qtd,nota_minima:0,nota_maxima:100,nota_aprovacao:aprov,nota_obrigatoria:obrig};
     var acao=S.modoAv==='novo'?'avaliacoes.criar':'avaliacoes.atualizar';
-    if(S.modoAv==='editar')dados.id=S.avSel.id;
+    if(S.modoAv==='editar') dados.id=S.avSel.id;
+    if(el('btn-salvar-av')){el('btn-salvar-av').disabled=true;el('btn-salvar-av').classList.add('loading');}
     postApi(acao,dados).then(function(res){
-      if(!res.sucesso){if(typeof toast==='function')toast(res.mensagem||'Erro.','error');return;}
+      if(el('btn-salvar-av')){el('btn-salvar-av').disabled=false;el('btn-salvar-av').classList.remove('loading');}
+      if(!res.sucesso){
+        if(el('modal-av-alerta')){el('modal-av-alerta').className='f9-modal-alerta show erro';el('modal-av-alerta').querySelector('span:last-child').textContent=res.mensagem||'Erro ao salvar.';}
+        return;
+      }
       if(typeof toast==='function')toast(S.modoAv==='novo'?'Avaliação criada.':'Avaliação atualizada.','success');
-      if(el('fa-overlay'))el('fa-overlay').style.display='none';
+      if(el('modal-av-overlay'))el('modal-av-overlay').style.display='none';
       carregarAvaliacoes();
+    }).catch(function(){
+      if(el('btn-salvar-av')){el('btn-salvar-av').disabled=false;el('btn-salvar-av').classList.remove('loading');}
+      if(typeof toast==='function')toast('Erro de comunicação.','error');
     });
   }
 
   function registrarEventos(){
-    el('f9-busca-curso')&&el('f9-busca-curso').addEventListener('input',function(){S.busca=this.value.trim();renderizarCursos();});
-    el('f9-busca-av')&&el('f9-busca-av').addEventListener('input',function(){S.buscaAv=this.value.trim();renderizarAvaliacoes();});
+    // Abas
+    document.querySelectorAll('.f9-aba').forEach(function(btn){
+      btn.addEventListener('click',function(){
+        var aba=this.dataset.aba;
+        document.querySelectorAll('.f9-aba').forEach(function(b){b.classList.toggle('ativa',b.dataset.aba===aba);});
+        document.querySelectorAll('.f9-secao').forEach(function(s){s.classList.toggle('ativa',s.id==='secao-'+aba);});
+      });
+    });
+    // Busca
+    el('cursos-busca')&&el('cursos-busca').addEventListener('input',function(){S.busca=this.value.trim();renderizarCursos();});
+    el('av-busca')&&el('av-busca').addEventListener('input',function(){S.buscaAv=this.value.trim();renderizarAvaliacoes();});
+    // Botões de abertura de modal
     el('btn-novo-curso')&&el('btn-novo-curso').addEventListener('click',function(){abrirModalCurso('novo');});
     el('btn-nova-av')&&el('btn-nova-av').addEventListener('click',function(){abrirModalAv('novo');});
+    // Salvar
     el('btn-salvar-curso')&&el('btn-salvar-curso').addEventListener('click',salvarCurso);
-    el('btn-cancelar-curso')&&el('btn-cancelar-curso').addEventListener('click',function(){if(el('fc-overlay'))el('fc-overlay').style.display='none';});
     el('btn-salvar-av')&&el('btn-salvar-av').addEventListener('click',salvarAv);
-    el('btn-cancelar-av')&&el('btn-cancelar-av').addEventListener('click',function(){if(el('fa-overlay'))el('fa-overlay').style.display='none';});
-    el('fc-overlay')&&el('fc-overlay').addEventListener('click',function(e){if(e.target===this)this.style.display='none';});
-    el('fa-overlay')&&el('fa-overlay').addEventListener('click',function(e){if(e.target===this)this.style.display='none';});
+    // Cancelar / fechar — usando IDs reais do HTML
+    el('btn-cancelar-modal-curso')&&el('btn-cancelar-modal-curso').addEventListener('click',function(){if(el('modal-curso-overlay'))el('modal-curso-overlay').style.display='none';});
+    el('btn-fechar-modal-curso')&&el('btn-fechar-modal-curso').addEventListener('click',function(){if(el('modal-curso-overlay'))el('modal-curso-overlay').style.display='none';});
+    el('btn-cancelar-modal-av')&&el('btn-cancelar-modal-av').addEventListener('click',function(){if(el('modal-av-overlay'))el('modal-av-overlay').style.display='none';});
+    el('btn-fechar-modal-av')&&el('btn-fechar-modal-av').addEventListener('click',function(){if(el('modal-av-overlay'))el('modal-av-overlay').style.display='none';});
+    el('modal-curso-overlay')&&el('modal-curso-overlay').addEventListener('click',function(e){if(e.target===this)this.style.display='none';});
+    el('modal-av-overlay')&&el('modal-av-overlay').addEventListener('click',function(e){if(e.target===this)this.style.display='none';});
   }
 
   if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',init);}else{init();}
