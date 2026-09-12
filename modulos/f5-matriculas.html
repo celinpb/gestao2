@@ -414,21 +414,29 @@
       tr.querySelector('button[data-id]')&&tr.querySelector('button[data-id]').addEventListener('click',function(){
         state.matriculaParaSit=m;
         if(el('m5-sit-aluno'))el('m5-sit-aluno').textContent='Aluno: '+(m.NomeExibicao||m.AlunoID);
-        if(el('m5-modal-sit-overlay'))el('m5-modal-sit-overlay').style.display='flex';
+        if(el('m5-motivo-wrap'))el('m5-motivo-wrap').style.display='none';
+        if(el('m5-sit-opcoes'))el('m5-sit-opcoes').style.display='';
+        if(el('m5-modal-sit'))el('m5-modal-sit').style.display='flex'; // ID real
       });
       tbody.appendChild(tr);
     });
   }
 
-  function salvarSituacao(){
+  function confirmarSituacao(novaSit){
     if(!state.matriculaParaSit)return;
-    var sit=el('m5-nova-sit')?el('m5-nova-sit').value:'';
-    var motivo=val('m5-motivo');
-    if(!sit)return;
+    if(novaSit==='CANCELADA'){
+      if(el('m5-sit-opcoes'))el('m5-sit-opcoes').style.display='none';
+      if(el('m5-motivo-wrap'))el('m5-motivo-wrap').style.display='block';
+      return;
+    }
+    executarSituacao(novaSit,'');
+  }
+
+  function executarSituacao(sit,motivo){
     postApi('matriculas.atualizarSituacao',{id:state.matriculaParaSit.id,situacao:sit,motivo_cancelamento:motivo}).then(function(res){
       if(!res.sucesso){if(typeof toast==='function')toast(res.mensagem||'Erro.','error');return;}
       if(typeof toast==='function')toast('Situação atualizada.','success');
-      if(el('m5-modal-sit-overlay'))el('m5-modal-sit-overlay').style.display='none';
+      if(el('m5-modal-sit'))el('m5-modal-sit').style.display='none'; // ID real: m5-modal-sit
       carregarMatriculas();
     });
   }
@@ -440,16 +448,18 @@
     if(!termo||termo.length<2)return;
     postApi('alunos.buscar',{termo:termo}).then(function(res){
       var lista=(res.sucesso&&res.dados)?res.dados:[];
-      var sug=el('m5-sug');if(!sug)return;
-      sug.innerHTML='';sug.style.display=lista.length?'block':'none';
+      var sug=el('m5-nova-aluno-dropdown');if(!sug)return; // ID real
+      sug.innerHTML='';sug.classList.toggle('show',!!lista.length);
       lista.slice(0,8).forEach(function(a){
         var ne=(a.nome_social||a.nome_completo||'');
-        var div=document.createElement('div');div.className='m5-sug-item';
-        div.innerHTML='<span class="m5-sug-nome">'+ne+'</span><span class="m5-sug-id">'+(a.external_id||a.id)+'</span>';
+        var div=document.createElement('div');div.className='m5-aluno-item';
+        div.innerHTML='<span class="m5-ai-nome">'+ne+'</span><span class="m5-ai-id">'+(a.external_id||a.id)+'</span>';
         div.addEventListener('click',function(){
           state.novaAlunoSel={id:a.id,AlunoID:a.external_id||a.id,NomeExibicao:ne};
-          if(el('m5-busca-aluno'))el('m5-busca-aluno').value=ne;
-          sug.style.display='none';
+          if(el('m5-nova-aluno-busca'))el('m5-nova-aluno-busca').value=''; // ID real
+          if(el('m5-nova-aluno-selecionado-txt'))el('m5-nova-aluno-selecionado-txt').textContent=ne+' ('+state.novaAlunoSel.AlunoID+')';
+          if(el('m5-nova-aluno-selecionado'))el('m5-nova-aluno-selecionado').classList.add('show');
+          sug.classList.remove('show');
         });
         sug.appendChild(div);
       });
@@ -458,14 +468,16 @@
 
   function salvarNovaMatricula(){
     if(!state.novaAlunoSel){if(typeof toast==='function')toast('Selecione um aluno.','error');return;}
-    var turmaId=el('m5-sel-turma')?el('m5-sel-turma').value:'';
+    var turmaId=el('m5-nova-turma')?el('m5-nova-turma').value:''; // ID real
     if(!turmaId){if(typeof toast==='function')toast('Selecione uma turma.','error');return;}
+    var btn=el('btn-m5-nova-salvar');if(btn){btn.disabled=true;btn.classList.add('loading');}
     postApi('semestres.getAtual',{}).then(function(res){
       var semId=(res.sucesso&&res.dados)?res.dados.id:'';
       postApi('matriculas.criar',{aluno_id:state.novaAlunoSel.id,turma_id:turmaId,semestre_id:semId}).then(function(res2){
+        if(btn){btn.disabled=false;btn.classList.remove('loading');}
         if(!res2.sucesso){if(typeof toast==='function')toast(res2.mensagem||'Erro.','error');return;}
         if(typeof toast==='function')toast('Matrícula realizada.','success');
-        if(el('m5-nova-overlay'))el('m5-nova-overlay').style.display='none';
+        if(el('m5-modal-nova'))el('m5-modal-nova').style.display='none'; // ID real
         state.novaAlunoSel=null;
         carregarMatriculas();
       });
@@ -474,10 +486,12 @@
 
   function abrirNovaMatricula(){
     state.novaAlunoSel=null;
-    if(el('m5-busca-aluno'))el('m5-busca-aluno').value='';
-    if(el('m5-sug'))el('m5-sug').innerHTML='';
-    // popular select de turmas
-    var sel=el('m5-sel-turma');
+    if(el('m5-nova-aluno-busca'))el('m5-nova-aluno-busca').value='';
+    if(el('m5-nova-aluno-dropdown'))el('m5-nova-aluno-dropdown').innerHTML='';
+    if(el('m5-nova-aluno-selecionado'))el('m5-nova-aluno-selecionado').classList.remove('show');
+    if(el('m5-nova-alerta'))el('m5-nova-alerta').className='m5-nova-alerta erro';
+    // Popular select de turmas — ID real: m5-nova-turma
+    var sel=el('m5-nova-turma');
     if(sel){
       sel.innerHTML='<option value="">Selecione a turma…</option>';
       state.turmas.forEach(function(t){
@@ -486,19 +500,60 @@
         sel.appendChild(opt);
       });
     }
-    if(el('m5-nova-overlay'))el('m5-nova-overlay').style.display='flex';
+    if(el('m5-modal-nova'))el('m5-modal-nova').style.display='flex'; // ID real
   }
 
   function registrarEventos(){
     el('m5-busca')&&el('m5-busca').addEventListener('input',function(){state.busca=this.value.trim();renderizar();});
     el('m5-filtro-turma')&&el('m5-filtro-turma').addEventListener('change',function(){state.filtroTurma=this.value;carregarMatriculas();});
     el('m5-filtro-sit')&&el('m5-filtro-sit').addEventListener('change',function(){state.filtroSit=this.value;carregarMatriculas();});
-    el('btn-nova-matricula')&&el('btn-nova-matricula').addEventListener('click',abrirNovaMatricula);
-    el('m5-busca-aluno')&&el('m5-busca-aluno').addEventListener('input',function(){clearTimeout(_buscarTimer);var t=this.value.trim();_buscarTimer=setTimeout(function(){buscarAluno(t);},350);});
-    el('btn-salvar-nova-mat')&&el('btn-salvar-nova-mat').addEventListener('click',salvarNovaMatricula);
-    el('btn-cancelar-nova-mat')&&el('btn-cancelar-nova-mat').addEventListener('click',function(){if(el('m5-nova-overlay'))el('m5-nova-overlay').style.display='none';});
-    el('btn-salvar-sit')&&el('btn-salvar-sit').addEventListener('click',salvarSituacao);
-    el('btn-cancelar-sit')&&el('btn-cancelar-sit').addEventListener('click',function(){if(el('m5-modal-sit-overlay'))el('m5-modal-sit-overlay').style.display='none';});
+    // Botão nova matrícula — ID real: btn-m5-nova-matricula
+    el('btn-m5-nova-matricula')&&el('btn-m5-nova-matricula').addEventListener('click',abrirNovaMatricula);
+    // Busca de aluno no modal — ID real: m5-nova-aluno-busca
+    el('m5-nova-aluno-busca')&&el('m5-nova-aluno-busca').addEventListener('input',function(){
+      clearTimeout(_buscarTimer);var t=this.value.trim();
+      _buscarTimer=setTimeout(function(){buscarAluno(t);},350);
+    });
+    // Limpar aluno selecionado
+    el('m5-nova-aluno-limpar')&&el('m5-nova-aluno-limpar').addEventListener('click',function(){
+      state.novaAlunoSel=null;
+      if(el('m5-nova-aluno-selecionado'))el('m5-nova-aluno-selecionado').classList.remove('show');
+      if(el('m5-nova-aluno-busca'))el('m5-nova-aluno-busca').value='';
+    });
+    // Salvar nova matrícula — ID real: btn-m5-nova-salvar
+    el('btn-m5-nova-salvar')&&el('btn-m5-nova-salvar').addEventListener('click',salvarNovaMatricula);
+    // Cancelar modal nova — ID real: btn-m5-nova-cancelar
+    el('btn-m5-nova-cancelar')&&el('btn-m5-nova-cancelar').addEventListener('click',function(){if(el('m5-modal-nova'))el('m5-modal-nova').style.display='none';});
+    el('m5-modal-nova')&&el('m5-modal-nova').addEventListener('click',function(e){if(e.target===this)this.style.display='none';});
+    // Modal situação — botões data-sit disparam confirmarSituacao
+    document.querySelectorAll('.m5-sit-opcao[data-sit]').forEach(function(btn){
+      btn.addEventListener('click',function(){confirmarSituacao(this.dataset.sit);});
+    });
+    // Voltar do campo motivo
+    el('btn-m5-motivo-voltar')&&el('btn-m5-motivo-voltar').addEventListener('click',function(){
+      if(el('m5-motivo-wrap'))el('m5-motivo-wrap').style.display='none';
+      if(el('m5-sit-opcoes'))el('m5-sit-opcoes').style.display='';
+    });
+    // Confirmar cancelamento
+    el('btn-m5-confirmar-cancelamento')&&el('btn-m5-confirmar-cancelamento').addEventListener('click',function(){
+      var motivo=el('m5-motivo-texto')?el('m5-motivo-texto').value.trim():'';
+      if(!motivo){if(el('m5-motivo-erro'))el('m5-motivo-erro').style.display='block';return;}
+      if(el('m5-motivo-erro'))el('m5-motivo-erro').style.display='none';
+      executarSituacao('CANCELADA',motivo);
+    });
+    // Cancelar modal situação — ID real: btn-cancelar-m5-sit
+    el('btn-cancelar-m5-sit')&&el('btn-cancelar-m5-sit').addEventListener('click',function(){if(el('m5-modal-sit'))el('m5-modal-sit').style.display='none';});
+    el('m5-modal-sit')&&el('m5-modal-sit').addEventListener('click',function(e){if(e.target===this)this.style.display='none';});
+    // Cards de resumo por situação
+    document.querySelectorAll('.m5-resumo-item').forEach(function(item){
+      item.addEventListener('click',function(){
+        document.querySelectorAll('.m5-resumo-item').forEach(function(i){i.classList.remove('sel');});
+        this.classList.add('sel');
+        state.filtroSit=this.dataset.sit||'';
+        if(el('m5-filtro-sit'))el('m5-filtro-sit').value=state.filtroSit;
+        carregarMatriculas();
+      });
+    });
   }
 
   if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',init);}else{init();}
