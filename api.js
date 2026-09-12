@@ -346,10 +346,7 @@ async function _alunosListar(sb, dados) {
   if (dados && dados.somenteAtivos) query = query.eq('situacao_ativo', true);
   var res = await query;
   if (res.error) return _err(res.error.message);
-
-  // Normalizar para formato esperado pelos módulos HTML existentes (PascalCase + campos legados)
-  var lista = (res.data || []).map(_normalizarAluno);
-  return _ok({ dados: lista, totalRegistros: lista.length, totalPaginas: 1 });
+  return _ok(res.data || []);
 }
 
 // Normaliza um registro de aluno do banco (snake_case) para o formato dos módulos HTML (PascalCase)
@@ -405,7 +402,7 @@ async function _alunosBuscar(sb, dados) {
     .order('nome_completo')
     .limit(100);
   if (res.error) return _err(res.error.message);
-  return _ok((res.data || []).map(_normalizarAluno));
+  return _ok(res.data || []);
 }
 
 async function _alunosCriar(sb, dados) {
