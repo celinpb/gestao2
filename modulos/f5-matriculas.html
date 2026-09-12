@@ -374,13 +374,28 @@
   }
 
   function carregarMatriculas(){
-    var tbody=el('m5-tbody');if(tbody)tbody.innerHTML='<tr><td colspan="5" style="text-align:center;padding:20px;"><div class="m5-spinner"></div></td></tr>';
+    if(el('m5-estado')){el('m5-estado').style.display='block';el('m5-estado').innerHTML='<div class="m5-spinner"></div><p>Carregando matrículas…</p>';}
+    if(el('m5-tabela'))el('m5-tabela').style.display='none';
+    if(el('m5-paginacao'))el('m5-paginacao').style.display='none';
     var filtros={};
     if(state.filtroTurma) filtros.turma_id=state.filtroTurma;
     if(state.filtroSit)   filtros.situacao=state.filtroSit;
     postApi('matriculas.listar',filtros).then(function(res){
       state.matriculas=(res.sucesso&&res.dados)?res.dados.map(normM):[];
+      // Atualizar contadores do resumo
+      var todos=state.matriculas.length;
+      var ativas=state.matriculas.filter(function(m){return m.SituacaoMatricula==='ATIVA';}).length;
+      var trancadas=state.matriculas.filter(function(m){return m.SituacaoMatricula==='TRANCADA';}).length;
+      var concluidas=state.matriculas.filter(function(m){return m.SituacaoMatricula==='CONCLUIDA';}).length;
+      var canceladas=state.matriculas.filter(function(m){return m.SituacaoMatricula==='CANCELADA';}).length;
+      if(el('cnt-todas'))el('cnt-todas').textContent=todos;
+      if(el('cnt-ativas'))el('cnt-ativas').textContent=ativas;
+      if(el('cnt-trancadas'))el('cnt-trancadas').textContent=trancadas;
+      if(el('cnt-concluidas'))el('cnt-concluidas').textContent=concluidas;
+      if(el('cnt-canceladas'))el('cnt-canceladas').textContent=canceladas;
       renderizar();
+    }).catch(function(){
+      if(el('m5-estado')){el('m5-estado').style.display='block';el('m5-estado').innerHTML='<span class="material-icons-round">error_outline</span><p>Erro ao carregar matrículas.</p>';}
     });
   }
 
@@ -399,6 +414,16 @@
     var lista=filtradas();
     var tbody=el('m5-tbody');if(!tbody)return;
     tbody.innerHTML='';
+    if(!lista.length){
+      if(el('m5-tabela'))el('m5-tabela').style.display='none';
+      if(el('m5-paginacao'))el('m5-paginacao').style.display='none';
+      if(el('m5-estado')){el('m5-estado').style.display='block';el('m5-estado').innerHTML='<span class="material-icons-round">assignment</span><p>Nenhuma matrícula encontrada.</p>';}
+      return;
+    }
+    if(el('m5-estado'))el('m5-estado').style.display='none';
+    if(el('m5-tabela'))el('m5-tabela').style.display='table';
+    if(el('m5-paginacao'))el('m5-paginacao').style.display='flex';
+    if(el('m5-pag-info'))el('m5-pag-info').textContent=lista.length+' matrícula'+(lista.length!==1?'s':'');
     if(!lista.length){tbody.innerHTML='<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--c-text-3);">Nenhuma matrícula encontrada.</td></tr>';return;}
     lista.forEach(function(m){
       var tr=document.createElement('tr');
