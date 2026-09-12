@@ -616,7 +616,7 @@ async function _turmasAtualizar(sb, dados) {
 
 async function _matriculasListar(sb, dados) {
   var query = sb.from('matriculas')
-    .select('*, alunos(external_id, nome_completo, nome_social, pcd), turmas(id, external_id, estagio, curso_id)')
+    .select('*, alunos(external_id, nome_completo, nome_social, pcd), turmas!matriculas_turma_id_fkey(id, external_id, estagio, curso_id)')
     .order('data_matricula', { ascending: false, nullsFirst: false });
   if (dados && dados.turma_id)    query = query.eq('turma_id', dados.turma_id);
   if (dados && dados.aluno_id)    query = query.eq('aluno_id', dados.aluno_id);
@@ -915,7 +915,7 @@ async function _ocorrenciasProfessoresDasTurmas(sb, dados) {
   var semAtual = await sb.from('semestres').select('id').eq('semestre_atual', true).single();
   if (semAtual.error || !semAtual.data) return _ok([]);
   var mats = await sb.from('matriculas')
-    .select('turma_id, turmas(professor_id, estagio, curso_id, cursos(sigla), professor:usuarios!professor_id(id, nome))')
+    .select('turma_id, turmas!matriculas_turma_id_fkey(professor_id, estagio, curso_id, cursos(sigla), professor:usuarios!professor_id(id, nome))')
     .eq('aluno_id', dados.alunoId)
     .eq('semestre_id', semAtual.data.id)
     .eq('situacao', 'ATIVA');
@@ -938,7 +938,7 @@ async function _ocorrenciasTurmasAtivasDoAluno(sb, dados) {
   var semAtual = await sb.from('semestres').select('id').eq('semestre_atual', true).single();
   if (semAtual.error || !semAtual.data) return _ok([]);
   var mats = await sb.from('matriculas')
-    .select('turma_id, turmas(id, external_id, estagio, curso_id, professor_id, cursos(sigla), professor:usuarios!professor_id(nome))')
+    .select('turma_id, turmas!matriculas_turma_id_fkey(id, external_id, estagio, curso_id, professor_id, cursos(sigla), professor:usuarios!professor_id(nome))')
     .eq('aluno_id', dados.alunoId)
     .eq('semestre_id', semAtual.data.id)
     .eq('situacao', 'ATIVA');
