@@ -725,8 +725,9 @@
   // ── PROFESSORES (para selects) ─────────────────────────────────────────
   function carregarProfessores(profIdSel){
     postApi('usuarios.listar',{}).then(function(res){
-      var profs=((res.dados)||[]).filter(function(u){return u.papel==='professor'&&u.situacao_ativo!==false;});
-      ['t5-edit-prof','t5-nova-prof'].forEach(function(selId){
+      var profs=(res.dados||[]).filter(function(u){return u.papel==='professor'&&u.situacao_ativo!==false;});
+      // IDs reais no HTML: et-professor (editar), cr-professor (criar)
+      ['et-professor','cr-professor'].forEach(function(selId){
         var sel=el(selId); if(!sel)return;
         sel.innerHTML='<option value="">Selecione o professor…</option>';
         profs.forEach(function(p){
@@ -742,9 +743,9 @@
   // ── CURSOS (para select de nova turma) ────────────────────────────────
   function carregarCursos(){
     postApi('cursos.listar',{}).then(function(res){
-      var sel=el('t5-nova-curso'); if(!sel)return;
+      var sel=el('cr-curso'); if(!sel)return; // ID real: cr-curso
       sel.innerHTML='<option value="">Selecione o curso…</option>';
-      ((res.dados)||[]).forEach(function(c){
+      (res.dados||[]).forEach(function(c){
         var idioma=(c.idiomas&&c.idiomas.nome)||'';
         var opt=document.createElement('option');
         opt.value=c.id; opt.textContent=(c.nome||c.sigla||'')+(idioma?' ('+idioma+')':'');
@@ -755,11 +756,12 @@
 
   // ── TURMAS ─────────────────────────────────────────────────────────────
   function carregarTurmas(){
-    if(el('t5-estado')) el('t5-estado').innerHTML='<div class="t5-spinner"></div><p>Carregando turmas…</p>';
+    if(el('t5-estado')){el('t5-estado').style.display='block';el('t5-estado').innerHTML='<div class="t5-spinner"></div><p>Carregando turmas…</p>';}
+    if(el('t5-tabela'))el('t5-tabela').style.display='none';
     var filtros={};
     if(S.papel==='professor'&&typeof App!=='undefined'&&App.usuario) filtros.professor_id=App.usuario.id;
     postApi('turmas.listar',filtros).then(function(res){
-      if(!res.sucesso){if(el('t5-estado'))el('t5-estado').innerHTML='<p>Erro ao carregar.</p>';return;}
+      if(!res.sucesso){if(el('t5-estado'))el('t5-estado').innerHTML='<span class="material-icons-round">error_outline</span><p>Erro ao carregar.</p>';return;}
       S.turmas=(res.dados||[]).map(normT);
       renderizarLista();
     });
@@ -780,9 +782,13 @@
     var lista=filtradas();
     var tbody=el('t5-tbody'); if(!tbody)return;
     tbody.innerHTML='';
-    if(!lista.length){if(el('t5-estado'))el('t5-estado').innerHTML='<span class="material-icons-round">class</span><p>Nenhuma turma encontrada.</p>';if(el('t5-tabela-wrap'))el('t5-tabela-wrap').style.display='none';return;}
+    if(!lista.length){
+      if(el('t5-tabela'))el('t5-tabela').style.display='none';
+      if(el('t5-estado')){el('t5-estado').style.display='block';el('t5-estado').innerHTML='<span class="material-icons-round">class</span><p>Nenhuma turma encontrada.</p>';}
+      return;
+    }
     if(el('t5-estado'))el('t5-estado').style.display='none';
-    if(el('t5-tabela-wrap'))el('t5-tabela-wrap').style.display='';
+    if(el('t5-tabela'))el('t5-tabela').style.display='table';
     lista.forEach(function(t){
       var tr=document.createElement('tr');
       if(S.turmaSel&&S.turmaSel.TurmaID===t.TurmaID)tr.classList.add('selecionada');
@@ -793,7 +799,7 @@
         '<td>'+(t.DiaSemana||'—')+'</td>'+
         '<td>'+(t.Horario||'—')+'</td>'+
         '<td>'+(t.VagasTotais||'—')+'</td>'+
-        '<td><span class="badge-sit-turma '+(t.SituacaoTurma||'').toLowerCase()+'">'+(t.SituacaoTurma||'—')+'</span></td>';
+        '<td><span class="badge-sit-turma '+(t.SituacaoTurma||'ativa').toLowerCase()+'">'+(t.SituacaoTurma||'ATIVA')+'</span></td>';
       tr.addEventListener('click',function(){selecionarTurma(t);});
       tbody.appendChild(tr);
     });
@@ -805,160 +811,216 @@
       tr.classList.toggle('selecionada',filtradas()[i]&&filtradas()[i].TurmaID===t.TurmaID);
     });
     if(el('t5-painel'))el('t5-painel').classList.add('aberto');
-    if(el('t5-main'))el('t5-main').classList.add('com-painel');
+    if(el('turmas-main'))el('turmas-main').classList.add('com-painel'); // ID real: turmas-main
     if(el('t5-painel-titulo'))el('t5-painel-titulo').textContent=t.Estagio||t.CursoSigla||'—';
     if(el('t5-painel-sub'))el('t5-painel-sub').textContent=t.TurmaID||'—';
+    // Botões de ação no painel
+    if(el('t5-painel-acoes')){
+      el('t5-painel-acoes').style.display=S.podeEditar?'flex':'none';
+      if(el('btn-encerrar-turma'))el('btn-encerrar-turma').style.display=(S.podeEditar&&t.SituacaoTurma==='ATIVA')?'':'none';
+      if(el('btn-reabrir-turma'))el('btn-reabrir-turma').style.display=(S.podeEditar&&t.SituacaoTurma!=='ATIVA')?'':'none';
+    }
+    // Abas do painel — ativar aba info
+    ativarTabPainel('info');
     preencherInfoTurma(t);
+    preencherLinks(t);
     carregarMatriculas();
   }
 
   function fecharPainel(){
     S.turmaSel=null; S.matriculas=[];
     if(el('t5-painel'))el('t5-painel').classList.remove('aberto');
-    if(el('t5-main'))el('t5-main').classList.remove('com-painel');
+    if(el('turmas-main'))el('turmas-main').classList.remove('com-painel');
+  }
+
+  function ativarTabPainel(tab){
+    document.querySelectorAll('.t5-tab').forEach(function(b){b.classList.toggle('ativa',b.dataset.tab===tab);});
+    document.querySelectorAll('.t5-tab-secao').forEach(function(s){s.classList.toggle('ativa',s.id==='tab-'+tab);});
   }
 
   function preencherInfoTurma(t){
+    // IDs reais: inf-id, inf-curso, inf-estagio, inf-modalidade, inf-situacao, inf-dia, inf-horario, inf-turno, inf-prof, inf-vagas, inf-matriculados
     var campos={
-      'inf-id':t.TurmaID,'inf-curso':t.CursoNome||t.CursoSigla,'inf-prof':t.ProfessorNome,
-      'inf-mod':t.Modalidade,'inf-dias':t.DiaSemana,'inf-hora':t.Horario,'inf-turno':t.Turno,
-      'inf-vagas':t.VagasTotais,'inf-sit':t.SituacaoTurma,
-      'inf-wa':t.GrupoWhatsapp,'inf-meet':t.LinkMeet,'inf-class':t.LinkClassroom,
+      'inf-id':t.TurmaID,'inf-curso':t.CursoNome||t.CursoSigla,
+      'inf-estagio':t.Estagio,'inf-modalidade':t.Modalidade,'inf-situacao':t.SituacaoTurma,
+      'inf-dia':t.DiaSemana,'inf-horario':t.Horario,'inf-turno':t.Turno,
+      'inf-prof':t.ProfessorNome,'inf-vagas':t.VagasTotais,
+      'inf-data-inicio':t.DataInicio||'','inf-data-fim':t.DataFim||'',
     };
     Object.keys(campos).forEach(function(id){if(el(id))el(id).textContent=campos[id]||'—';});
-    var btnEditar=el('btn-editar-turma');
-    if(btnEditar)btnEditar.style.display=S.podeEditar?'':'none';
+  }
+
+  function preencherLinks(t){
+    if(el('link-whatsapp'))el('link-whatsapp').value=t.GrupoWhatsapp||'';
+    if(el('link-meet'))el('link-meet').value=t.LinkMeet||'';
+    if(el('link-classroom'))el('link-classroom').value=t.LinkClassroom||'';
   }
 
   // ── MATRÍCULAS ─────────────────────────────────────────────────────────
   function carregarMatriculas(){
     if(!S.turmaSel)return;
-    var cont=el('t5-matriculas-lista'); if(!cont)return;
-    cont.innerHTML='<div class="t5-spinner"></div>';
+    var cont=el('lista-matriculados'); // ID real: lista-matriculados
+    if(!cont)return;
+    cont.innerHTML='<div class="t5-spinner" style="margin:16px auto;"></div>';
+    if(el('inf-matriculados'))el('inf-matriculados').textContent='…';
     postApi('matriculas.listar',{turma_id:S.turmaSel.id,situacao:'ATIVA'}).then(function(res){
       S.matriculas=(res.sucesso&&res.dados)?res.dados.map(normM):[];
       renderizarMatriculas();
-      atualizarContadores();
+      if(el('inf-matriculados'))el('inf-matriculados').textContent=S.matriculas.length;
     });
   }
 
   function renderizarMatriculas(){
-    var cont=el('t5-matriculas-lista'); if(!cont)return;
-    if(!S.matriculas.length){cont.innerHTML='<p style="padding:12px;color:var(--c-text-3);">Nenhum aluno matriculado.</p>';return;}
+    var cont=el('lista-matriculados'); if(!cont)return;
+    if(!S.matriculas.length){cont.innerHTML='<div class="mat-vazio">Nenhum aluno matriculado.</div>';return;}
     cont.innerHTML='';
     S.matriculas.forEach(function(m){
-      var div=document.createElement('div'); div.className='t5-mat-item';
+      var div=document.createElement('div'); div.className='mat-item';
       div.innerHTML=
-        '<div class="t5-mat-info">'+
-          '<div class="mat-nome">'+(m.NomeExibicao||m.AlunoID||'—')+(m.PcD?'<span class="badge-pcd">PcD</span>':'')+' </div>'+
+        '<div>'+
+          '<div class="mat-nome">'+(m.NomeExibicao||m.AlunoID||'—')+(m.PcD?' <span style="font-size:10px;background:rgba(69,123,157,0.12);color:#185FA5;padding:1px 6px;border-radius:4px;font-weight:600;">PcD</span>':'')+'</div>'+
           '<div class="mat-id">'+(m.MatriculaID||m.id||'—')+'</div>'+
         '</div>'+
-        (S.podeEditar?
-          '<button class="btn-mat-acao" data-id="'+m.id+'" data-mid="'+(m.MatriculaID||m.id)+'">'+
-            '<span class="material-icons-round">more_vert</span>'+
-          '</button>':'');
-      div.querySelector('button[data-id]')&&div.querySelector('button[data-id]').addEventListener('click',function(){
+        '<span class="badge-sit-mat '+(m.SituacaoMatricula||'ATIVA')+'">'+(m.SituacaoMatricula||'ATIVA')+'</span>'+
+        (S.podeEditar?'<button class="btn-mat-acao btn-sit-mat" data-id="'+m.id+'"><span class="material-icons-round">edit</span></button>':'');
+      var btn=div.querySelector('button[data-id]');
+      if(btn)btn.addEventListener('click',function(){
         S.matriculaParaSit=m;
         if(el('modal-sit-aluno'))el('modal-sit-aluno').textContent='Aluno: '+(m.NomeExibicao||m.AlunoID);
-        if(el('modal-situacao-overlay'))el('modal-situacao-overlay').style.display='flex';
+        if(el('t5-motivo-wrap'))el('t5-motivo-wrap').style.display='none';
+        if(el('t5-sit-opcoes'))el('t5-sit-opcoes').style.display='';
+        if(el('modal-sit-overlay'))el('modal-sit-overlay').style.display='flex';
       });
       cont.appendChild(div);
     });
   }
 
-  function atualizarContadores(){
-    var vagas=S.turmaSel?S.turmaSel.VagasTotais:0;
-    var ocupadas=S.matriculas.length;
-    if(el('t5-cnt-mat'))el('t5-cnt-mat').textContent=ocupadas;
-    if(el('t5-cnt-vagas'))el('t5-cnt-vagas').textContent=Math.max(0,vagas-ocupadas);
-  }
-
-  // ── EDITAR TURMA ───────────────────────────────────────────────────────
+  // ── EDITAR TURMA (modal et-*) ───────────────────────────────────────────
   function abrirEditarTurma(){
     if(!S.turmaSel)return;
     var t=S.turmaSel;
     if(el('t5-edit-titulo'))el('t5-edit-titulo').textContent='Editar turma — '+t.TurmaID;
-    if(el('t5-edit-dias'))  el('t5-edit-dias').value  =t.DiaSemana||'';
-    if(el('t5-edit-hora'))  el('t5-edit-hora').value  =t.Horario||'';
-    if(el('t5-edit-turno')) el('t5-edit-turno').value =t.Turno||'';
-    if(el('t5-edit-vagas')) el('t5-edit-vagas').value =t.VagasTotais||20;
-    if(el('t5-edit-wa'))    el('t5-edit-wa').value    =t.GrupoWhatsapp||'';
-    if(el('t5-edit-meet'))  el('t5-edit-meet').value  =t.LinkMeet||'';
-    if(el('t5-edit-class')) el('t5-edit-class').value =t.LinkClassroom||'';
+    // IDs reais: et-modalidade, et-situacao, et-horario, et-vagas, et-turno, et-whatsapp, et-meet, et-classroom, et-professor
+    if(el('et-modalidade'))el('et-modalidade').value=t.Modalidade||'PRESENCIAL';
+    if(el('et-situacao'))  el('et-situacao').value  =(t.SituacaoTurma==='ATIVA')?'true':'false';
+    if(el('et-horario'))   el('et-horario').value   =t.Horario||'';
+    if(el('et-vagas'))     el('et-vagas').value     =t.VagasTotais||20;
+    if(el('et-turno'))     el('et-turno').value     =t.Turno||'';
+    if(el('et-whatsapp'))  el('et-whatsapp').value  =t.GrupoWhatsapp||'';
+    if(el('et-meet'))      el('et-meet').value      =t.LinkMeet||'';
+    if(el('et-classroom')) el('et-classroom').value =t.LinkClassroom||'';
+    // Dias: marcar checkboxes
+    var dias=(t.DiaSemana||'').split(',').map(function(d){return d.trim();});
+    document.querySelectorAll('#et-dias-check input[type=checkbox]').forEach(function(chk){
+      chk.checked=dias.indexOf(chk.value)!==-1;
+    });
+    if(el('t5-edit-alerta'))el('t5-edit-alerta').className='t5-edit-alerta';
     carregarProfessores(t.professor_id);
     if(el('t5-edit-overlay'))el('t5-edit-overlay').style.display='flex';
   }
 
   function salvarEditarTurma(){
     if(!S.turmaSel)return;
+    var diasSel=[];
+    document.querySelectorAll('#et-dias-check input[type=checkbox]:checked').forEach(function(chk){diasSel.push(chk.value);});
     var dados={
-      id:           S.turmaSel.id,
-      dia_semana:   val('t5-edit-dias'),
-      horario:      val('t5-edit-hora'),
-      turno:        val('t5-edit-turno'),
-      vagas_totais: parseInt(val('t5-edit-vagas'))||S.turmaSel.VagasTotais,
-      grupo_whatsapp: val('t5-edit-wa'),
-      link_meet:    val('t5-edit-meet'),
-      link_classroom: val('t5-edit-class'),
+      id:             S.turmaSel.id,
+      modalidade:     el('et-modalidade')?el('et-modalidade').value:'',
+      situacao:       (el('et-situacao')&&el('et-situacao').value==='true')?'ATIVA':'INATIVA',
+      dia_semana:     diasSel.join(','),
+      horario:        val('et-horario'),
+      turno:          el('et-turno')?el('et-turno').value:'',
+      vagas_totais:   parseInt(val('et-vagas'))||S.turmaSel.VagasTotais,
+      grupo_whatsapp: val('et-whatsapp'),
+      link_meet:      val('et-meet'),
+      link_classroom: val('et-classroom'),
     };
-    var profId=el('t5-edit-prof')?el('t5-edit-prof').value:'';
+    var profId=el('et-professor')?el('et-professor').value:'';
     if(profId) dados.professor_id=profId;
+    if(el('btn-salvar-edit')){el('btn-salvar-edit').disabled=true;el('btn-salvar-edit').classList.add('loading');}
     postApi('turmas.atualizar',dados).then(function(res){
-      if(!res.sucesso){if(typeof toast==='function')toast(res.mensagem||'Erro.','error');return;}
+      if(el('btn-salvar-edit')){el('btn-salvar-edit').disabled=false;el('btn-salvar-edit').classList.remove('loading');}
+      if(!res.sucesso){
+        if(el('t5-edit-alerta')){el('t5-edit-alerta').className='t5-edit-alerta show erro';el('t5-edit-alerta').querySelector('span:last-child').textContent=res.mensagem||'Erro.';}
+        return;
+      }
       if(typeof toast==='function')toast('Turma atualizada.','success');
       if(el('t5-edit-overlay'))el('t5-edit-overlay').style.display='none';
       carregarTurmas();
+    }).catch(function(){
+      if(el('btn-salvar-edit')){el('btn-salvar-edit').disabled=false;el('btn-salvar-edit').classList.remove('loading');}
+      if(typeof toast==='function')toast('Erro de comunicação.','error');
     });
   }
 
-  // ── NOVA TURMA ─────────────────────────────────────────────────────────
+  // ── NOVA TURMA (modal cr-*) ─────────────────────────────────────────────
   function abrirNovaTurma(){
     carregarCursos();
     carregarProfessores();
-    if(el('t5-nova-overlay'))el('t5-nova-overlay').style.display='flex';
+    if(el('t5-criar-alerta'))el('t5-criar-alerta').className='t5-edit-alerta';
+    if(el('t5-criar-overlay'))el('t5-criar-overlay').style.display='flex';
   }
 
   function salvarNovaTurma(){
-    var cursoId=el('t5-nova-curso')?el('t5-nova-curso').value:'';
-    var profId =el('t5-nova-prof') ?el('t5-nova-prof').value:'';
-    var estagio=val('t5-nova-estagio');
-    var mod    =el('t5-nova-mod')?el('t5-nova-mod').value:'PRESENCIAL';
-    if(!cursoId||!profId||!estagio){if(typeof toast==='function')toast('Curso, professor e estágio são obrigatórios.','error');return;}
+    var cursoId=el('cr-curso')?el('cr-curso').value:'';
+    var profId =el('cr-professor')?el('cr-professor').value:'';
+    var estagio=val('cr-estagio');
+    var mod    =el('cr-modalidade')?el('cr-modalidade').value:'PRESENCIAL';
+    if(!cursoId||!profId||!estagio){
+      if(el('t5-criar-alerta')){el('t5-criar-alerta').className='t5-edit-alerta show erro';el('t5-criar-alerta').querySelector('span:last-child').textContent='Curso, professor e estágio são obrigatórios.';}
+      return;
+    }
+    if(el('btn-salvar-criar')){el('btn-salvar-criar').disabled=true;el('btn-salvar-criar').classList.add('loading');}
     postApi('semestres.getAtual',{}).then(function(res){
       var semId=(res.sucesso&&res.dados)?res.dados.id:'';
-      if(!semId){if(typeof toast==='function')toast('Nenhum semestre atual definido.','error');return;}
+      if(!semId){
+        if(el('btn-salvar-criar')){el('btn-salvar-criar').disabled=false;el('btn-salvar-criar').classList.remove('loading');}
+        if(typeof toast==='function')toast('Nenhum semestre atual definido.','error');
+        return;
+      }
+      var diasSel=[];
+      document.querySelectorAll('#cr-dias-check input[type=checkbox]:checked').forEach(function(chk){diasSel.push(chk.value);});
       postApi('turmas.criar',{
         semestre_id:semId, curso_id:cursoId, professor_id:profId,
         estagio:estagio.toUpperCase(), modalidade:mod,
-        dia_semana:val('t5-nova-dias'), horario:val('t5-nova-hora'),
-        vagas_totais:parseInt(val('t5-nova-vagas'))||20,
+        dia_semana:diasSel.join(','), horario:val('cr-horario'),
+        turno:el('cr-turno')?el('cr-turno').value:'',
+        vagas_totais:parseInt(val('cr-vagas'))||20,
+        data_inicio:val('cr-data-inicio')||null,
+        data_fim:val('cr-data-fim')||null,
       }).then(function(res2){
-        if(!res2.sucesso){if(typeof toast==='function')toast(res2.mensagem||'Erro.','error');return;}
+        if(el('btn-salvar-criar')){el('btn-salvar-criar').disabled=false;el('btn-salvar-criar').classList.remove('loading');}
+        if(!res2.sucesso){
+          if(el('t5-criar-alerta')){el('t5-criar-alerta').className='t5-edit-alerta show erro';el('t5-criar-alerta').querySelector('span:last-child').textContent=res2.mensagem||'Erro.';}
+          return;
+        }
         if(typeof toast==='function')toast('Turma criada.','success');
-        if(el('t5-nova-overlay'))el('t5-nova-overlay').style.display='none';
+        if(el('t5-criar-overlay'))el('t5-criar-overlay').style.display='none';
         carregarTurmas();
       });
     });
   }
 
-  // ── NOVA MATRÍCULA ──────────────────────────────────────────────────────
+  // ── NOVA MATRÍCULA (dentro do painel, campo add-mat-*) ──────────────────
   var _buscarAlunoTimer=null, _alunoSel=null;
 
   function buscarAluno(termo){
     if(!termo||termo.length<2)return;
     postApi('alunos.buscar',{termo:termo}).then(function(res){
       var lista=(res.sucesso&&res.dados)?res.dados:[];
-      var sug=el('t5-nova-mat-sugestoes'); if(!sug)return;
-      sug.innerHTML=''; if(!lista.length){sug.style.display='none';return;}
-      sug.style.display='block';
+      var sug=el('add-mat-aluno-dropdown'); if(!sug)return;
+      sug.innerHTML=''; if(!lista.length){sug.classList.remove('show');return;}
+      sug.classList.add('show');
       lista.slice(0,8).forEach(function(a){
-        var ns=a.nome_social||''; var ne=ns||a.nome_completo||'';
-        var div=document.createElement('div'); div.className='t5-sug-item';
-        div.innerHTML='<span class="t5-sug-nome">'+ne+'</span><span class="t5-sug-id">'+(a.external_id||a.id)+'</span>';
+        var ne=(a.nome_social||a.nome_completo||'');
+        var div=document.createElement('div'); div.className='t5-aluno-item';
+        div.innerHTML='<span class="m5-ai-nome">'+ne+'</span><span class="m5-ai-id">'+(a.external_id||a.id)+'</span>';
         div.addEventListener('click',function(){
           _alunoSel={id:a.id,AlunoID:a.external_id||a.id,NomeExibicao:ne};
-          if(el('t5-nova-mat-busca'))el('t5-nova-mat-busca').value=ne;
-          sug.style.display='none';
+          if(el('add-mat-aluno-id'))el('add-mat-aluno-id').value='';
+          if(el('add-mat-aluno-selecionado-txt'))el('add-mat-aluno-selecionado-txt').textContent=ne+' ('+_alunoSel.AlunoID+')';
+          if(el('add-mat-aluno-selecionado'))el('add-mat-aluno-selecionado').classList.add('show');
+          sug.classList.remove('show');
         });
         sug.appendChild(div);
       });
@@ -968,29 +1030,38 @@
   function salvarNovaMatricula(){
     if(!S.turmaSel){if(typeof toast==='function')toast('Selecione uma turma primeiro.','error');return;}
     if(!_alunoSel){if(typeof toast==='function')toast('Selecione um aluno.','error');return;}
+    var btn=el('btn-add-mat'); if(btn){btn.disabled=true;btn.classList.add('loading');}
     postApi('semestres.getAtual',{}).then(function(res){
       var semId=(res.sucesso&&res.dados)?res.dados.id:'';
       postApi('matriculas.criar',{aluno_id:_alunoSel.id,turma_id:S.turmaSel.id,semestre_id:semId}).then(function(res2){
+        if(btn){btn.disabled=false;btn.classList.remove('loading');}
         if(!res2.sucesso){if(typeof toast==='function')toast(res2.mensagem||'Erro.','error');return;}
         if(typeof toast==='function')toast('Matrícula realizada.','success');
-        if(el('t5-nova-mat-overlay'))el('t5-nova-mat-overlay').style.display='none';
         _alunoSel=null;
-        if(el('t5-nova-mat-busca'))el('t5-nova-mat-busca').value='';
+        if(el('add-mat-aluno-id'))el('add-mat-aluno-id').value='';
+        if(el('add-mat-aluno-selecionado'))el('add-mat-aluno-selecionado').classList.remove('show');
         carregarMatriculas();
       });
     });
   }
 
   // ── ALTERAR SITUAÇÃO MATRÍCULA ──────────────────────────────────────────
-  function salvarSituacao(){
+  function confirmarSituacao(novaSit){
     if(!S.matriculaParaSit)return;
-    var sit=el('modal-nova-sit')?el('modal-nova-sit').value:'';
-    var motivo=val('modal-sit-motivo');
-    if(!sit)return;
+    if(novaSit==='CANCELADA'){
+      // Mostrar campo de motivo
+      if(el('t5-sit-opcoes'))el('t5-sit-opcoes').style.display='none';
+      if(el('t5-motivo-wrap'))el('t5-motivo-wrap').style.display='block';
+      return;
+    }
+    executarSituacao(novaSit,'');
+  }
+
+  function executarSituacao(sit,motivo){
     postApi('matriculas.atualizarSituacao',{id:S.matriculaParaSit.id,situacao:sit,motivo_cancelamento:motivo}).then(function(res){
       if(!res.sucesso){if(typeof toast==='function')toast(res.mensagem||'Erro.','error');return;}
       if(typeof toast==='function')toast('Situação atualizada.','success');
-      if(el('modal-situacao-overlay'))el('modal-situacao-overlay').style.display='none';
+      if(el('modal-sit-overlay'))el('modal-sit-overlay').style.display='none';
       carregarMatriculas();
     });
   }
@@ -1012,33 +1083,83 @@
     });
   }
 
+  // ── SALVAR LINKS ────────────────────────────────────────────────────────
+  function salvarLinks(){
+    if(!S.turmaSel)return;
+    var btn=el('btn-salvar-links'); if(btn){btn.disabled=true;btn.classList.add('loading');}
+    postApi('turmas.atualizar',{
+      id:S.turmaSel.id,
+      grupo_whatsapp:val('link-whatsapp'),
+      link_meet:val('link-meet'),
+      link_classroom:val('link-classroom'),
+    }).then(function(res){
+      if(btn){btn.disabled=false;btn.classList.remove('loading');}
+      if(!res.sucesso){if(typeof toast==='function')toast(res.mensagem||'Erro.','error');return;}
+      if(typeof toast==='function')toast('Links salvos.','success');
+      S.turmaSel.GrupoWhatsapp=val('link-whatsapp');
+      S.turmaSel.LinkMeet=val('link-meet');
+      S.turmaSel.LinkClassroom=val('link-classroom');
+    });
+  }
+
   // ── EVENTOS ───────────────────────────────────────────────────────────
   function registrarEventos(){
+    // Busca e filtros
     el('t5-busca')&&el('t5-busca').addEventListener('input',function(){S.busca=this.value.trim();renderizarLista();});
-    el('btn-fechar-t5-painel')&&el('btn-fechar-t5-painel').addEventListener('click',fecharPainel);
+    // Painel
+    el('btn-fechar-t5')&&el('btn-fechar-t5').addEventListener('click',fecharPainel); // ID real: btn-fechar-t5
+    // Abas do painel
+    document.querySelectorAll('.t5-tab').forEach(function(btn){
+      btn.addEventListener('click',function(){ativarTabPainel(this.dataset.tab);});
+    });
+    // Ações do painel
     el('btn-nova-turma')&&el('btn-nova-turma').addEventListener('click',abrirNovaTurma);
     el('btn-editar-turma')&&el('btn-editar-turma').addEventListener('click',abrirEditarTurma);
     el('btn-encerrar-turma')&&el('btn-encerrar-turma').addEventListener('click',encerrarTurma);
     el('btn-reabrir-turma')&&el('btn-reabrir-turma').addEventListener('click',reabrirTurma);
-    el('btn-nova-matricula')&&el('btn-nova-matricula').addEventListener('click',function(){
-      _alunoSel=null;
-      if(el('t5-nova-mat-busca'))el('t5-nova-mat-busca').value='';
-      if(el('t5-nova-mat-sugestoes'))el('t5-nova-mat-sugestoes').innerHTML='';
-      if(el('t5-nova-mat-overlay'))el('t5-nova-mat-overlay').style.display='flex';
-    });
-    el('t5-nova-mat-busca')&&el('t5-nova-mat-busca').addEventListener('input',function(){
+    el('btn-salvar-links')&&el('btn-salvar-links').addEventListener('click',salvarLinks);
+    // Links: abrir em nova aba
+    el('btn-abrir-whatsapp')&&el('btn-abrir-whatsapp').addEventListener('click',function(){var u=val('link-whatsapp');if(u)window.open(u,'_blank');});
+    el('btn-abrir-meet')&&el('btn-abrir-meet').addEventListener('click',function(){var u=val('link-meet');if(u)window.open(u,'_blank');});
+    el('btn-abrir-classroom')&&el('btn-abrir-classroom').addEventListener('click',function(){var u=val('link-classroom');if(u)window.open(u,'_blank');});
+    // Matrícula dentro do painel
+    el('add-mat-aluno-id')&&el('add-mat-aluno-id').addEventListener('input',function(){
       clearTimeout(_buscarAlunoTimer);
       var t=this.value.trim();
+      if(!t){if(el('add-mat-aluno-dropdown'))el('add-mat-aluno-dropdown').classList.remove('show');return;}
       _buscarAlunoTimer=setTimeout(function(){buscarAluno(t);},350);
     });
-    el('btn-salvar-nova-mat')&&el('btn-salvar-nova-mat').addEventListener('click',salvarNovaMatricula);
-    el('btn-fechar-nova-mat')&&el('btn-fechar-nova-mat').addEventListener('click',function(){if(el('t5-nova-mat-overlay'))el('t5-nova-mat-overlay').style.display='none';});
-    el('btn-salvar-t5-edit')&&el('btn-salvar-t5-edit').addEventListener('click',salvarEditarTurma);
-    el('btn-cancelar-t5-edit')&&el('btn-cancelar-t5-edit').addEventListener('click',function(){if(el('t5-edit-overlay'))el('t5-edit-overlay').style.display='none';});
-    el('btn-salvar-nova-turma')&&el('btn-salvar-nova-turma').addEventListener('click',salvarNovaTurma);
-    el('btn-cancelar-nova-turma')&&el('btn-cancelar-nova-turma').addEventListener('click',function(){if(el('t5-nova-overlay'))el('t5-nova-overlay').style.display='none';});
-    el('btn-salvar-sit')&&el('btn-salvar-sit').addEventListener('click',salvarSituacao);
-    el('btn-cancelar-sit')&&el('btn-cancelar-sit').addEventListener('click',function(){if(el('modal-situacao-overlay'))el('modal-situacao-overlay').style.display='none';});
+    el('add-mat-aluno-limpar')&&el('add-mat-aluno-limpar').addEventListener('click',function(){
+      _alunoSel=null;
+      if(el('add-mat-aluno-selecionado'))el('add-mat-aluno-selecionado').classList.remove('show');
+    });
+    el('btn-add-mat')&&el('btn-add-mat').addEventListener('click',salvarNovaMatricula);
+    // Modal editar turma
+    el('btn-salvar-edit')&&el('btn-salvar-edit').addEventListener('click',salvarEditarTurma);
+    el('btn-cancelar-edit')&&el('btn-cancelar-edit').addEventListener('click',function(){if(el('t5-edit-overlay'))el('t5-edit-overlay').style.display='none';});
+    el('btn-fechar-edit')&&el('btn-fechar-edit').addEventListener('click',function(){if(el('t5-edit-overlay'))el('t5-edit-overlay').style.display='none';});
+    el('t5-edit-overlay')&&el('t5-edit-overlay').addEventListener('click',function(e){if(e.target===this)this.style.display='none';});
+    // Modal criar turma
+    el('btn-salvar-criar')&&el('btn-salvar-criar').addEventListener('click',salvarNovaTurma);
+    el('btn-cancelar-criar')&&el('btn-cancelar-criar').addEventListener('click',function(){if(el('t5-criar-overlay'))el('t5-criar-overlay').style.display='none';});
+    el('btn-fechar-criar')&&el('btn-fechar-criar').addEventListener('click',function(){if(el('t5-criar-overlay'))el('t5-criar-overlay').style.display='none';});
+    el('t5-criar-overlay')&&el('t5-criar-overlay').addEventListener('click',function(e){if(e.target===this)this.style.display='none';});
+    // Modal situação matrícula — botões data-sit disparam confirmarSituacao
+    document.querySelectorAll('.sit-opcao[data-sit]').forEach(function(btn){
+      btn.addEventListener('click',function(){confirmarSituacao(this.dataset.sit);});
+    });
+    el('btn-t5-motivo-voltar')&&el('btn-t5-motivo-voltar').addEventListener('click',function(){
+      if(el('t5-motivo-wrap'))el('t5-motivo-wrap').style.display='none';
+      if(el('t5-sit-opcoes'))el('t5-sit-opcoes').style.display='';
+    });
+    el('btn-t5-confirmar-cancelamento')&&el('btn-t5-confirmar-cancelamento').addEventListener('click',function(){
+      var motivo=el('t5-motivo-texto')?el('t5-motivo-texto').value.trim():'';
+      if(!motivo){if(el('t5-motivo-erro'))el('t5-motivo-erro').style.display='block';return;}
+      if(el('t5-motivo-erro'))el('t5-motivo-erro').style.display='none';
+      executarSituacao('CANCELADA',motivo);
+    });
+    el('btn-cancelar-sit')&&el('btn-cancelar-sit').addEventListener('click',function(){if(el('modal-sit-overlay'))el('modal-sit-overlay').style.display='none';});
+    el('modal-sit-overlay')&&el('modal-sit-overlay').addEventListener('click',function(e){if(e.target===this)this.style.display='none';});
   }
 
   if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',init);}else{init();}
