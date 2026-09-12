@@ -685,7 +685,7 @@
 
   function normT(t){
     if(!t)return t;
-    var p=t.usuarios||{},c=t.cursos||{},sm=t.semestres||{};
+    var p=t.professor||{},c=t.cursos||{},sm=t.semestres||{};
     return{
       id:t.id, TurmaID:t.external_id||t.id,
       SemestreID:t.semestre_id, SemestreRotulo:sm.rotulo||'',
@@ -695,6 +695,7 @@
       DiaSemana:t.dia_semana||'', Horario:t.horario||'', Turno:t.turno||'',
       VagasTotais:t.vagas_totais||20, SituacaoTurma:t.situacao||'ATIVA',
       GrupoWhatsapp:t.grupo_whatsapp||'', LinkMeet:t.link_meet||'', LinkClassroom:t.link_classroom||'',
+      DataInicio:t.data_inicio||'', DataFim:t.data_fim||'',
       semestre_id:t.semestre_id, curso_id:t.curso_id, professor_id:t.professor_id,
     };
   }
