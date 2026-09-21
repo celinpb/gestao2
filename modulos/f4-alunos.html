@@ -877,18 +877,18 @@
     el('alunos-tabela').style.display='none';
     el('alunos-paginacao').style.display='none';
 
-    var filtros = {};
-    if (!state.exibirInativos) filtros.somenteAtivos = true;
-    if (state.busca) filtros.termo = state.busca;
-
-    var acao = state.busca ? 'alunos.buscar' : 'alunos.listar';
-    postApi(acao, filtros)
+    postApi('alunos.listar', {
+      busca: state.busca || '',
+      somenteAtivos: !state.exibirInativos,
+      pagina: state.paginaAtual,
+      tamanhoPagina: state.tamanhoPagina,
+    })
       .then(function(res) {
         if (!res.sucesso) { mostrarEstadoTabela('error_outline', res.mensagem||'Erro ao carregar alunos.'); return; }
-        var lista = (res.dados || []).map(normalizar);
+        var lista = ((res.dados && res.dados.dados) ? res.dados.dados : []).map(normalizar);
         state.alunos         = lista;
-        state.totalRegistros = lista.length;
-        state.totalPaginas   = 1;
+        state.totalRegistros = (res.dados && res.dados.totalRegistros) || lista.length;
+        state.totalPaginas   = (res.dados && res.dados.totalPaginas)   || 1;
         if (lista.length===0) { mostrarEstadoTabela('person_search', state.busca?'Nenhum aluno encontrado para "'+state.busca+'".':'Nenhum aluno cadastrado.'); return; }
         renderizarTabela(lista);
         renderizarPaginacao();
@@ -927,8 +927,26 @@
 
   function renderizarPaginacao() {
     var pag=el('alunos-paginacao'); pag.style.display='flex';
-    el('pag-info').textContent='1–'+state.totalRegistros+' de '+state.totalRegistros+' aluno(s)';
-    el('pag-btns').innerHTML='';
+    var ini=(state.paginaAtual-1)*state.tamanhoPagina+1;
+    var fim=Math.min(state.paginaAtual*state.tamanhoPagina, state.totalRegistros);
+    el('pag-info').textContent=ini+'–'+fim+' de '+state.totalRegistros+' aluno(s)';
+    var btns=el('pag-btns'); btns.innerHTML='';
+    var prev=document.createElement('button'); prev.className='btn-pag';
+    prev.innerHTML='<span class="material-icons-round">chevron_left</span>'; prev.disabled=state.paginaAtual<=1;
+    prev.addEventListener('click',function(){ if(state.paginaAtual>1){ state.paginaAtual--; carregarAlunos(); } });
+    btns.appendChild(prev);
+    var ini2=Math.max(1,state.paginaAtual-2), fim2=Math.min(state.totalPaginas,ini2+4);
+    for (var i=ini2;i<=fim2;i++) {
+      (function(pg){
+        var b=document.createElement('button'); b.className='btn-pag'+(pg===state.paginaAtual?' ativa':'');
+        b.textContent=pg; b.addEventListener('click',function(){ state.paginaAtual=pg; carregarAlunos(); });
+        btns.appendChild(b);
+      })(i);
+    }
+    var next=document.createElement('button'); next.className='btn-pag';
+    next.innerHTML='<span class="material-icons-round">chevron_right</span>'; next.disabled=state.paginaAtual>=state.totalPaginas;
+    next.addEventListener('click',function(){ if(state.paginaAtual<state.totalPaginas){ state.paginaAtual++; carregarAlunos(); } });
+    btns.appendChild(next);
   }
 
   // =========================================================
@@ -1023,7 +1041,7 @@
     }
     if (a.MenorBoolean) {
       html+='<div class="ficha-secao"><div class="ficha-secao-titulo">Responsável 1</div>';
-      html+=campo('Nome',a.Responsavel1Nome)+campo('Parentesco',a.Responsavel1Parentesco)+
+      html+=campo('Nome',a.Responsavel1Nome)+campo('CPF',a.Responsavel1CPF)+campo('Parentesco',a.Responsavel1Parentesco)+
             campo('Telefone',fmtTel(a.Responsavel1Telefone))+campo('E-mail',a['Responsavel1e-mail']);
       html+='</div>';
       if (a.Responsavel2Nome) {
@@ -1033,6 +1051,7 @@
         html+='</div>';
       }
     }
+    if (a.PublicoAluno) html+='<div class="ficha-secao"><div class="ficha-secao-titulo">Público-alvo</div>'+campo('Categoria',a.PublicoAluno)+'</div>';
     html+='<div class="ficha-secao"><div class="ficha-secao-titulo">Situação</div>'+
       campo('Status',a.SituacaoAluno?'Ativo':'Inativo')+campo('Cadastro',fmtData(a.InscricaoDataHora))+'</div>';
     el('painel-corpo').innerHTML=html;
@@ -1041,13 +1060,26 @@
   // =========================================================
   // MODAL EDITAR / NOVO
   // =========================================================
+  // Reseta o formulário do modal: limpa todos os campos, esconde os grupos
+  // condicionais (nome social, passaporte, responsáveis, PcD, povo tradicional)
+  // e some com mensagens de erro/alerta deixadas de uma edição anterior.
+  function limparModal() {
+    document.querySelectorAll('#modal-aluno input, #modal-aluno select, #modal-aluno textarea').forEach(function(e){ e.value=''; if(e.type==='checkbox')e.checked=false; });
+    ['campo-nome-social','campo-passaporte','campos-responsaveis','campo-pcd-tipo','campo-pcd-laudo','campo-povo-tipo'].forEach(function(id){
+      if(el(id)) el(id).style.display='none';
+    });
+    document.querySelectorAll('#modal-aluno .form-input').forEach(function(i){ i.classList.remove('erro'); });
+    document.querySelectorAll('#modal-aluno .form-erro-msg').forEach(function(e){ e.classList.remove('show'); });
+    if(el('modal-alerta')) el('modal-alerta').classList.remove('show');
+  }
+
   function abrirModalNovo() {
     state.modoModal = 'novo';
     state.alunoSelecionado = null;
-    document.querySelectorAll('#modal-aluno input, #modal-aluno select, #modal-aluno textarea').forEach(function(e){ e.value=''; if(e.type==='checkbox')e.checked=false; });
-    el('modal-aluno').style.display='flex';
+    limparModal();
     el('modal-titulo').textContent='Novo aluno';
     mostrarAba('pessoal');
+    el('modal-overlay').style.display='flex';
   }
 
   // Preenche os campos do formulário a partir de um objeto normalizado (a).
@@ -1060,11 +1092,10 @@
     setC('f-nome-social-bool', a.NomeSocialBoolean);
     set('f-nome-social', a.NomeSocial);
     if(el('campo-nome-social')) el('campo-nome-social').style.display = a.NomeSocialBoolean ? 'block':'none';
-    // Nascimento: YYYY-MM-DD → DD/MM/YYYY para o campo
-    if (a.Nascimento) {
-      var pts = a.Nascimento.substring(0,10).split('-');
-      set('f-nascimento', pts[2]+'/'+pts[1]+'/'+pts[0]);
-    }
+    // f-nascimento é <input type="date">, que exige o valor em YYYY-MM-DD
+    // (não DD/MM/YYYY) — setar no formato errado faz o navegador ignorar
+    // o valor e o campo fica em branco.
+    if (a.Nascimento) set('f-nascimento', a.Nascimento.substring(0,10));
     set('f-nasc-uf', a.NascimentoUF); set('f-nasc-municipio', a.NascimentoMunicipio);
     set('f-raca', a.Raca); set('f-estado-civil', a.EstadoCivil); set('f-genero', a.Genero);
     set('f-estrangeiro', a.Estrangeiro ? 'true' : 'false');
@@ -1090,16 +1121,17 @@
 
   function abrirModalEditar(a) {
     state.modoModal = 'editar';
-    el('modal-aluno').style.display='flex';
+    limparModal();
     el('modal-titulo').textContent='Editar aluno';
     mostrarAba('pessoal');
     // Preenche de imediato com o que já temos (dados públicos + o que já
     // tiver sido carregado de sensível na ficha) e atualiza de novo assim
     // que a Edge Function responder, caso ainda não tivesse resolvido.
     preencherFormulario(a);
+    el('modal-overlay').style.display='flex';
     if (!a._sensiveisCarregados) {
       carregarDadosSensiveis(a, function(alunoAtualizado) {
-        if (el('modal-aluno').style.display !== 'none' && state.modoModal === 'editar') {
+        if (el('modal-overlay').style.display !== 'none' && state.modoModal === 'editar') {
           preencherFormulario(alunoAtualizado);
         }
       });
@@ -1107,7 +1139,8 @@
   }
 
   function fecharModal() {
-    if(el('modal-aluno')) el('modal-aluno').style.display='none';
+    if(el('modal-overlay')) el('modal-overlay').style.display='none';
+    if(el('modal-alerta')) el('modal-alerta').classList.remove('show');
   }
 
   function mostrarAba(aba) {
@@ -1120,9 +1153,22 @@
   }
 
   function validarModal() {
-    var nome = val('f-nome');
-    if (!nome) { mostrarAlertaModal('Nome completo é obrigatório.','erro'); return false; }
-    return true;
+    var ok = true;
+    document.querySelectorAll('#modal-aluno .form-input').forEach(function(i){ i.classList.remove('erro'); });
+    document.querySelectorAll('#modal-aluno .form-erro-msg').forEach(function(e){ e.classList.remove('show'); });
+    function marcarErro(campoId, msgId) {
+      if(el(campoId)) el(campoId).classList.add('erro');
+      if(el(msgId)) el(msgId).classList.add('show');
+      ok = false;
+    }
+    if (!val('f-nome')) marcarErro('f-nome','err-nome');
+    if (!val('f-nascimento')) marcarErro('f-nascimento','err-nasc');
+    if (!val('f-publico')) marcarErro('f-publico','err-publico');
+    if (val('f-cpf') && val('f-cpf').replace(/\D/g,'').length !== 11) marcarErro('f-cpf','err-cpf');
+    if (val('f-email') && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val('f-email'))) marcarErro('f-email','err-email');
+    if (val('f-telefone') && val('f-telefone').replace(/\D/g,'').length < 10) marcarErro('f-telefone','err-tel');
+    if (!ok) mostrarAlertaModal('Verifique os campos obrigatórios antes de salvar.','erro');
+    return ok;
   }
 
   function salvarModal() {
@@ -1152,6 +1198,8 @@
   function mostrarAlertaModal(msg,tipo) {
     var a=el('modal-alerta'),m=el('modal-alerta-msg'); if(!a||!m)return;
     a.className='modal-alerta show '+(tipo||'erro'); m.textContent=msg;
+    var ic=a.querySelector('.material-icons-round');
+    if(ic) ic.textContent = tipo==='sucesso' ? 'check_circle' : 'error_outline';
   }
 
   // =========================================================
@@ -1217,6 +1265,7 @@
     postApi('ocorrencias.listar', {
       aluno_id: state.ocoAlunoId,   // UUID real
       status:   state.ocoFiltroStatus || undefined,
+      tipo:     state.ocoFiltroTipo || undefined,
     }).then(function(res) {
       // Normalizar campos do banco para o formato usado no render
       state.ocoLista = (res.sucesso && res.dados) ? res.dados.map(function(o) {
@@ -1471,7 +1520,10 @@
       tipo:          tipo,
       titulo:        titulo,
       descricao:     descricao,
-      destinatarios: dests.filter(function(d){ return !d.includes('-role'); }),
+      // '-role' agora é resolvido no backend para todos os usuários ativos
+      // daquele papel (ex.: 'coordenacao-role' → toda a coordenação) — não
+      // filtramos mais aqui, ou a notificação por papel nunca chegava a ninguém.
+      destinatarios: dests,
     }).then(function(res){
       if(btn){ btn.disabled=false; btn.classList.remove('loading'); }
       if(!res.sucesso){ var a=el('oco-modal-alerta'),m=el('oco-modal-alerta-msg'); if(a)a.className='oco-alerta show erro'; if(m)m.textContent=res.mensagem||'Erro.'; return; }
