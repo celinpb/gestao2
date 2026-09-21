@@ -302,7 +302,12 @@
   function carregarTurmas() {
     postApi('turmas.listar',{tamanhoPagina:300}).then(function(res){
       el('diario-turmas-loading').style.display='none';
-      if(!res.sucesso||!res.dados||!res.dados.dados||res.dados.dados.length===0){
+      if(!res.sucesso){
+        el('diario-turma-grid').style.display='grid';
+        el('diario-turma-grid').innerHTML='<p style="color:#E63946;font-size:13px;grid-column:1/-1;">Erro: '+(res.mensagem||'Falha ao carregar turmas.')+'</p>';
+        return;
+      }
+      if(!res.dados||!res.dados.dados||res.dados.dados.length===0){
         el('diario-turma-grid').style.display='grid';
         el('diario-turma-grid').innerHTML='<p style="color:var(--c-text-3);font-size:13px;grid-column:1/-1;">Nenhuma turma encontrada.</p>';
         return;
