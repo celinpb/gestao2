@@ -296,7 +296,7 @@
         <button class="modal-aba" data-aba="publico">Público-alvo</button>
       </div>
 
-      <div class="modal-secao ativa" id="secao-pessoal">
+      <div class="modal-secao ativa" id="secao-pessoal" data-secao="pessoal">
         <div class="form-grid">
           <div class="form-field span2">
             <label>Nome completo <span class="req">*</span></label>
@@ -370,7 +370,7 @@
         </div>
       </div>
 
-      <div class="modal-secao" id="secao-contato">
+      <div class="modal-secao" id="secao-contato" data-secao="contato">
         <div class="form-grid">
           <div class="form-field">
             <label>Telefone</label>
@@ -392,7 +392,7 @@
         </div>
       </div>
 
-      <div class="modal-secao" id="secao-endereco">
+      <div class="modal-secao" id="secao-endereco" data-secao="endereco">
         <div class="form-grid">
           <div class="form-field">
             <label>CEP</label>
@@ -425,7 +425,7 @@
         </div>
       </div>
 
-      <div class="modal-secao" id="secao-acessibilidade">
+      <div class="modal-secao" id="secao-acessibilidade" data-secao="acessibilidade">
         <div class="form-grid">
           <div class="form-subsecao" style="border:none;margin-top:0;">Pessoa com deficiência (PcD)</div>
           <div class="form-field span2">
@@ -456,7 +456,7 @@
         </div>
       </div>
 
-      <div class="modal-secao" id="secao-responsaveis">
+      <div class="modal-secao" id="secao-responsaveis" data-secao="responsaveis">
         <div class="form-grid">
           <div class="form-field span2">
             <div class="form-check-row">
@@ -513,7 +513,7 @@
         </div>
       </div>
 
-      <div class="modal-secao" id="secao-publico">
+      <div class="modal-secao" id="secao-publico" data-secao="publico">
         <div class="form-grid col1">
           <div class="form-field">
             <label>Público-alvo <span class="req">*</span></label>
@@ -1047,7 +1047,7 @@
     document.querySelectorAll('#modal-aluno input, #modal-aluno select, #modal-aluno textarea').forEach(function(e){ e.value=''; if(e.type==='checkbox')e.checked=false; });
     el('modal-aluno').style.display='flex';
     el('modal-titulo').textContent='Novo aluno';
-    mostrarAba('identificacao');
+    mostrarAba('pessoal');
   }
 
   // Preenche os campos do formulário a partir de um objeto normalizado (a).
@@ -1092,7 +1092,7 @@
     state.modoModal = 'editar';
     el('modal-aluno').style.display='flex';
     el('modal-titulo').textContent='Editar aluno';
-    mostrarAba('identificacao');
+    mostrarAba('pessoal');
     // Preenche de imediato com o que já temos (dados públicos + o que já
     // tiver sido carregado de sensível na ficha) e atualiza de novo assim
     // que a Edge Function responder, caso ainda não tivesse resolvido.
@@ -1112,7 +1112,11 @@
 
   function mostrarAba(aba) {
     document.querySelectorAll('.modal-aba').forEach(function(b){ b.classList.toggle('ativa', b.dataset.aba===aba); });
-    document.querySelectorAll('.modal-secao').forEach(function(s){ s.style.display = s.dataset.secao===aba ? 'block':'none'; });
+    document.querySelectorAll('.modal-secao').forEach(function(s){
+      var ehAtiva = s.dataset.secao===aba;
+      s.classList.toggle('ativa', ehAtiva);
+      s.style.display = ehAtiva ? 'block' : 'none';
+    });
   }
 
   function validarModal() {
