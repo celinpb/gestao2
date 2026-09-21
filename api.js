@@ -341,13 +341,24 @@ async function _usuariosRedefinirSenha(sb, dados) {
 // =============================================================================
 
 async function _alunosListar(sb, dados) {
+  dados = dados || {};
+  var pagina = parseInt(dados.pagina, 10) || 1;
+  var tamanhoPagina = parseInt(dados.tamanhoPagina, 10) || 20;
+  var de = (pagina - 1) * tamanhoPagina;
+  var ate = de + tamanhoPagina - 1;
+
   var query = sb.from('alunos')
-    .select('id, external_id, nome_completo, nome_social, nascimento, nascimento_uf, nascimento_municipio, genero, raca, estado_civil, estrangeiro, telefone, email, municipio, uf, bairro, pcd, pcd_tipo, situacao_ativo, inscricao_data_hora')
+    .select('id, external_id, nome_completo, nome_social, nascimento, nascimento_uf, nascimento_municipio, genero, raca, estado_civil, estrangeiro, telefone, email, municipio, uf, bairro, pcd, pcd_tipo, situacao_ativo, inscricao_data_hora', { count: 'exact' })
     .order('nome_completo');
-  if (dados && dados.somenteAtivos) query = query.eq('situacao_ativo', true);
+  if (dados.somenteAtivos) query = query.eq('situacao_ativo', true);
+  if (dados.busca) query = query.or('nome_completo.ilike.%' + dados.busca + '%,nome_social.ilike.%' + dados.busca + '%');
+  query = query.range(de, ate);
+
   var res = await query;
   if (res.error) return _err(res.error.message);
-  return _ok(res.data || []);
+  var totalRegistros = typeof res.count === 'number' ? res.count : (res.data || []).length;
+  var totalPaginas = Math.max(1, Math.ceil(totalRegistros / tamanhoPagina));
+  return _ok({ dados: res.data || [], totalRegistros: totalRegistros, totalPaginas: totalPaginas });
 }
 
 // Normaliza um registro de aluno do banco (snake_case) para o formato dos módulos HTML (PascalCase)
@@ -821,10 +832,36 @@ async function _ocorrenciasListar(sb, dados) {
     .order('criado_em', { ascending: false });
   if (dados && dados.aluno_id)     query = query.eq('aluno_id', dados.aluno_id);
   if (dados && dados.status)       query = query.eq('status', dados.status);
+  if (dados && dados.tipo)         query = query.eq('tipo', dados.tipo);
   if (dados && dados.semestre_id)  query = query.eq('semestre_ref_id', dados.semestre_id);
   var res = await query;
   if (res.error) return _err(res.error.message);
   return _ok(res.data);
+}
+
+// Papéis que podem ser usados como "destinatário" de uma ocorrência em vez
+// de um usuário específico (ex.: notificar toda a coordenação, não uma
+// pessoa só). O front-end manda o nome do papel sufixado com "-role"
+// (ex.: 'coordenacao-role'); aqui resolvemos para os IDs de todos os
+// usuários ativos com aquele papel.
+var PAPEIS_DESTINATARIO_VALIDOS = ['coordenacao', 'secretaria', 'admin'];
+
+async function _resolverDestinatarios(sb, destinatarios) {
+  destinatarios = destinatarios || [];
+  var usuarioIds = destinatarios.filter(function(d) { return typeof d === 'string' && !d.endsWith('-role'); });
+  var papeis = destinatarios
+    .filter(function(d) { return typeof d === 'string' && d.endsWith('-role'); })
+    .map(function(d) { return d.slice(0, -('-role'.length)); })
+    .filter(function(p) { return PAPEIS_DESTINATARIO_VALIDOS.indexOf(p) !== -1; });
+
+  if (papeis.length) {
+    var res = await sb.from('usuarios').select('id').eq('situacao_ativo', true).in('papel', papeis);
+    if (!res.error && res.data) {
+      res.data.forEach(function(u) { usuarioIds.push(u.id); });
+    }
+  }
+  // Remove duplicados (ex.: um usuário específico que também caiu no papel)
+  return usuarioIds.filter(function(id, i) { return usuarioIds.indexOf(id) === i; });
 }
 
 async function _ocorrenciasCriar(sb, dados) {
@@ -844,9 +881,11 @@ async function _ocorrenciasCriar(sb, dados) {
   }).select().single();
   if (res.error) return _err(res.error.message);
 
-  // Inserir destinatários
-  if (dados.destinatarios && dados.destinatarios.length) {
-    var dests = dados.destinatarios.map(function(uid) {
+  // Inserir destinatários — usuarios específicos e/ou papéis inteiros
+  // (ex.: 'coordenacao-role' notifica todos os usuários com papel=coordenacao)
+  var usuarioIds = await _resolverDestinatarios(sb, dados.destinatarios);
+  if (usuarioIds.length) {
+    var dests = usuarioIds.map(function(uid) {
       return { ocorrencia_id: res.data.id, usuario_id: uid };
     });
     await sb.from('ocorrencia_destinatarios').insert(dests);
