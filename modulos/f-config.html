@@ -193,11 +193,12 @@
             <input type="url" class="cfg-input" id="cfg-logo-url" placeholder="https://…">
             <span class="cfg-hint">Alternativa ao upload. Será convertida para Base64 ao salvar.</span>
           </div>
-          <button class="btn-cfg btn-cfg-primario" id="btn-salvar-logo">
+          <button class="btn-cfg btn-cfg-primario" id="btn-salvar-logo" disabled title="Recurso ainda não disponível nesta migração">
             <div class="spinner-btn"></div>
             <span class="material-icons-round btn-txt" style="font-size:16px;">save</span>
             <span class="btn-txt">Salvar logo</span>
           </button>
+          <div class="cfg-hint" style="margin-top:8px;">Upload de logo ainda não foi migrado para o Supabase nesta etapa (pendência conhecida).</div>
         </div>
       </div>
 
@@ -231,7 +232,7 @@
               </div>
               <div class="novo-sem-field" style="grid-column:span 2;">
                 <label>ID da planilha do semestre</label>
-                <input type="text" class="novo-sem-input" id="ns-planilha" placeholder="ID do Google Sheets (da URL)">
+                <input type="text" class="novo-sem-input" id="ns-planilha" placeholder="Legado Google Sheets — não usado no Supabase" disabled>
               </div>
             </div>
             <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
@@ -321,7 +322,28 @@
     return{id:s.id,SemestreID:s.external_id||s.id,Semestre:s.rotulo||'',SemestreAtual:s.semestre_atual||false,EdicaoAtiva:s.edicao_ativa!==false,VisualizacaoAtiva:s.visualizacao_ativa!==false};
   }
 
+  function mostrarAlertaCampo(id,msg,tipo){
+    var a=el(id); if(!a)return;
+    tipo=tipo||'erro';
+    a.className='cfg-alerta show '+tipo;
+    var span=a.querySelector('span:last-child'); if(span)span.textContent=msg;
+    setTimeout(function(){a.classList.remove('show');},4000);
+  }
+
+  // A tela inteira ficava presa em "Carregando configurações…" porque nada
+  // aqui jamais escondia #cfg-loading nem mostrava #cfg-conteudo. Também não
+  // havia checagem de papel (a tela é só para admin — RLS de config_escola.UPDATE
+  // e semestres.registrar/atualizar já bloqueiam não-admin no servidor, mas a UI
+  // precisa mostrar o aviso "acesso restrito" em vez de travar carregando).
   function init(){
+    var u=(typeof App!=='undefined'&&App.usuario)?App.usuario:null;
+    var papel=u?(u.papel||''):'';
+    if(el('cfg-loading'))el('cfg-loading').style.display='none';
+    if(papel!=='admin'){
+      if(el('cfg-acesso-negado'))el('cfg-acesso-negado').style.display='block';
+      return;
+    }
+    if(el('cfg-conteudo'))el('cfg-conteudo').style.display='block';
     carregarConfig();
     carregarSemestres();
     registrarEventos();
@@ -331,47 +353,61 @@
     postApi('config.get',{}).then(function(res){
       if(!res.sucesso||!res.dados)return;
       var c=res.dados;
-      if(el('cfg-nome-escola'))  el('cfg-nome-escola').value  =c.nome_escola||'';
-      if(el('cfg-sigla-escola')) el('cfg-sigla-escola').value =c.sigla_escola||'';
-      if(el('cfg-endereco'))     el('cfg-endereco').value     =c.endereco||'';
-      if(el('cfg-telefone'))     el('cfg-telefone').value     =c.telefone||'';
-      if(el('cfg-email'))        el('cfg-email').value        =c.email||'';
-      if(el('cfg-site'))         el('cfg-site').value         =c.site||'';
+      // IDs reais dos campos: cfg-nome, cfg-sigla, cfg-endereco, cfg-telefone, cfg-email, cfg-site
+      if(el('cfg-nome'))     el('cfg-nome').value     =c.nome_escola||'';
+      if(el('cfg-sigla'))    el('cfg-sigla').value    =c.sigla_escola||'';
+      if(el('cfg-endereco')) el('cfg-endereco').value =c.endereco||'';
+      if(el('cfg-telefone')) el('cfg-telefone').value =c.telefone||'';
+      if(el('cfg-email'))    el('cfg-email').value    =c.email||'';
+      if(el('cfg-site'))     el('cfg-site').value     =c.site||'';
     });
   }
 
   function salvarConfig(){
     var dados={
-      nome_escola:  val('cfg-nome-escola'),
-      sigla_escola: val('cfg-sigla-escola'),
+      nome_escola:  val('cfg-nome'),
+      sigla_escola: val('cfg-sigla'),
       endereco:     val('cfg-endereco'),
       telefone:     val('cfg-telefone'),
       email:        val('cfg-email'),
       site:         val('cfg-site'),
     };
+    var btn=el('btn-salvar-dados'); if(btn){btn.disabled=true;btn.classList.add('loading');}
     postApi('config.salvar',dados).then(function(res){
+      if(btn){btn.disabled=false;btn.classList.remove('loading');}
+      mostrarAlertaCampo('cfg-alerta-dados',res.sucesso?'Dados salvos.':(res.mensagem||'Erro.'),res.sucesso?'sucesso':'erro');
       if(typeof toast==='function') toast(res.sucesso?'Configurações salvas.':res.mensagem,res.sucesso?'success':'error');
     });
   }
 
+  function badgeSemestre(s){
+    var badges='';
+    if(s.SemestreAtual) badges+='<span class="sem-badge atual">Atual</span>';
+    badges+= s.EdicaoAtiva ? '<span class="sem-badge edicao">Edição aberta</span>' : '<span class="sem-badge fechado">Edição fechada</span>';
+    badges+= s.VisualizacaoAtiva ? '<span class="sem-badge vis">Visível</span>' : '';
+    return badges;
+  }
+
   function carregarSemestres(){
-    var wrap=el('cfg-semestres-lista'); if(!wrap) return;
-    wrap.innerHTML='<p>Carregando…</p>';
+    var wrap=el('sem-lista'); if(!wrap) return; // ID real: sem-lista (não cfg-semestres-lista)
+    wrap.innerHTML='<div class="cfg-spinner"><div class="cfg-spinner-anim"></div><span>Carregando…</span></div>';
     postApi('semestres.listar',{}).then(function(res){
       var lista=(res.sucesso&&res.dados)?res.dados.map(normSemestre):[];
-      if(!lista.length){wrap.innerHTML='<p>Nenhum semestre cadastrado.</p>';return;}
+      if(!lista.length){wrap.innerHTML='<p style="font-size:13px;color:var(--c-text-3);">Nenhum semestre cadastrado.</p>';return;}
       wrap.innerHTML='';
       lista.forEach(function(s){
-        var div=document.createElement('div'); div.className='cfg-semestre-item';
+        var div=document.createElement('div'); div.className='sem-item'+(s.SemestreAtual?' atual':'');
         div.innerHTML=
-          '<div class="cfg-sem-info">'+
-            '<span class="cfg-sem-rotulo">'+(s.Semestre||s.SemestreID)+'</span>'+
-            (s.SemestreAtual?'<span class="cfg-sem-badge atual">Atual</span>':'')+
-            (!s.EdicaoAtiva?'<span class="cfg-sem-badge fechado">Fechado</span>':'')+
+          '<div class="sem-info">'+
+            '<div class="sem-nome">'+(s.Semestre||s.SemestreID)+'</div>'+
+            '<div class="sem-id">'+s.SemestreID+'</div>'+
+            '<div class="sem-badges">'+badgeSemestre(s)+'</div>'+
           '</div>'+
-          '<div class="cfg-sem-acoes">'+
-            '<button class="btn-cfg-sem" data-id="'+s.id+'" data-acao="'+(s.EdicaoAtiva?'fechar':'abrir')+'">'+(s.EdicaoAtiva?'Fechar edição':'Abrir edição')+'</button>'+
-            (!s.SemestreAtual?'<button class="btn-cfg-sem" data-id="'+s.id+'" data-acao="tornarAtual">Tornar atual</button>':'')+
+          '<div class="sem-acoes">'+
+            '<button class="btn-sem" data-id="'+s.id+'" data-acao="'+(s.EdicaoAtiva?'fechar':'abrir')+'">'+
+              '<span class="material-icons-round">'+(s.EdicaoAtiva?'lock':'lock_open')+'</span>'+(s.EdicaoAtiva?'Fechar edição':'Abrir edição')+
+            '</button>'+
+            (!s.SemestreAtual?'<button class="btn-sem" data-id="'+s.id+'" data-acao="tornarAtual"><span class="material-icons-round">star</span>Tornar atual</button>':'')+
           '</div>';
         wrap.appendChild(div);
       });
@@ -388,25 +424,55 @@
 
   function atualizarSemestre(id,dados){
     postApi('semestres.atualizar',Object.assign({id:id},dados)).then(function(res){
+      mostrarAlertaCampo('cfg-alerta-sem',res.sucesso?'Semestre atualizado.':(res.mensagem||'Erro.'),res.sucesso?'sucesso':'erro');
       if(typeof toast==='function') toast(res.sucesso?'Semestre atualizado.':res.mensagem,res.sucesso?'success':'error');
       if(res.sucesso) carregarSemestres();
     });
   }
 
+  function abrirFormNovoSemestre(){
+    if(el('novo-sem-form'))el('novo-sem-form').classList.add('show');
+    if(el('btn-novo-sem'))el('btn-novo-sem').style.display='none';
+  }
+  function fecharFormNovoSemestre(){
+    if(el('novo-sem-form'))el('novo-sem-form').classList.remove('show');
+    if(el('btn-novo-sem'))el('btn-novo-sem').style.display='';
+    ['ns-id','ns-nome'].forEach(function(id){if(el(id))el(id).value='';});
+    if(el('ns-atual'))el('ns-atual').checked=false;
+    if(el('ns-edicao'))el('ns-edicao').checked=true;
+    if(el('ns-vis'))el('ns-vis').checked=true;
+  }
+
   function registrarNovoSemestre(){
-    var rotulo=val('cfg-novo-sem-rotulo');
-    if(!rotulo){if(typeof toast==='function')toast('Informe o rótulo do semestre.','error');return;}
-    postApi('semestres.registrar',{rotulo:rotulo,semestre_atual:false,edicao_ativa:true,visualizacao_ativa:true}).then(function(res){
-      if(!res.sucesso){if(typeof toast==='function')toast(res.mensagem,'error');return;}
+    var rotulo=val('ns-nome');
+    var externalId=val('ns-id');
+    if(!rotulo){mostrarAlertaCampo('cfg-alerta-sem','Informe o rótulo do semestre (ex: 2026.1).','erro');return;}
+    // "ID da planilha" (ns-planilha) é um campo legado do Apps Script/Google
+    // Sheets sem coluna correspondente em `semestres` no Supabase — não é
+    // enviado no payload (o campo fica desabilitado na tela).
+    var dados={
+      rotulo:             rotulo,
+      semestre_atual:     el('ns-atual')?el('ns-atual').checked:false,
+      edicao_ativa:       el('ns-edicao')?el('ns-edicao').checked:true,
+      visualizacao_ativa: el('ns-vis')?el('ns-vis').checked:true,
+    };
+    if(externalId) dados.external_id=externalId;
+    var btn=el('btn-registrar-sem'); if(btn){btn.disabled=true;btn.classList.add('loading');}
+    postApi('semestres.registrar',dados).then(function(res){
+      if(btn){btn.disabled=false;btn.classList.remove('loading');}
+      if(!res.sucesso){mostrarAlertaCampo('cfg-alerta-sem',res.mensagem||'Erro.','erro');return;}
+      mostrarAlertaCampo('cfg-alerta-sem','Semestre registrado.','sucesso');
       if(typeof toast==='function')toast('Semestre registrado.','success');
-      if(el('cfg-novo-sem-rotulo')) el('cfg-novo-sem-rotulo').value='';
+      fecharFormNovoSemestre();
       carregarSemestres();
     });
   }
 
   function registrarEventos(){
-    el('btn-salvar-config')&&el('btn-salvar-config').addEventListener('click',salvarConfig);
-    el('btn-novo-semestre')&&el('btn-novo-semestre').addEventListener('click',registrarNovoSemestre);
+    el('btn-salvar-dados')&&el('btn-salvar-dados').addEventListener('click',salvarConfig);
+    el('btn-novo-sem')&&el('btn-novo-sem').addEventListener('click',abrirFormNovoSemestre);
+    el('btn-cancelar-novo-sem')&&el('btn-cancelar-novo-sem').addEventListener('click',fecharFormNovoSemestre);
+    el('btn-registrar-sem')&&el('btn-registrar-sem').addEventListener('click',registrarNovoSemestre);
   }
 
   if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',init);}else{init();}
