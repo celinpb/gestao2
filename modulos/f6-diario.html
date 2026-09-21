@@ -384,55 +384,103 @@
     sel.innerHTML='<option value="">Carregando datas…</option>';
 
     // Campo manual: visível só para coordenacao/admin
-    var campoProfibido = S.papel === 'professor';
+    var campoProibido = S.papel === 'professor';
     var wrapManual = el('diario-data-manual') ? el('diario-data-manual').closest('.diario-field') : null;
-    if (wrapManual) wrapManual.style.display = campoProfibido ? 'none' : '';
+    if (wrapManual) wrapManual.style.display = campoProibido ? 'none' : '';
 
     var diasNums = diasTurmaNumeros(turma);
     var hoje = hojeISO();
 
+    // Estratégia: busca o calendário para obter datas NÃO-letivas (feriados,
+    // recessos). A lista de aulas previstas é gerada programaticamente com base
+    // no DiaSemana da turma, do início do semestre até hoje. Isso garante que
+    // datas sem registro (semanas esquecidas, afastamentos) apareçam no dropdown
+    // mesmo sem ter nenhuma frequência/conteúdo lançado.
     postApi('calendario.listar', {turmaId: turma.TurmaID}).then(function(res){
       sel.innerHTML='<option value="">Selecione uma data…</option>';
-      if(!res.sucesso||!res.dados||res.dados.length===0){
-        sel.innerHTML+='<option disabled>Nenhuma data encontrada</option>';
-        preencherDataAtual();
-        return;
+
+      // Monta conjunto de datas NÃO-letivas (para exclusão)
+      var naoLetivas = {};
+      // Monta conjunto de datas LETIVAS (para saber o intervalo de início)
+      var datasLetivas = [];
+
+      if(res.sucesso && res.dados && res.dados.length > 0){
+        res.dados.forEach(function(d){
+          var iso = dmyParaISO(d.DataAula);
+          if(!iso) return;
+          if(d.DiaLetivo === false || d.DiaLetivo === 'FALSE' || d.DiaLetivo === '' || !d.DiaLetivo){
+            naoLetivas[iso] = true;
+          } else {
+            datasLetivas.push(iso);
+          }
+        });
       }
 
-      var dias=[];
-      res.dados.forEach(function(d){
-        // Filtra não-letivos
-        if(!d.DiaLetivo) return;
+      // Determina o início: DataInicioTurma (se existir) ou a 1ª data letiva do calendário
+      var inicioISO = null;
+      if(turma.DataInicioTurma){
+        inicioISO = dmyParaISO(turma.DataInicioTurma) || turma.DataInicioTurma;
+      }
+      if(!inicioISO && datasLetivas.length > 0){
+        datasLetivas.sort();
+        inicioISO = datasLetivas[0];
+      }
+      // Fallback: 12 semanas atrás (protege caso o calendário esteja vazio)
+      if(!inicioISO){
+        var doze = new Date(hoje + 'T12:00:00');
+        doze.setDate(doze.getDate() - 84);
+        inicioISO = doze.getFullYear()+'-'+pad(doze.getMonth()+1)+'-'+pad(doze.getDate());
+      }
 
-        // DataAula: DD/MM/YYYY
-        var iso = dmyParaISO(d.DataAula);
-        if(!iso) return;
+      // Determina o fim: DataFimTurma (se existir), caso contrário hoje
+      var fimISO = hoje;
+      if(turma.DataFimTurma){
+        var fimT = dmyParaISO(turma.DataFimTurma) || turma.DataFimTurma;
+        // Não avança além de hoje no dropdown (datas futuras não têm aula ainda)
+        if(fimT < hoje) fimISO = fimT;
+      }
 
-        // Só datas até hoje
-        if(iso > hoje) return;
-
-        // Filtra pelo dia da semana da turma (se configurado)
-        if(diasNums.length > 0){
-          // new Date("YYYY-MM-DDT12:00:00") — parse seguro sem fuso
-          var dataObj = new Date(iso + 'T12:00:00');
-          if(isNaN(dataObj.getTime())) return;
-          if(diasNums.indexOf(dataObj.getDay()) === -1) return;
+      // Gera todas as datas no intervalo que caem no(s) dia(s) da semana da turma
+      var dias = [];
+      if(diasNums.length > 0){
+        var cursor = new Date(inicioISO + 'T12:00:00');
+        var limite = new Date(fimISO   + 'T12:00:00');
+        while(cursor <= limite){
+          if(diasNums.indexOf(cursor.getDay()) !== -1){
+            var iso = cursor.getFullYear()+'-'+pad(cursor.getMonth()+1)+'-'+pad(cursor.getDate());
+            if(!naoLetivas[iso]){
+              dias.push(iso);
+            }
+          }
+          cursor.setDate(cursor.getDate()+1);
         }
+      } else {
+        // Turma sem DiaSemana definido: cai no comportamento anterior (só datas letivas do calendário)
+        if(res.sucesso && res.dados){
+          res.dados.forEach(function(d){
+            if(!d.DiaLetivo) return;
+            var iso = dmyParaISO(d.DataAula);
+            if(iso && iso <= hoje) dias.push(iso);
+          });
+        }
+      }
 
-        dias.push({iso:iso, dmy:isoParaDMY(iso), diaSemana:d.DiaSemana||''});
-      });
+      // Ordena decrescente (mais recente no topo)
+      dias.sort(function(a,b){ return b.localeCompare(a); });
 
-      // Ordena decrescente (mais recente primeiro)
-      dias.sort(function(a,b){ return b.iso.localeCompare(a.iso); });
+      var NOMES_DIA = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
 
-      var hojeFormatado = isoParaDMY(hoje);
-
-      dias.forEach(function(d){
+      dias.forEach(function(iso){
         var opt=document.createElement('option');
-        opt.value=d.iso;
-        var label=d.dmy;
-        if(d.iso===hoje) label+=' (hoje)';
-        else if(d.diaSemana) label+=' — '+d.diaSemana;
+        opt.value=iso;
+        var dmy = isoParaDMY(iso);
+        var label = dmy;
+        if(iso === hoje){
+          label += ' (hoje)';
+        } else {
+          var dow = new Date(iso+'T12:00:00').getDay();
+          label += ' — ' + NOMES_DIA[dow];
+        }
         opt.textContent=label;
         sel.appendChild(opt);
       });
