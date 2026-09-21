@@ -678,7 +678,7 @@
 <script>
 (function(){
   'use strict';
-  var S={turmas:[],turmaSel:null,matriculas:[],busca:'',papel:'',podeEditar:false,matriculaParaSit:null,modoNovaTurma:false};
+  var S={turmas:[],turmaSel:null,matriculas:[],busca:'',papel:'',podeEditar:false,podeEditarMatricula:false,matriculaParaSit:null,matriculaParaTrans:null,turmaTransSelecionada:null,modoNovaTurma:false};
   function postApi(a,d){return window.postApi(a,d);}
   function el(id){return document.getElementById(id);}
   function val(id){return el(id)?el(id).value.trim():'';}
@@ -717,6 +717,12 @@
     if(u){
       S.papel=u.papel||u.Papel||'';
       S.podeEditar=['admin','coordenacao'].indexOf(S.papel)!==-1;
+      // Matrículas: admin/coordenação têm acesso total e secretaria "cria/edita/
+      // lê todas" (ver "Regras de acesso por papel" em f-config.html) — por isso
+      // os botões de situação/transferência de matrícula usam um flag PRÓPRIO,
+      // separado de S.podeEditar (que só controla editar/encerrar/reabrir a TURMA
+      // em si, restrito a admin/coordenação).
+      S.podeEditarMatricula=['admin','coordenacao','secretaria'].indexOf(S.papel)!==-1;
     }
     carregarProfessores();
     carregarTurmas();
@@ -877,22 +883,98 @@
     cont.innerHTML='';
     S.matriculas.forEach(function(m){
       var div=document.createElement('div'); div.className='mat-item';
+      // Ambos os botões (transferir / alterar situação) ficam disponíveis para
+      // quem pode editar matrículas: admin, coordenação e secretaria — não só
+      // admin/coordenação (S.podeEditar, que é só p/ editar a TURMA).
+      var botoes='';
+      if(S.podeEditarMatricula){
+        botoes+='<button class="btn-mat-acao btn-trans" data-acao="trans" data-id="'+m.id+'" title="Transferir de turma"><span class="material-icons-round">swap_horiz</span></button>';
+        botoes+='<button class="btn-mat-acao btn-sit-mat" data-acao="sit" data-id="'+m.id+'" title="Alterar situação"><span class="material-icons-round">edit</span></button>';
+      }
       div.innerHTML=
         '<div>'+
           '<div class="mat-nome">'+(m.NomeExibicao||m.AlunoID||'—')+(m.PcD?' <span style="font-size:10px;background:rgba(69,123,157,0.12);color:#185FA5;padding:1px 6px;border-radius:4px;font-weight:600;">PcD</span>':'')+'</div>'+
           '<div class="mat-id">'+(m.MatriculaID||m.id||'—')+'</div>'+
         '</div>'+
         '<span class="badge-sit-mat '+(m.SituacaoMatricula||'ATIVA')+'">'+(m.SituacaoMatricula||'ATIVA')+'</span>'+
-        (S.podeEditar?'<button class="btn-mat-acao btn-sit-mat" data-id="'+m.id+'"><span class="material-icons-round">edit</span></button>':'');
-      var btn=div.querySelector('button[data-id]');
-      if(btn)btn.addEventListener('click',function(){
+        botoes;
+      var btnSit=div.querySelector('button[data-acao="sit"]');
+      if(btnSit)btnSit.addEventListener('click',function(){
         S.matriculaParaSit=m;
         if(el('modal-sit-aluno'))el('modal-sit-aluno').textContent='Aluno: '+(m.NomeExibicao||m.AlunoID);
         if(el('t5-motivo-wrap'))el('t5-motivo-wrap').style.display='none';
         if(el('t5-sit-opcoes'))el('t5-sit-opcoes').style.display='';
         if(el('modal-sit-overlay'))el('modal-sit-overlay').style.display='flex';
       });
+      var btnTrans=div.querySelector('button[data-acao="trans"]');
+      if(btnTrans)btnTrans.addEventListener('click',function(){ abrirModalTransferencia(m); });
       cont.appendChild(div);
+    });
+  }
+
+  // ── TRANSFERIR ALUNO DE TURMA (usa o modal-trans-overlay, antes sem nenhuma
+  // função associada) ───────────────────────────────────────────────────────
+  function abrirModalTransferencia(m){
+    S.matriculaParaTrans=m;
+    S.turmaTransSelecionada=null;
+    if(el('modal-trans-aluno'))el('modal-trans-aluno').textContent='Aluno: '+(m.NomeExibicao||m.AlunoID)+' — turma atual: '+(S.turmaSel?S.turmaSel.TurmaID:'—');
+    if(el('trans-alerta'))el('trans-alerta').className='t5-alerta erro';
+    if(el('trans-toggle-wrap'))el('trans-toggle-wrap').style.display=S.turmaSel?'flex':'none';
+    if(el('trans-outros-cursos'))el('trans-outros-cursos').checked=false;
+    if(el('btn-confirmar-trans'))el('btn-confirmar-trans').disabled=true;
+    renderizarListaTransferencia();
+    if(el('modal-trans-overlay'))el('modal-trans-overlay').style.display='flex';
+  }
+
+  function renderizarListaTransferencia(){
+    var cont=el('trans-lista-turmas'); if(!cont)return;
+    var outrosCursos=el('trans-outros-cursos')&&el('trans-outros-cursos').checked;
+    var origemId=S.turmaSel?S.turmaSel.id:null;
+    var cursoOrigem=S.turmaSel?S.turmaSel.curso_id:null;
+    var candidatas=S.turmas.filter(function(t){
+      if(t.id===origemId) return false;
+      if(t.SituacaoTurma!=='ATIVA') return false;
+      if(!outrosCursos && cursoOrigem && t.curso_id!==cursoOrigem) return false;
+      return true;
+    });
+    if(!candidatas.length){
+      cont.innerHTML='<div class="mat-vazio">Nenhuma turma de destino disponível'+(outrosCursos?'.':' — marque "Outros cursos" para ver mais opções.')+'</div>';
+      return;
+    }
+    cont.innerHTML='';
+    candidatas.forEach(function(t){
+      var item=document.createElement('div'); item.className='t5-trans-item'; item.dataset.id=t.id;
+      item.innerHTML=
+        '<div>'+
+          '<div class="t5-trans-nome">'+(t.TurmaID||'—')+' — '+(t.Estagio||t.CursoSigla||'—')+'</div>'+
+          '<div class="t5-trans-meta">'+(t.DiaSemana||'')+(t.Horario?' · '+t.Horario:'')+'</div>'+
+        '</div>';
+      item.addEventListener('click',function(){
+        document.querySelectorAll('.t5-trans-item').forEach(function(i){i.classList.remove('selecionado');});
+        item.classList.add('selecionado');
+        S.turmaTransSelecionada=t;
+        if(el('btn-confirmar-trans'))el('btn-confirmar-trans').disabled=false;
+      });
+      cont.appendChild(item);
+    });
+  }
+
+  function confirmarTransferencia(){
+    if(!S.matriculaParaTrans||!S.turmaTransSelecionada)return;
+    var btn=el('btn-confirmar-trans'); if(btn)btn.disabled=true;
+    // _matriculasTransferir (api.js) espera exatamente estas duas chaves.
+    postApi('matriculas.transferir',{
+      matricula_origem_id: S.matriculaParaTrans.id,
+      turma_destino_id:    S.turmaTransSelecionada.id,
+    }).then(function(res){
+      if(!res.sucesso){
+        if(btn)btn.disabled=false;
+        if(el('trans-alerta')){el('trans-alerta').className='t5-alerta show erro';var sp=el('trans-alerta').querySelector('span:last-child');if(sp)sp.textContent=res.mensagem||'Erro ao transferir.';}
+        return;
+      }
+      if(typeof toast==='function')toast('Aluno transferido de turma.','success');
+      if(el('modal-trans-overlay'))el('modal-trans-overlay').style.display='none';
+      carregarMatriculas();
     });
   }
 
@@ -1145,6 +1227,11 @@
     el('btn-cancelar-criar')&&el('btn-cancelar-criar').addEventListener('click',function(){if(el('t5-criar-overlay'))el('t5-criar-overlay').style.display='none';});
     el('btn-fechar-criar')&&el('btn-fechar-criar').addEventListener('click',function(){if(el('t5-criar-overlay'))el('t5-criar-overlay').style.display='none';});
     el('t5-criar-overlay')&&el('t5-criar-overlay').addEventListener('click',function(e){if(e.target===this)this.style.display='none';});
+    // Modal transferir matrícula
+    el('trans-outros-cursos')&&el('trans-outros-cursos').addEventListener('change',renderizarListaTransferencia);
+    el('btn-confirmar-trans')&&el('btn-confirmar-trans').addEventListener('click',confirmarTransferencia);
+    el('btn-cancelar-trans')&&el('btn-cancelar-trans').addEventListener('click',function(){if(el('modal-trans-overlay'))el('modal-trans-overlay').style.display='none';});
+    el('modal-trans-overlay')&&el('modal-trans-overlay').addEventListener('click',function(e){if(e.target===this)this.style.display='none';});
     // Modal situação matrícula — botões data-sit disparam confirmarSituacao
     document.querySelectorAll('.sit-opcao[data-sit]').forEach(function(btn){
       btn.addEventListener('click',function(){confirmarSituacao(this.dataset.sit);});
