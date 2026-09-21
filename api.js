@@ -86,6 +86,7 @@ async function postApi(acao, dados) {
     if (acao === 'alunos.ativar')    return await _alunosAtivar(sb, dados);
     if (acao === 'alunos.inativarAluno') return await _alunosInativar(sb, dados);
     if (acao === 'alunos.ativarAluno')   return await _alunosAtivar(sb, dados);
+    if (acao === 'alunos.buscarSensiveis') return await _alunosSensiveisBuscar(sb, dados);
 
     // ── CURSOS ────────────────────────────────────────────────────────────────
     if (acao === 'cursos.listar')    return await _cursosListar(sb, dados);
@@ -430,11 +431,17 @@ async function _alunosCriar(sb, dados) {
   var res = await sb.from('alunos').insert(camposPublicos).select().single();
   if (res.error) return _err(res.error.message);
 
-  // Inserir dados sensíveis via Edge Function (se houver)
-  if (dados.cpf_ou_cin || dados.cep || dados.endereco || dados.pcd_laudo_url) {
-    await _salvarSensiveis(sb, res.data.id, dados);
+  // Inserir dados sensíveis via Edge Function (alunos-sensiveis)
+  var avisoSensiveis = '';
+  var temCamposSensiveis = dados.cpf_ou_cin || dados.cep || dados.endereco || dados.pcd_laudo_url ||
+    dados.menor || dados.responsavel1_nome || dados.publico_alvo || dados.povo_tradicional;
+  if (temCamposSensiveis) {
+    var resSens = await _salvarSensiveis(sb, res.data.id, dados);
+    if (!resSens.sucesso) {
+      avisoSensiveis = ' Atenção: dados sensíveis (CPF/endereço/responsável) NÃO foram salvos — ' + resSens.mensagem;
+    }
   }
-  return _ok(res.data, 'Aluno cadastrado com sucesso.');
+  return _ok(res.data, 'Aluno cadastrado com sucesso.' + avisoSensiveis);
 }
 
 async function _alunosAtualizar(sb, dados) {
@@ -457,7 +464,10 @@ async function _alunosAtualizar(sb, dados) {
     if (res.error) return _err(res.error.message);
   }
   if (Object.keys(camposSensiveis).length > 0) {
-    await _salvarSensiveis(sb, dados.id, camposSensiveis);
+    var resSens = await _salvarSensiveis(sb, dados.id, camposSensiveis);
+    if (!resSens.sucesso) {
+      return _err('Aluno atualizado, mas os dados sensíveis (CPF/endereço/responsável) NÃO foram salvos: ' + resSens.mensagem);
+    }
   }
   return _ok(null, 'Aluno atualizado.');
 }
@@ -476,11 +486,47 @@ async function _alunosAtivar(sb, dados) {
   return _ok(null, 'Aluno reativado.');
 }
 
-// Salvar dados sensíveis — placeholder até Edge Function estar pronta
-// Por ora usa service_role via função RPC segura (a ser criada no banco)
+// Salvar dados sensíveis via Edge Function `alunos-sensiveis` (service_role
+// no servidor, RLS de alunos_sensiveis continua bloqueando tudo no cliente).
+// Retorna sempre { sucesso, mensagem } — nunca lança.
 async function _salvarSensiveis(sb, alunoId, dados) {
-  // TODO semana 3: implementar via Edge Function get-aluno-sensivel
-  console.warn('_salvarSensiveis: Edge Function não implementada ainda. Dados sensíveis não foram salvos.');
+  try {
+    var res = await sb.functions.invoke('alunos-sensiveis', {
+      body: { acao: 'salvar', aluno_id: alunoId, dados: dados },
+    });
+    if (res.error) {
+      console.error('_salvarSensiveis erro:', res.error);
+      return { sucesso: false, mensagem: res.error.message || 'Erro ao chamar a Edge Function.' };
+    }
+    if (res.data && res.data.sucesso === false) {
+      return { sucesso: false, mensagem: res.data.mensagem || 'Falha ao salvar dados sensíveis.' };
+    }
+    return { sucesso: true };
+  } catch (e) {
+    console.error('_salvarSensiveis exceção:', e);
+    return { sucesso: false, mensagem: e.message || 'Erro ao salvar dados sensíveis.' };
+  }
+}
+
+// Buscar dados sensíveis via Edge Function `alunos-sensiveis`.
+// Só retorna dados se o papel do usuário logado tiver permissão
+// (checado no próprio servidor da Edge Function).
+async function _alunosSensiveisBuscar(sb, dados) {
+  if (!dados.aluno_id) return _err('aluno_id é obrigatório.', 400);
+  try {
+    var res = await sb.functions.invoke('alunos-sensiveis', {
+      body: { acao: 'buscar', aluno_id: dados.aluno_id },
+    });
+    if (res.error) {
+      return _err(res.error.message || 'Erro ao buscar dados sensíveis.', 500);
+    }
+    if (res.data && res.data.sucesso === false) {
+      return _err(res.data.mensagem || 'Sem permissão para ver dados sensíveis.', 403);
+    }
+    return _ok((res.data && res.data.dados) || {});
+  } catch (e) {
+    return _err(e.message || 'Erro ao buscar dados sensíveis.', 500);
+  }
 }
 
 // =============================================================================
