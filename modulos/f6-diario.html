@@ -261,11 +261,39 @@
     return (val||'').split('T')[0];
   }
 
-  function formatarDataHora(dt) {
-    if(!dt) return '';
-    var d=(dt instanceof Date)?dt:new Date(dt);
-    if(isNaN(d.getTime())) return String(dt);
-    return pad(d.getDate())+'/'+pad(d.getMonth()+1)+'/'+d.getFullYear()+' '+pad(d.getHours())+':'+pad(d.getMinutes());
+  // Normaliza uma turma vinda de turmas.listar (snake_case + joins) para os
+  // campos PascalCase usados por esta tela. `_turmasListar` (api.js) devolve
+  // um ARRAY plano (não {dados, totalRegistros,...}) — ver correção abaixo.
+  function normTurma(t) {
+    if (!t) return t;
+    var c = t.cursos || {};
+    return {
+      id:              t.id,
+      TurmaID:         t.external_id || t.id,
+      SituacaoTurma:   t.situacao || 'ATIVA',
+      Estagio:         t.estagio || '',
+      CursoID:         c.external_id || t.curso_id,
+      DiaSemana:       t.dia_semana || '',
+      Horario:         t.horario || '',
+      Modalidade:      t.modalidade || '',
+      DataInicioTurma: t.data_inicio || '',
+      DataFimTurma:    t.data_fim || '',
+      semestre_id:     t.semestre_id,
+      professor_id:    t.professor_id,
+    };
+  }
+
+  // Normaliza uma matrícula vinda de matriculas.listar (snake_case + joins)
+  function normMatricula(m) {
+    if (!m) return m;
+    var al = m.alunos || {};
+    return {
+      id:           m.id,
+      MatriculaID:  m.external_id || m.id,
+      AlunoID:      al.external_id || m.aluno_id,
+      NomeExibicao: al.nome_social || al.nome_completo || '',
+      aluno_id:     m.aluno_id,
+    };
   }
 
   function mostrarAlerta(msg, tipo) {
@@ -281,38 +309,28 @@
     if(ta&&c) c.textContent=ta.value.length;
   }
 
-  function ultimoTimestamp(lista) {
-    var max=null;
-    (lista||[]).forEach(function(item){
-      var ts=item.Timestamp; if(!ts) return;
-      var p=String(ts).split(' ');
-      var d=(p[0]||'').split('/');
-      var hm=(p[1]||'00:00').split(':');
-      if(d.length!==3) return;
-      var dt=new Date(Number(d[2]),Number(d[1])-1,Number(d[0]),Number(hm[0])||0,Number(hm[1])||0);
-      if(isNaN(dt.getTime())) return;
-      if(!max||dt>max.dt) max={dt:dt,texto:ts};
-    });
-    return max?max.texto:null;
-  }
-
   // =========================================================
   // PASSO 1 — TURMAS
   // =========================================================
   function carregarTurmas() {
-    postApi('turmas.listar',{tamanhoPagina:300}).then(function(res){
+    var filtros = {};
+    if (S.papel === 'professor' && typeof App !== 'undefined' && App.usuario) {
+      filtros.professor_id = App.usuario.id;
+    }
+    postApi('turmas.listar', filtros).then(function(res){
       el('diario-turmas-loading').style.display='none';
       if(!res.sucesso){
         el('diario-turma-grid').style.display='grid';
         el('diario-turma-grid').innerHTML='<p style="color:#E63946;font-size:13px;grid-column:1/-1;">Erro: '+(res.mensagem||'Falha ao carregar turmas.')+'</p>';
         return;
       }
-      if(!res.dados||!res.dados.dados||res.dados.dados.length===0){
+      // _turmasListar devolve um array plano em res.dados (não res.dados.dados)
+      if(!res.dados||res.dados.length===0){
         el('diario-turma-grid').style.display='grid';
         el('diario-turma-grid').innerHTML='<p style="color:var(--c-text-3);font-size:13px;grid-column:1/-1;">Nenhuma turma encontrada.</p>';
         return;
       }
-      S.turmas=res.dados.dados;
+      S.turmas=res.dados.map(normTurma);
       if(el('diario-filtro-row')) el('diario-filtro-row').style.display='flex';
       renderizarTurmas();
     }).catch(function(){
@@ -341,7 +359,7 @@
       var encerrada=String(t.SituacaoTurma)==='ENCERRADA';
       var card=document.createElement('div');
       card.className='turma-card'+(ativa?'':' turma-nao-ativa');
-      card.dataset.turmaId=t.TurmaID;
+      card.dataset.turmaId=String(t.TurmaID);
       card.innerHTML='<div class="turma-card-id">'+t.TurmaID+'</div>'+
         '<div class="turma-card-estagio">'+(t.Estagio||t.CursoID)+'</div>'+
         '<div class="turma-card-detalhe">'+(t.DiaSemana||'')+(t.Horario?' · '+t.Horario:'')+'</div>'+
@@ -356,7 +374,7 @@
   function selecionarTurma(turma) {
     S.turmaSel=turma;
     document.querySelectorAll('.turma-card').forEach(function(c){
-      c.classList.toggle('selecionada',c.dataset.turmaId===turma.TurmaID);
+      c.classList.toggle('selecionada',c.dataset.turmaId===String(turma.TurmaID));
     });
     el('diario-step-turma').style.display='none';
     el('diario-step-data').style.display='block';
@@ -399,11 +417,12 @@
     var diasNums = diasTurmaNumeros(turma);
     var hoje = hojeISO();
 
-    // Estratégia: busca o calendário para obter datas NÃO-letivas (feriados,
-    // recessos). A lista de aulas previstas é gerada programaticamente com base
-    // no DiaSemana da turma, do início do semestre até hoje. Isso garante que
-    // datas sem registro (semanas esquecidas, afastamentos) apareçam no dropdown
-    // mesmo sem ter nenhuma frequência/conteúdo lançado.
+    // NOTA (etapa 4 do plano de migração): a ação 'calendario.listar' ainda
+    // não existe em api.js — o calendário letivo (feriados/recessos) do
+    // Apps Script não foi migrado para o Supabase. A chamada abaixo falha
+    // graciosamente (res.sucesso=false) e cai no fallback por DiaSemana da
+    // turma, sem excluir feriados. Follow-up: migrar tabela de calendário
+    // letivo e implementar `calendario.listar` em api.js.
     postApi('calendario.listar', {turmaId: turma.TurmaID}).then(function(res){
       sel.innerHTML='<option value="">Selecione uma data…</option>';
 
@@ -548,45 +567,44 @@
     el('diario-conteudo').value=''; atualizarContador();
     S.frequencias={}; S.freqOriginal={}; S.contFaltas={}; S.jaRegistrado=false; S.conteudoOriginal='';
 
-    var turmaId=S.turmaSel.TurmaID, dataISO=S.dataSel;
+    var turmaUuid=S.turmaSel.id, dataISO=S.dataSel;
 
     Promise.all([
-      postApi('matriculas.listar',{turmaId:turmaId,situacao:'ATIVA',tamanhoPagina:300}),
-      postApi('frequencias.listar',{turmaId:turmaId,dataAula:dataISO}),
-      postApi('conteudo.listar',{turmaId:turmaId}),
-      postApi('frequencias.listar',{turmaId:turmaId}), // todas as datas para contar faltas
+      postApi('matriculas.listar',{turma_id:turmaUuid,situacao:'ATIVA'}),
+      postApi('frequencias.listar',{turma_id:turmaUuid,data_aula:dataISO}),
+      postApi('conteudo.listar',{turma_id:turmaUuid}),
+      postApi('frequencias.listar',{turma_id:turmaUuid}), // todas as datas para contar faltas
     ]).then(function(res){
-      S.matriculas=(res[0].sucesso&&res[0].dados&&res[0].dados.dados)?res[0].dados.dados:[];
+      S.matriculas=(res[0].sucesso&&res[0].dados)?res[0].dados.map(normMatricula):[];
 
-      // Frequências desta data específica
+      // Frequências desta data específica (chave = matricula_id / m.id, uuid)
       if(res[1].sucesso&&res[1].dados&&res[1].dados.length>0){
         S.jaRegistrado=true;
         res[1].dados.forEach(function(f){
-          var obj={freq:f.Frequencia||'P',anotacao:f.Anotacao||''};
-          S.frequencias[f.MatriculaID]=obj;
-          S.freqOriginal[f.MatriculaID]={freq:obj.freq,anotacao:obj.anotacao};
+          var obj={freq:f.frequencia||'P',anotacao:f.anotacao||''};
+          S.frequencias[f.matricula_id]=obj;
+          S.freqOriginal[f.matricula_id]={freq:obj.freq,anotacao:obj.anotacao};
         });
-        var ts=ultimoTimestamp(res[1].dados);
         el('diario-header-badge').className='diario-aula-header-badge salvo';
-        el('diario-header-badge').innerHTML='<span class="material-icons-round">check_circle</span><span>Já registrado'+(ts?' em '+ts:'')+'</span>';
+        el('diario-header-badge').innerHTML='<span class="material-icons-round">check_circle</span><span>Já registrado</span>';
       }
 
       // Conteúdo desta data
       var conteudosLista=(res[2].sucesso&&res[2].dados)?res[2].dados:[];
-      var aulasData=conteudosLista.filter(function(c){ return String(c.DataAula||'').indexOf(dataISO)!==-1; });
-      var conteudoExistente=aulasData.length>0?(aulasData[0].ConteudoMinistrado||''):'';
+      var aulasData=conteudosLista.filter(function(c){ return String(c.data_aula||'').indexOf(dataISO)!==-1; });
+      var conteudoExistente=aulasData.length>0?(aulasData[0].conteudo_ministrado||''):'';
       el('diario-conteudo').value=conteudoExistente;
       S.conteudoOriginal=conteudoExistente;
       atualizarContador();
 
       // Histórico (outras datas)
-      var historico=conteudosLista.filter(function(c){ return String(c.DataAula||'').indexOf(dataISO)===-1; }).slice(-3).reverse();
+      var historico=conteudosLista.filter(function(c){ return String(c.data_aula||'').indexOf(dataISO)===-1; }).slice(-3).reverse();
       renderizarHistorico(historico);
 
       // Contagem de faltas (todas as datas)
       S.contFaltas={};
       if(res[3].sucesso&&res[3].dados){
-        res[3].dados.forEach(function(f){ if(f.Frequencia==='F') S.contFaltas[f.MatriculaID]=(S.contFaltas[f.MatriculaID]||0)+1; });
+        res[3].dados.forEach(function(f){ if(f.frequencia==='F') S.contFaltas[f.matricula_id]=(S.contFaltas[f.matricula_id]||0)+1; });
       }
 
       renderizarTabela();
@@ -604,7 +622,7 @@
       el('freq-tabela').style.display='table'; atualizarContadores(); return;
     }
     S.matriculas.forEach(function(m){
-      var matId=m.MatriculaID, nome=m.NomeExibicao||m.AlunoID||matId;
+      var matId=m.id, nome=m.NomeExibicao||m.AlunoID||matId;
       // Se não havia registro, inicializa com P (padrão)
       if(!S.frequencias[matId]) S.frequencias[matId]={freq:'P',anotacao:''};
       var freqAtual=S.frequencias[matId].freq;
@@ -662,27 +680,27 @@
     corpo.innerHTML='';
     historico.forEach(function(c){
       var div=document.createElement('div'); div.className='historico-item';
-      var data=c.DataAula?String(c.DataAula).substring(0,16):'—';
-      div.innerHTML='<div class="historico-data">'+data+'</div><div class="historico-conteudo">'+(c.ConteudoMinistrado||'—')+'</div>';
+      var data=c.data_aula?String(c.data_aula).substring(0,16):'—';
+      div.innerHTML='<div class="historico-data">'+data+'</div><div class="historico-conteudo">'+(c.conteudo_ministrado||'—')+'</div>';
       corpo.appendChild(div);
     });
   }
 
   function todosPresente(){
     S.matriculas.forEach(function(m){
-      S.frequencias[m.MatriculaID]=S.frequencias[m.MatriculaID]||{anotacao:''};
-      S.frequencias[m.MatriculaID].freq='P';
-      var btn=document.querySelector('[data-mat="'+m.MatriculaID+'"][data-freq="P"]');
-      if(btn) marcarFrequencia(m.MatriculaID,'P',btn.closest('tr'));
+      S.frequencias[m.id]=S.frequencias[m.id]||{anotacao:''};
+      S.frequencias[m.id].freq='P';
+      var btn=document.querySelector('[data-mat="'+m.id+'"][data-freq="P"]');
+      if(btn) marcarFrequencia(m.id,'P',btn.closest('tr'));
     });
   }
 
   function todosFalta(){
     S.matriculas.forEach(function(m){
-      S.frequencias[m.MatriculaID]=S.frequencias[m.MatriculaID]||{anotacao:''};
-      S.frequencias[m.MatriculaID].freq='F';
-      var btn=document.querySelector('[data-mat="'+m.MatriculaID+'"][data-freq="F"]');
-      if(btn) marcarFrequencia(m.MatriculaID,'F',btn.closest('tr'));
+      S.frequencias[m.id]=S.frequencias[m.id]||{anotacao:''};
+      S.frequencias[m.id].freq='F';
+      var btn=document.querySelector('[data-mat="'+m.id+'"][data-freq="F"]');
+      if(btn) marcarFrequencia(m.id,'F',btn.closest('tr'));
     });
   }
 
@@ -695,51 +713,59 @@
   }
 
   // =========================================================
-  // SALVAR — apenas o que mudou (diff para auditoria)
+  // SALVAR — payload no formato snake_case que _frequenciasSalvar /
+  // _conteudoSalvar (api.js) realmente esperam.
   // =========================================================
   function salvarRegistro(){
     if(S.matriculas.length===0){mostrarAlerta('Não há alunos para registrar.','erro');return;}
     var conteudoNovo=el('diario-conteudo')?el('diario-conteudo').value.trim():'';
 
-    // Monta lista completa de frequências (upsert garante sem duplicata)
-    var listaFreq=S.matriculas.map(function(m){
-      var f=S.frequencias[m.MatriculaID]||{freq:'P',anotacao:''};
-      return{MatriculaID:m.MatriculaID,Frequencia:f.freq||'P',Anotacao:f.anotacao||''};
+    var turmaUuid=S.turmaSel.id, dataISO=S.dataSel, semestreId=S.turmaSel.semestre_id;
+
+    // dados.registros = [{ matricula_id, turma_id, semestre_id, data_aula, frequencia, anotacao }]
+    var registros=S.matriculas.map(function(m){
+      var f=S.frequencias[m.id]||{freq:'P',anotacao:''};
+      return {
+        matricula_id: m.id,
+        turma_id:     turmaUuid,
+        semestre_id:  semestreId,
+        data_aula:    dataISO,
+        frequencia:   f.freq||'P',
+        anotacao:     f.anotacao||'',
+      };
     });
 
-    // Delta para auditoria — só o que mudou
-    var listaAuditoria=listaFreq.filter(function(item){
-      var orig=S.freqOriginal[item.MatriculaID];
-      if(!orig) return true; // novo registro
-      return orig.freq!==item.Frequencia||orig.anotacao!==item.Anotacao;
+    // Detecta se algo mudou em relação ao que já estava salvo
+    var mudouFreq=registros.some(function(r){
+      var orig=S.freqOriginal[r.matricula_id];
+      if(!orig) return true;
+      return orig.freq!==r.frequencia||orig.anotacao!==r.anotacao;
     });
     var conteudoMudou=conteudoNovo!==S.conteudoOriginal;
 
-    if(S.jaRegistrado && listaAuditoria.length===0 && !conteudoMudou){
+    if(S.jaRegistrado && !mudouFreq && !conteudoMudou){
       mostrarAlerta('Nenhuma alteração detectada.','erro'); return;
     }
 
     var btn=el('diario-btn-salvar'); btn.disabled=true; btn.classList.add('loading');
-    var turmaId=S.turmaSel.TurmaID, dataISO=S.dataSel;
 
-    // frequencias.salvar deve usar upsert (ON CONFLICT DO UPDATE) no back-end
     var promises=[
-      postApi('frequencias.salvar',{turmaId:turmaId,dataAula:dataISO,lista:listaFreq,auditoria:listaAuditoria}),
+      postApi('frequencias.salvar',{registros:registros}),
     ];
     if(conteudoMudou){
-      promises.push(postApi('conteudo.salvar',{turmaId:turmaId,dataAula:dataISO,conteudoMinistrado:conteudoNovo}));
+      promises.push(postApi('conteudo.salvar',{turma_id:turmaUuid,semestre_id:semestreId,data_aula:dataISO,conteudo_ministrado:conteudoNovo}));
     }
 
     Promise.all(promises).then(function(res){
       btn.disabled=false; btn.classList.remove('loading');
       var erros=[];
-      res.forEach(function(r,i){ if(!r.sucesso) erros.push(i===0?'frequência':'conteúdo'+': '+r.mensagem); });
+      res.forEach(function(r,i){ if(!r.sucesso) erros.push((i===0?'frequência':'conteúdo')+': '+r.mensagem); });
       if(erros.length>0){mostrarAlerta('Erro ao salvar: '+erros.join('; '),'erro');return;}
       mostrarAlerta('Registro salvo com sucesso!','sucesso');
       S.jaRegistrado=true;
       // Atualiza original para refletir o estado salvo
-      listaFreq.forEach(function(item){
-        S.freqOriginal[item.MatriculaID]={freq:item.Frequencia,anotacao:item.Anotacao};
+      registros.forEach(function(r){
+        S.freqOriginal[r.matricula_id]={freq:r.frequencia,anotacao:r.anotacao};
       });
       if(conteudoMudou) S.conteudoOriginal=conteudoNovo;
       el('diario-header-badge').className='diario-aula-header-badge salvo';
@@ -756,9 +782,10 @@
   // INIT
   // =========================================================
   function init(){
-    // Papel do usuário logado
+    // Papel do usuário logado — o perfil salvo por Auth.salvar() (api.js/auth.js)
+    // usa chaves em minúsculas (papel, id), não Papel/UsuarioID.
     var usuario=(typeof App!=='undefined'&&App.usuario)?App.usuario:null;
-    if(usuario){ S.papel=usuario.Papel||''; S.usuarioId=usuario.UsuarioID||''; }
+    if(usuario){ S.papel=usuario.papel||''; S.usuarioId=usuario.id||''; }
 
     el('diario-btn-abrir')&&el('diario-btn-abrir').addEventListener('click',abrirDiario);
     el('diario-btn-trocar-turma')&&el('diario-btn-trocar-turma').addEventListener('click',function(){
