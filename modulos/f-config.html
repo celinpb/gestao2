@@ -85,6 +85,17 @@
 
   /* Seção única para admins */
   .cfg-span2{grid-column:1/-1;}
+
+  /* Regras de acesso (RLS) — somente leitura */
+  .regras-aviso{background:#F8F7F3;border:1px solid var(--c-border,#E8E7E2);border-left:4px solid #E63946;border-radius:8px;padding:12px 16px;display:flex;align-items:flex-start;gap:10px;margin-bottom:16px;font-size:13px;color:var(--c-text-2,#5C5C7A);}
+  .regras-aviso .material-icons-round{font-size:18px;color:#E63946;flex-shrink:0;margin-top:1px;}
+  .regras-tabela-wrap{overflow-x:auto;}
+  table.regras-tabela{width:100%;border-collapse:collapse;font-size:12.5px;}
+  table.regras-tabela th, table.regras-tabela td{padding:8px 10px;border-bottom:1px solid var(--c-border,#E8E7E2);text-align:left;white-space:nowrap;}
+  table.regras-tabela th{font-size:11px;font-weight:600;letter-spacing:0.4px;text-transform:uppercase;color:var(--c-text-3,#9898B0);background:#FAFAF8;}
+  table.regras-tabela td.regras-modulo{font-weight:600;color:var(--c-text-1,#1A1A2E);white-space:normal;}
+  table.regras-tabela td.regras-obs{white-space:normal;color:var(--c-text-2,#5C5C7A);}
+  .regras-rodape{margin-top:12px;font-size:11.5px;color:var(--c-text-3,#9898B0);}
 </style>
 
 <div>
@@ -246,6 +257,51 @@
           <button class="btn-cfg btn-cfg-sec" id="btn-novo-sem" style="margin-top:8px;">
             <span class="material-icons-round">add</span>Registrar novo semestre
           </button>
+        </div>
+      </div>
+
+      <!-- REGRAS DE ACESSO (RLS) — SOMENTE LEITURA -->
+      <div class="cfg-card cfg-span2">
+        <div class="cfg-card-header">
+          <span class="material-icons-round">shield</span>
+          <span class="cfg-card-titulo">Regras de acesso por papel</span>
+        </div>
+        <div class="cfg-card-corpo">
+          <div class="regras-aviso">
+            <span class="material-icons-round">info</span>
+            <span>Estas regras são aplicadas diretamente no banco de dados (Row Level Security do Supabase) e não podem ser alteradas por esta tela. Para solicitar qualquer alteração, entre em contato com o administrador do banco de dados.</span>
+          </div>
+          <div class="regras-tabela-wrap">
+            <table class="regras-tabela">
+              <thead>
+                <tr>
+                  <th>Módulo</th>
+                  <th>Admin</th>
+                  <th>Coordenação</th>
+                  <th>Professor</th>
+                  <th>Secretaria</th>
+                  <th>Observação</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td class="regras-modulo">Usuários</td><td>Total</td><td>Cria/edita (não cria admin)</td><td>Sem acesso</td><td>Sem acesso</td><td class="regras-obs">Todo usuário lê o próprio cadastro, para o login funcionar.</td></tr>
+                <tr><td class="regras-modulo">Cursos</td><td>Total</td><td>Cria/edita</td><td>Só lê</td><td>Só lê</td><td class="regras-obs">Exclusão sempre restrita ao admin.</td></tr>
+                <tr><td class="regras-modulo">Avaliações</td><td>Total</td><td>Cria/edita</td><td>Só lê</td><td>Só lê</td><td class="regras-obs">Exclusão sempre restrita ao admin.</td></tr>
+                <tr><td class="regras-modulo">Alunos</td><td>Total</td><td>Total</td><td>Só lê alunos das próprias turmas</td><td>Cria/edita/lê todos</td><td class="regras-obs">Exclusão sempre restrita ao admin.</td></tr>
+                <tr><td class="regras-modulo">Semestres</td><td>Total</td><td>Cria/edita</td><td>Sem acesso</td><td>Só lê</td><td class="regras-obs">Exclusão sempre restrita ao admin.</td></tr>
+                <tr><td class="regras-modulo">Turmas</td><td>Total</td><td>Cria/edita/exclui</td><td>Só as próprias — edita apenas link do encontro, WhatsApp e Classroom</td><td>Só lê todas</td><td class="regras-obs">Professor não pode alterar outros campos da turma nem trocar de turma.</td></tr>
+                <tr><td class="regras-modulo">Matrículas</td><td>Total</td><td>Total</td><td>Só lê as das próprias turmas</td><td>Cria/edita/lê todas</td><td class="regras-obs">Exclusão sempre restrita ao admin.</td></tr>
+                <tr><td class="regras-modulo">Frequência</td><td>Total</td><td>Total</td><td>Lança só nas próprias turmas</td><td>Só lê</td><td class="regras-obs">Exclusão sempre restrita ao admin.</td></tr>
+                <tr><td class="regras-modulo">Conteúdo ministrado</td><td>Total</td><td>Total</td><td>Lança só nas próprias turmas</td><td>Só lê</td><td class="regras-obs">Exclusão sempre restrita ao admin.</td></tr>
+                <tr><td class="regras-modulo">Notas</td><td>Total</td><td>Total</td><td>Lança só nas próprias turmas</td><td>Só lê</td><td class="regras-obs">Exclusão sempre restrita ao admin.</td></tr>
+                <tr><td class="regras-modulo">Comentários</td><td>Total</td><td>Total</td><td>Lança só nas próprias turmas</td><td>Só lê</td><td class="regras-obs">Mesma regra de Notas.</td></tr>
+                <tr><td class="regras-modulo">Relatórios</td><td>Lê</td><td>Lê</td><td>Lê</td><td>Lê</td><td class="regras-obs">Leitura liberada para todos os papéis.</td></tr>
+                <tr><td class="regras-modulo">Configurações</td><td>Total</td><td>Sem acesso</td><td>Sem acesso</td><td>Sem acesso</td><td class="regras-obs">Nome/logo/endereço da escola são visíveis a todos (não sensíveis).</td></tr>
+                <tr><td class="regras-modulo">Dados sensíveis do aluno (CPF, endereço, responsáveis)</td><td>Total</td><td>Total</td><td>Só leitura parcial (menor de idade e contato do responsável)</td><td>Total</td><td class="regras-obs">Acesso exclusivo pela Edge Function alunos-sensiveis; a tabela não tem policy nenhuma, é bloqueio total por padrão.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="regras-rodape">Última revisão destas regras: 21/09/2026 (etapa 4 do plano de migração). Um usuário não autenticado não tem acesso a nenhum dado do sistema.</div>
         </div>
       </div>
 
