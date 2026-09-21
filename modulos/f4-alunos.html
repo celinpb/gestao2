@@ -812,7 +812,11 @@
   // alunos-sensiveis e chama onCarregado(aluno) quando terminar.
   // Só é chamada para papéis que a UI já mostra a seção "Dados protegidos".
   function carregarDadosSensiveis(aluno, onCarregado) {
-    if (['admin','coordenacao','secretaria'].indexOf(state.papel) === -1) return;
+    // admin/coordenacao/secretaria recebem o registro completo de
+    // alunos_sensiveis; professor recebe só um subconjunto (se é menor +
+    // contato dos responsáveis, sem CPF/endereço) — o filtro é aplicado
+    // pela própria Edge Function, aqui só decidimos quem pode chamar.
+    if (['admin','coordenacao','secretaria','professor'].indexOf(state.papel) === -1) return;
     if (!aluno || !aluno.id) return;
     postApi('alunos.buscarSensiveis', { aluno_id: aluno.id })
       .then(function(res) {
@@ -1040,8 +1044,14 @@
       html+='</div>';
     }
     if (a.MenorBoolean) {
+      // Se é menor + contato dos responsáveis é visível a todos os papéis
+      // (inclusive professor, que recebe esse subconjunto pela Edge
+      // Function); só o CPF do responsável fica restrito aos 3 papéis com
+      // acesso total a alunos_sensiveis.
       html+='<div class="ficha-secao"><div class="ficha-secao-titulo">Responsável 1</div>';
-      html+=campo('Nome',a.Responsavel1Nome)+campo('CPF',a.Responsavel1CPF)+campo('Parentesco',a.Responsavel1Parentesco)+
+      html+=campo('Nome',a.Responsavel1Nome);
+      if (['admin','coordenacao','secretaria'].indexOf(state.papel) !== -1) html+=campo('CPF',a.Responsavel1CPF);
+      html+=campo('Parentesco',a.Responsavel1Parentesco)+
             campo('Telefone',fmtTel(a.Responsavel1Telefone))+campo('E-mail',a['Responsavel1e-mail']);
       html+='</div>';
       if (a.Responsavel2Nome) {
