@@ -328,7 +328,7 @@
 <script>
 (function(){
   'use strict';
-  var state={matriculas:[],turmas:[],busca:'',filtroTurma:'',filtroSit:'ATIVA',papel:'',podeEditar:false,matriculaParaSit:null,novaAlunoSel:null};
+  var state={matriculas:[],turmas:[],busca:'',filtroTurma:'',filtroSit:'ATIVA',papel:'',podeEditar:false,matriculaParaSit:null,matriculaParaTrans:null,turmaTransSelecionada:null,novaAlunoSel:null};
   function postApi(a,d){return window.postApi(a,d);}
   function el(id){return document.getElementById(id);}
   function val(id){return el(id)?el(id).value.trim():'';}
@@ -349,7 +349,7 @@
   function normT(t){
     if(!t)return t;
     var c=t.cursos||{};
-    return{id:t.id,TurmaID:t.external_id||t.id,Estagio:t.estagio||'',CursoSigla:c.sigla||'',semestre_id:t.semestre_id};
+    return{id:t.id,TurmaID:t.external_id||t.id,Estagio:t.estagio||'',CursoSigla:c.sigla||'',semestre_id:t.semestre_id,curso_id:t.curso_id,SituacaoTurma:t.situacao||'ATIVA'};
   }
 
   function init(){
@@ -424,25 +424,30 @@
     if(el('m5-tabela'))el('m5-tabela').style.display='table';
     if(el('m5-paginacao'))el('m5-paginacao').style.display='flex';
     if(el('m5-pag-info'))el('m5-pag-info').textContent=lista.length+' matrícula'+(lista.length!==1?'s':'');
-    if(!lista.length){tbody.innerHTML='<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--c-text-3);">Nenhuma matrícula encontrada.</td></tr>';return;}
     lista.forEach(function(m){
       var tr=document.createElement('tr');
+      var acoes='';
+      if(state.podeEditar){
+        acoes+='<button class="btn-m5-acao trans" data-acao="trans" data-id="'+m.id+'"><span class="material-icons-round">swap_horiz</span>Transferir</button>';
+        acoes+='<button class="btn-m5-acao" data-acao="sit" data-id="'+m.id+'"><span class="material-icons-round">edit</span>Situação</button>';
+      }
       tr.innerHTML=
         '<td class="m5-mat-id">'+(m.MatriculaID||'—')+'</td>'+
         '<td><div class="m5-nome">'+(m.NomeExibicao||m.AlunoID||'—')+'</div>'+
             '<div style="font-size:11.5px;color:var(--c-text-3);">'+(m.AlunoID||'')+'</div></td>'+
         '<td class="m5-turma-id">'+(m.TurmaID||'—')+'</td>'+
         '<td><span class="badge-sit-mat '+(m.SituacaoMatricula||'').toLowerCase()+'">'+(m.SituacaoMatricula||'—')+'</span></td>'+
-        '<td class="m5-acoes">'+
-          (state.podeEditar?'<button class="btn-m5-acao" data-id="'+m.id+'"><span class="material-icons-round">edit</span>Situação</button>':'')+
-        '</td>';
-      tr.querySelector('button[data-id]')&&tr.querySelector('button[data-id]').addEventListener('click',function(){
+        '<td class="m5-acoes">'+acoes+'</td>';
+      var btnSit=tr.querySelector('button[data-acao="sit"]');
+      if(btnSit)btnSit.addEventListener('click',function(){
         state.matriculaParaSit=m;
         if(el('m5-sit-aluno'))el('m5-sit-aluno').textContent='Aluno: '+(m.NomeExibicao||m.AlunoID);
         if(el('m5-motivo-wrap'))el('m5-motivo-wrap').style.display='none';
         if(el('m5-sit-opcoes'))el('m5-sit-opcoes').style.display='';
         if(el('m5-modal-sit'))el('m5-modal-sit').style.display='flex'; // ID real
       });
+      var btnTrans=tr.querySelector('button[data-acao="trans"]');
+      if(btnTrans)btnTrans.addEventListener('click',function(){ abrirModalTransferencia(m); });
       tbody.appendChild(tr);
     });
   }
@@ -462,6 +467,72 @@
       if(!res.sucesso){if(typeof toast==='function')toast(res.mensagem||'Erro.','error');return;}
       if(typeof toast==='function')toast('Situação atualizada.','success');
       if(el('m5-modal-sit'))el('m5-modal-sit').style.display='none'; // ID real: m5-modal-sit
+      carregarMatriculas();
+    });
+  }
+
+  // ── TRANSFERIR ALUNO DE TURMA (usa o m5-modal-trans, antes sem nenhuma
+  // função associada — só o botão "Situação" existia) ─────────────────────
+  function abrirModalTransferencia(m){
+    state.matriculaParaTrans=m;
+    state.turmaTransSelecionada=null;
+    if(el('m5-trans-aluno'))el('m5-trans-aluno').textContent='Aluno: '+(m.NomeExibicao||m.AlunoID)+' — turma atual: '+(m.TurmaID||'—');
+    if(el('m5-trans-alerta'))el('m5-trans-alerta').className='m5-trans-alerta erro';
+    if(el('m5-trans-toggle-wrap'))el('m5-trans-toggle-wrap').style.display='flex';
+    if(el('m5-trans-outros-cursos'))el('m5-trans-outros-cursos').checked=false;
+    if(el('btn-confirmar-m5-trans'))el('btn-confirmar-m5-trans').disabled=true;
+    renderizarListaTransferencia(m);
+    if(el('m5-modal-trans'))el('m5-modal-trans').style.display='flex';
+  }
+
+  function renderizarListaTransferencia(m){
+    var cont=el('m5-trans-lista-turmas'); if(!cont)return;
+    var outrosCursos=el('m5-trans-outros-cursos')&&el('m5-trans-outros-cursos').checked;
+    var turmaOrigem=state.turmas.find(function(t){return t.id===m.turma_id;});
+    var origemId=m.turma_id;
+    var cursoOrigem=turmaOrigem?turmaOrigem.curso_id:null;
+    var candidatas=state.turmas.filter(function(t){
+      if(t.id===origemId) return false;
+      if(t.SituacaoTurma!=='ATIVA') return false;
+      if(!outrosCursos && cursoOrigem && t.curso_id!==cursoOrigem) return false;
+      return true;
+    });
+    if(!candidatas.length){
+      cont.innerHTML='<div class="mat-vazio" style="padding:24px 0;text-align:center;color:var(--c-text-3);font-size:13px;">Nenhuma turma de destino disponível'+(outrosCursos?'.':' — marque "Outros cursos" para ver mais opções.')+'</div>';
+      return;
+    }
+    cont.innerHTML='';
+    candidatas.forEach(function(t){
+      var item=document.createElement('div'); item.className='m5-trans-item'; item.dataset.id=t.id;
+      item.innerHTML=
+        '<div>'+
+          '<div class="m5-trans-nome">'+(t.TurmaID||'—')+' — '+(t.Estagio||t.CursoSigla||'—')+'</div>'+
+        '</div>';
+      item.addEventListener('click',function(){
+        document.querySelectorAll('.m5-trans-item').forEach(function(i){i.classList.remove('selecionado');});
+        item.classList.add('selecionado');
+        state.turmaTransSelecionada=t;
+        if(el('btn-confirmar-m5-trans'))el('btn-confirmar-m5-trans').disabled=false;
+      });
+      cont.appendChild(item);
+    });
+  }
+
+  function confirmarTransferencia(){
+    if(!state.matriculaParaTrans||!state.turmaTransSelecionada)return;
+    var btn=el('btn-confirmar-m5-trans'); if(btn)btn.disabled=true;
+    // _matriculasTransferir (api.js) espera exatamente estas duas chaves.
+    postApi('matriculas.transferir',{
+      matricula_origem_id: state.matriculaParaTrans.id,
+      turma_destino_id:    state.turmaTransSelecionada.id,
+    }).then(function(res){
+      if(!res.sucesso){
+        if(btn)btn.disabled=false;
+        if(el('m5-trans-alerta')){el('m5-trans-alerta').className='m5-trans-alerta show erro';var sp=el('m5-trans-alerta').querySelector('span:last-child');if(sp)sp.textContent=res.mensagem||'Erro ao transferir.';}
+        return;
+      }
+      if(typeof toast==='function')toast('Aluno transferido de turma.','success');
+      if(el('m5-modal-trans'))el('m5-modal-trans').style.display='none';
       carregarMatriculas();
     });
   }
@@ -550,6 +621,11 @@
     // Cancelar modal nova — ID real: btn-m5-nova-cancelar
     el('btn-m5-nova-cancelar')&&el('btn-m5-nova-cancelar').addEventListener('click',function(){if(el('m5-modal-nova'))el('m5-modal-nova').style.display='none';});
     el('m5-modal-nova')&&el('m5-modal-nova').addEventListener('click',function(e){if(e.target===this)this.style.display='none';});
+    // Modal transferir matrícula
+    el('m5-trans-outros-cursos')&&el('m5-trans-outros-cursos').addEventListener('change',function(){if(state.matriculaParaTrans)renderizarListaTransferencia(state.matriculaParaTrans);});
+    el('btn-confirmar-m5-trans')&&el('btn-confirmar-m5-trans').addEventListener('click',confirmarTransferencia);
+    el('btn-cancelar-m5-trans')&&el('btn-cancelar-m5-trans').addEventListener('click',function(){if(el('m5-modal-trans'))el('m5-modal-trans').style.display='none';});
+    el('m5-modal-trans')&&el('m5-modal-trans').addEventListener('click',function(e){if(e.target===this)this.style.display='none';});
     // Modal situação — botões data-sit disparam confirmarSituacao
     document.querySelectorAll('.m5-sit-opcao[data-sit]').forEach(function(btn){
       btn.addEventListener('click',function(){confirmarSituacao(this.dataset.sit);});
