@@ -753,13 +753,17 @@
       // Situação
       SituacaoAluno:    a.situacao_ativo !== false,
       InscricaoDataHora: a.inscricao_data_hora || '',
-      // Campos sensíveis (vindos de alunos_sensiveis via Edge Function — por ora vazios)
+      // Campos sensíveis (vindos de alunos_sensiveis via Edge Function — preenchidos
+      // à parte por carregarDadosSensiveis(), depois que a ficha básica já carregou)
       CPFouCIN:         a.cpf_ou_cin || '',
+      Passaporte:       a.passaporte || '',
       CEP:              a.cep || '',
       Endereco:         a.endereco || '',
       Numero:           a.numero || '',
       Complemento:      a.complemento || '',
       PcDLaudoURL:      a.pcd_laudo_url || '',
+      PovoTradicionalBoolean: a.povo_tradicional || false,
+      PovoTradicional:  a.povo_tradicional_nome || '',
       MenorBoolean:     a.menor || false,
       Responsavel1Nome: a.responsavel1_nome || '',
       Responsavel1CPF:  a.responsavel1_cpf  || '',
@@ -770,7 +774,53 @@
       Responsavel2Parentesco: a.responsavel2_parentesco || '',
       Responsavel2Telefone:   a.responsavel2_telefone || '',
       PublicoAluno:     a.publico_alvo || '',
+      PublicoComprovanteURL: a.publico_comprovante_url || '',
+      _sensiveisCarregados: false,
     };
+  }
+
+  // Mapeia o retorno da Edge Function (alunos_sensiveis, snake_case) para as
+  // mesmas chaves PascalCase usadas no restante do módulo.
+  function mapearSensiveis(s) {
+    s = s || {};
+    return {
+      CPFouCIN:         s.cpf_ou_cin || '',
+      Passaporte:       s.passaporte || '',
+      CEP:              s.cep || '',
+      Endereco:         s.endereco || '',
+      Numero:           s.numero || '',
+      Complemento:      s.complemento || '',
+      PcDLaudoURL:      s.pcd_laudo_url || '',
+      PovoTradicionalBoolean: s.povo_tradicional || false,
+      PovoTradicional:  s.povo_tradicional_nome || '',
+      MenorBoolean:     s.menor || false,
+      Responsavel1Nome: s.responsavel1_nome || '',
+      Responsavel1CPF:  s.responsavel1_cpf  || '',
+      Responsavel1Parentesco: s.responsavel1_parentesco || '',
+      Responsavel1Telefone:   s.responsavel1_telefone || '',
+      'Responsavel1e-mail':   s.responsavel1_email || '',
+      Responsavel2Nome: s.responsavel2_nome || '',
+      Responsavel2Parentesco: s.responsavel2_parentesco || '',
+      Responsavel2Telefone:   s.responsavel2_telefone || '',
+      PublicoAluno:     s.publico_alvo || '',
+      PublicoComprovanteURL: s.publico_comprovante_url || '',
+      _sensiveisCarregados: true,
+    };
+  }
+
+  // Busca os dados protegidos (LGPD) de um aluno via Edge Function
+  // alunos-sensiveis e chama onCarregado(aluno) quando terminar.
+  // Só é chamada para papéis que a UI já mostra a seção "Dados protegidos".
+  function carregarDadosSensiveis(aluno, onCarregado) {
+    if (['admin','coordenacao','secretaria'].indexOf(state.papel) === -1) return;
+    if (!aluno || !aluno.id) return;
+    postApi('alunos.buscarSensiveis', { aluno_id: aluno.id })
+      .then(function(res) {
+        if (!res.sucesso) { console.warn('Não foi possível carregar dados sensíveis:', res.mensagem); return; }
+        Object.assign(aluno, mapearSensiveis(res.dados || {}));
+        if (typeof onCarregado === 'function') onCarregado(aluno);
+      })
+      .catch(function(e) { console.warn('Erro ao carregar dados sensíveis:', e); });
   }
 
   // Converte dados do formulário (PascalCase) para o formato do banco (snake_case)
@@ -897,6 +947,13 @@
     el('painel-aba-ocorrencias').style.display = '';
     mostrarAbaPainel('ficha');
     renderizarFicha(aluno);
+    // Dados protegidos (LGPD) chegam à parte — a ficha já aparece com o que
+    // temos e é re-renderizada quando (e se) a Edge Function responder.
+    carregarDadosSensiveis(aluno, function(alunoAtualizado) {
+      if (state.alunoSelecionado && state.alunoSelecionado.id === alunoAtualizado.id) {
+        renderizarFicha(alunoAtualizado);
+      }
+    });
   }
 
   function fecharPainel() {
@@ -956,7 +1013,8 @@
       html+='<div class="ficha-secao"><div class="ficha-secao-titulo">Endereço</div>';
       html+=campo('Município',a.Municipio)+campo('UF',a.UF)+campo('Bairro',a.Bairro)+'</div>';
       html+='<div class="ficha-secao ficha-secao-sensivel"><div class="ficha-secao-titulo">Dados protegidos (LGPD)</div>';
-      html+=campo('CPF/CIN',a.CPFouCIN||'[carregar via Edge Function]')+campo('CEP',a.CEP)+campo('Endereço',a.Endereco)+campo('Número',a.Numero)+campo('Complemento',a.Complemento)+'</div>';
+      var placeholderSensiveis = a._sensiveisCarregados ? '' : '[carregando…]';
+      html+=campo('CPF/CIN',a.CPFouCIN||placeholderSensiveis)+campo('CEP',a.CEP)+campo('Endereço',a.Endereco)+campo('Número',a.Numero)+campo('Complemento',a.Complemento)+'</div>';
     }
     if (a.PcDBoolean) {
       html+='<div class="ficha-secao"><div class="ficha-secao-titulo">Acessibilidade</div>'+campo('Deficiência',a.PcDTipo||'Não especificado');
@@ -992,12 +1050,10 @@
     mostrarAba('identificacao');
   }
 
-  function abrirModalEditar(a) {
-    state.modoModal = 'editar';
-    el('modal-aluno').style.display='flex';
-    el('modal-titulo').textContent='Editar aluno';
-    mostrarAba('identificacao');
-    // Preencher campos com dados normalizados
+  // Preenche os campos do formulário a partir de um objeto normalizado (a).
+  // Chamada duas vezes ao editar: uma vez de imediato com o que já temos
+  // (dados públicos) e outra depois que a busca de dados sensíveis resolve.
+  function preencherFormulario(a) {
     function set(id, v) { if(el(id)) el(id).value = v||''; }
     function setC(id, v) { if(el(id)) el(id).checked = !!v; }
     set('f-nome', a.NomeCompleto);
@@ -1030,6 +1086,24 @@
     set('f-numero', a.Numero); set('f-complemento', a.Complemento);
     set('f-bairro', a.Bairro); set('f-municipio', a.Municipio); set('f-uf', a.UF);
     set('f-publico', a.PublicoAluno); set('f-comprovante', a.PublicoComprovanteURL);
+  }
+
+  function abrirModalEditar(a) {
+    state.modoModal = 'editar';
+    el('modal-aluno').style.display='flex';
+    el('modal-titulo').textContent='Editar aluno';
+    mostrarAba('identificacao');
+    // Preenche de imediato com o que já temos (dados públicos + o que já
+    // tiver sido carregado de sensível na ficha) e atualiza de novo assim
+    // que a Edge Function responder, caso ainda não tivesse resolvido.
+    preencherFormulario(a);
+    if (!a._sensiveisCarregados) {
+      carregarDadosSensiveis(a, function(alunoAtualizado) {
+        if (el('modal-aluno').style.display !== 'none' && state.modoModal === 'editar') {
+          preencherFormulario(alunoAtualizado);
+        }
+      });
+    }
   }
 
   function fecharModal() {
