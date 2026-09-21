@@ -316,7 +316,10 @@
   }
 
   function turmaEstaAtiva(t) {
-    return (t.SituacaoTurma===true||t.SituacaoTurma==='true') && String(t.SituacaoTurma)!=='ENCERRADA';
+    var sit = t.SituacaoTurma;
+    if (String(sit) === 'ENCERRADA') return false;
+    if (sit === false || sit === 'false' || sit === '' || sit === 0 || sit === null || sit === undefined) return false;
+    return true;
   }
 
   function renderizarTurmas() {
