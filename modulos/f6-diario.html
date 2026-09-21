@@ -224,199 +224,368 @@
 <script>
 (function(){
   'use strict';
-  var state={turmas:[],turmaSel:null,dataSel:null,matriculas:[],frequencias:{},contFaltas:{},conteudoHist:[],papel:'',usuarioId:''};
-  function postApi(a,d){return window.postApi(a,d);}
+  var S={turmas:[],turmaSel:null,dataSel:null,matriculas:[],frequencias:{},contFaltas:{},conteudoHist:[],papel:'',usuarioId:''};
+  function api(a,d){return window.postApi(a,d);}
   function el(id){return document.getElementById(id);}
 
+  // ── Normalização ──────────────────────────────────────────────────────────
   function normT(t){
-    var p=t.usuarios||{},c=t.cursos||{};
-    return{id:t.id,TurmaID:t.external_id||t.id,Estagio:t.estagio||'',CursoSigla:c.sigla||'',ProfessorID:p.id||t.professor_id,professor_id:t.professor_id,semestre_id:t.semestre_id};
+    var p=t.professor||t.usuarios||{};
+    return{id:t.id,TurmaID:t.external_id||t.id,Estagio:t.estagio||'',
+           ProfessorNome:p.nome||'',professor_id:t.professor_id,
+           semestre_id:t.semestre_id,situacao:t.situacao||''};
   }
   function normM(m){
-    var al=m.alunos||{};var ns=al.nome_social||'';
-    return{id:m.id,MatriculaID:m.external_id||m.id,AlunoID:al.external_id||m.aluno_id,NomeExibicao:ns||al.nome_completo||'',PcD:al.pcd||false,aluno_id:m.aluno_id};
+    var al=m.alunos||{};
+    return{id:m.id,MatriculaID:m.external_id||m.id,
+           AlunoID:al.external_id||m.aluno_id,
+           NomeExibicao:al.nome_social||al.nome_completo||'',
+           PcD:al.pcd||false};
   }
 
+  // ── Steps ─────────────────────────────────────────────────────────────────
+  function irStep(nome){
+    ['diario-step-turma','diario-step-data','diario-step-aula'].forEach(function(id){
+      var e=el(id);if(e)e.style.display=(id===nome?'':'none');
+    });
+    // step-aula usa classe especial
+    var aula=el('diario-step-aula');
+    if(aula){aula.className='diario-aula-wrap'+(nome==='diario-step-aula'?' visivel':'');}
+  }
+
+  // ── Init ──────────────────────────────────────────────────────────────────
   function init(){
     var u=(typeof App!=='undefined'&&App.usuario)?App.usuario:null;
-    if(u){state.papel=u.papel||u.Papel||'';state.usuarioId=u.id||'';}
+    if(u){S.papel=u.papel||u.Papel||'';S.usuarioId=u.id||'';}
+    irStep('diario-step-turma');
     carregarTurmas();
     registrarEventos();
   }
 
+  // ── Step 1: Turmas ────────────────────────────────────────────────────────
   function carregarTurmas(){
-    var cont=el('diario-turmas-lista');if(cont)cont.innerHTML='<div class="diario-spinner"></div>';
+    var loading=el('diario-turmas-loading'),grid=el('diario-turma-grid');
+    if(loading)loading.style.display='flex';
+    if(grid)grid.style.display='none';
     var filtros={};
-    if(state.papel==='professor') filtros.professor_id=state.usuarioId;
-    postApi('turmas.listar',filtros).then(function(res){
-      if(!res.sucesso){if(cont)cont.innerHTML='<p>Erro ao carregar turmas.</p>';return;}
-      state.turmas=(res.dados||[]).filter(function(t){return t.situacao==='ATIVA';}).map(normT);
-      renderizarTurmas();
+    if(S.papel==='professor')filtros.professor_id=S.usuarioId;
+    api('turmas.listar',filtros).then(function(res){
+      if(loading)loading.style.display='none';
+      if(!res.sucesso){if(grid){grid.style.display='block';grid.innerHTML='<p style="color:var(--c-text-3)">Erro ao carregar turmas.</p>';}return;}
+      var todas=(res.dados||[]).map(normT);
+      // Filtrar: professores veem só as suas; outros veem todas
+      S.turmas=todas.filter(function(t){return t.situacao==='ATIVA';});
+      S.turmasInativas=todas.filter(function(t){return t.situacao!=='ATIVA';});
+      // Mostrar filtro de encerradas só se houver
+      var filtroRow=el('diario-filtro-row');
+      if(filtroRow)filtroRow.style.display=S.turmasInativas.length?'flex':'none';
+      renderizarTurmas(false);
+    }).catch(function(){
+      if(loading)loading.style.display='none';
+      if(grid){grid.style.display='block';grid.innerHTML='<p style="color:var(--c-text-3)">Erro de conexão.</p>';}
     });
   }
 
-  function renderizarTurmas(){
-    var cont=el('diario-turmas-lista');if(!cont)return;
-    if(!state.turmas.length){cont.innerHTML='<p style="padding:12px;color:var(--c-text-3);">Nenhuma turma ativa.</p>';return;}
-    cont.innerHTML='';
-    state.turmas.forEach(function(t){
-      var card=document.createElement('div');card.className='turma-card';
+  function renderizarTurmas(mostrarInativas){
+    var grid=el('diario-turma-grid');if(!grid)return;
+    grid.style.display='grid';
+    var lista=mostrarInativas?S.turmas.concat(S.turmasInativas||[]):S.turmas;
+    if(!lista.length){grid.innerHTML='<p style="padding:12px;color:var(--c-text-3);">Nenhuma turma encontrada.</p>';return;}
+    grid.innerHTML='';
+    lista.forEach(function(t){
+      var ativa=t.situacao==='ATIVA';
+      var card=document.createElement('div');
+      card.className='turma-card'+(ativa?'':' turma-nao-ativa');
       card.dataset.turmaId=t.id;
-      card.innerHTML='<div class="turma-card-id">'+t.TurmaID+'</div>'+
-        '<div class="turma-card-desc">'+(t.Estagio||t.CursoSigla||'—')+'</div>';
+      card.innerHTML=
+        '<div class="turma-card-id">'+t.TurmaID+'</div>'+
+        '<div class="turma-card-estagio">'+(t.Estagio||'—')+'</div>'+
+        '<div class="turma-card-detalhe">'+(t.ProfessorNome||'')+'</div>'+
+        (!ativa?'<div class="turma-card-badge-status"><span class="material-icons-round">block</span>'+t.situacao+'</div>':'');
       card.addEventListener('click',function(){selecionarTurma(t);});
-      cont.appendChild(card);
+      grid.appendChild(card);
     });
   }
 
   function selecionarTurma(t){
-    state.turmaSel=t;state.dataSel=null;state.matriculas=[];state.frequencias={};state.contFaltas={};
-    document.querySelectorAll('.turma-card').forEach(function(c){c.classList.toggle('selecionada',c.dataset.turmaId===t.id);});
-    if(el('diario-header-turma'))el('diario-header-turma').textContent=t.TurmaID+' · '+(t.Estagio||t.CursoSigla||'');
+    S.turmaSel=t;S.dataSel=null;S.matriculas=[];S.frequencias={};S.contFaltas={};S.conteudoHist=[];
+    document.querySelectorAll('.turma-card').forEach(function(c){
+      c.classList.toggle('selecionada',c.dataset.turmaId===t.id);
+    });
+    irStep('diario-step-data');
     carregarCalendario(t);
   }
 
+  // ── Step 2: Data ──────────────────────────────────────────────────────────
   function carregarCalendario(t){
-    var cont=el('diario-datas-lista');if(cont)cont.innerHTML='<div class="diario-spinner"></div>';
-    // Buscar datas únicas de aulas já registradas + calendário do semestre
-    postApi('frequencias.listar',{turma_id:t.id}).then(function(res){
-      // Calcular faltas acumuladas
-      state.contFaltas={};
-      if(res.sucesso&&res.dados){
-        res.dados.forEach(function(f){
-          if(f.frequencia==='F'){state.contFaltas[f.matricula_id]=(state.contFaltas[f.matricula_id]||0)+1;}
+    var sel=el('diario-select-data');
+    if(sel){sel.innerHTML='<option value="">Carregando…</option>';sel.disabled=true;}
+    Promise.all([
+      api('frequencias.listar',{turma_id:t.id}),
+      api('conteudo.listar',{turma_id:t.id})
+    ]).then(function(rs){
+      // Faltas acumuladas
+      S.contFaltas={};
+      if(rs[0].sucesso&&rs[0].dados){
+        rs[0].dados.forEach(function(f){
+          if(f.frequencia==='F')S.contFaltas[f.matricula_id]=(S.contFaltas[f.matricula_id]||0)+1;
         });
       }
-      // Buscar datas únicas do conteúdo para montar calendário
-      postApi('conteudo.listar',{turma_id:t.id}).then(function(res2){
-        state.conteudoHist=(res2.sucesso&&res2.dados)?res2.dados:[];
-        var datasSet={};
-        state.conteudoHist.forEach(function(c){if(c.data_aula)datasSet[c.data_aula]=true;});
-        // Adicionar hoje
-        var hoje=new Date().toISOString().slice(0,10);
-        datasSet[hoje]=true;
-        var datas=Object.keys(datasSet).sort().reverse();
-        renderizarDatas(datas, hoje);
-      });
+      // Histórico de conteúdo
+      S.conteudoHist=(rs[1].sucesso&&rs[1].dados)?rs[1].dados:[];
+      // Datas únicas
+      var datasSet={};
+      S.conteudoHist.forEach(function(c){if(c.data_aula)datasSet[c.data_aula]=true;});
+      if(rs[0].sucesso&&rs[0].dados){
+        rs[0].dados.forEach(function(f){if(f.data_aula)datasSet[f.data_aula]=true;});
+      }
+      // Sempre incluir hoje
+      var hoje=new Date().toISOString().slice(0,10);
+      datasSet[hoje]=true;
+      var datas=Object.keys(datasSet).sort().reverse();
+      if(sel){
+        sel.innerHTML='<option value="">Selecione uma data…</option>';
+        datas.forEach(function(d){
+          var pts=d.split('-');
+          var opt=document.createElement('option');
+          opt.value=d;opt.textContent=pts[2]+'/'+pts[1]+'/'+pts[0]+(d===hoje?' (hoje)':'');
+          sel.appendChild(opt);
+        });
+        sel.value=hoje;
+        sel.disabled=false;
+      }
+      // Limpar data manual
+      var manual=el('diario-data-manual');if(manual)manual.value='';
+    }).catch(function(){
+      if(sel){sel.innerHTML='<option value="">Erro ao carregar</option>';sel.disabled=false;}
     });
   }
 
-  function renderizarDatas(datas, hoje){
-    var cont=el('diario-datas-lista');if(!cont)return;
-    if(!datas.length){cont.innerHTML='<p style="padding:8px;color:var(--c-text-3);">Nenhuma data.</p>';return;}
-    cont.innerHTML='';
-    datas.forEach(function(d){
-      var btn=document.createElement('button');btn.className='data-btn'+(d===hoje?' hoje':'');
-      var pts=d.split('-');btn.textContent=pts[2]+'/'+pts[1]+'/'+pts[0];
-      btn.addEventListener('click',function(){selecionarData(d);});
-      cont.appendChild(btn);
-    });
-    // Selecionar hoje automaticamente
-    selecionarData(hoje);
-  }
-
-  function selecionarData(data){
-    state.dataSel=data;state.frequencias={};
-    document.querySelectorAll('.data-btn').forEach(function(b){
-      var d=b.textContent.split('/').reverse().join('-');
-      b.classList.toggle('selecionada',d===data);
-    });
-    if(el('diario-header-data')){
-      var pts=data.split('-');el('diario-header-data').textContent=pts[2]+'/'+pts[1]+'/'+pts[0];
+  function obterDataSelecionada(){
+    var manual=el('diario-data-manual');
+    if(manual&&manual.value){
+      return manual.value.slice(0,10); // yyyy-mm-dd
     }
+    var sel=el('diario-select-data');
+    return sel?sel.value:'';
+  }
+
+  // ── Step 3: Diário do dia ─────────────────────────────────────────────────
+  function abrirDiario(){
+    var data=obterDataSelecionada();
+    if(!data){if(typeof toast==='function')toast('Selecione uma data.','error');return;}
+    S.dataSel=data;
+    var pts=data.split('-');
+    if(el('diario-header-turma'))el('diario-header-turma').textContent=S.turmaSel.TurmaID+' · '+(S.turmaSel.Estagio||'');
+    if(el('diario-header-data'))el('diario-header-data').textContent=pts[2]+'/'+pts[1]+'/'+pts[0];
+    // Badge: edição ou novo
+    var badge=el('diario-header-badge');
+    if(badge){
+      var jaTemFreq=S.conteudoHist.some(function(c){return c.data_aula===data;});
+      badge.className='diario-aula-header-badge'+(jaTemFreq?' salvo':'');
+      badge.innerHTML='<span class="material-icons-round">'+(jaTemFreq?'check_circle':'edit')+'</span><span>'+(jaTemFreq?'Editando registro':'Novo registro')+'</span>';
+    }
+    irStep('diario-step-aula');
     carregarDiarioDia(data);
   }
 
   function carregarDiarioDia(data){
-    if(!state.turmaSel)return;
-    var cont=el('diario-tabela-wrap');if(cont)cont.style.display='none';
-    var spinner=el('diario-tabela-estado');if(spinner)spinner.style.display='block';
+    if(!S.turmaSel)return;
+    // Spinner freq
+    var freqLoading=el('freq-loading'),freqTabela=el('freq-tabela');
+    if(freqLoading)freqLoading.style.display='flex';
+    if(freqTabela)freqTabela.style.display='none';
+    // Alerta
+    esconderAlerta();
+    // Conteúdo do dia
+    var aulasData=S.conteudoHist.filter(function(c){return c.data_aula===data;});
+    if(el('diario-conteudo'))el('diario-conteudo').value=aulasData.length?aulasData[0].conteudo_ministrado:'';
+    atualizarContador();
+    // Histórico
+    renderizarHistorico();
+    // Matrículas + freq do dia
     Promise.all([
-      postApi('matriculas.listar',{turma_id:state.turmaSel.id,situacao:'ATIVA'}),
-      postApi('frequencias.listar',{turma_id:state.turmaSel.id,data_aula:data}),
-    ]).then(function(results){
-      state.matriculas=(results[0].sucesso&&results[0].dados)?results[0].dados.map(normM):[];
-      state.frequencias={};
-      if(results[1].sucesso&&results[1].dados){
-        results[1].dados.forEach(function(f){state.frequencias[f.matricula_id]={freq:f.frequencia,anotacao:f.anotacao||''};});
+      api('matriculas.listar',{turma_id:S.turmaSel.id,situacao:'ATIVA'}),
+      api('frequencias.listar',{turma_id:S.turmaSel.id,data_aula:data})
+    ]).then(function(rs){
+      S.matriculas=(rs[0].sucesso&&rs[0].dados)?rs[0].dados.map(normM):[];
+      S.frequencias={};
+      if(rs[1].sucesso&&rs[1].dados){
+        rs[1].dados.forEach(function(f){S.frequencias[f.matricula_id]={freq:f.frequencia,anotacao:f.anotacao||''};});
       }
-      // Conteúdo do dia
-      var aulasData=state.conteudoHist.filter(function(c){return c.data_aula===data;});
-      var conteudoAtual=aulasData.length?aulasData[0].conteudo_ministrado:'';
-      if(el('diario-conteudo'))el('diario-conteudo').value=conteudoAtual;
-      if(spinner)spinner.style.display='none';
-      if(cont)cont.style.display='';
+      if(freqLoading)freqLoading.style.display='none';
+      if(freqTabela)freqTabela.style.display='table';
       renderizarTabela();
+    }).catch(function(){
+      if(freqLoading)freqLoading.style.display='none';
+      mostrarAlerta('Erro ao carregar dados da aula.','erro');
     });
   }
 
   function renderizarTabela(){
-    var tbody=el('diario-tbody');if(!tbody)return;
+    var tbody=el('freq-tbody');if(!tbody)return;
     tbody.innerHTML='';
-    if(!state.matriculas.length){tbody.innerHTML='<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--c-text-3);">Nenhum aluno matriculado.</td></tr>';return;}
-    state.matriculas.forEach(function(m){
-      var freq=(state.matriculas&&state.frequencias[m.id])||{freq:'P',anotacao:''};
-      var faltas=state.contFaltas[m.id]||0;
+    if(!S.matriculas.length){
+      tbody.innerHTML='<tr><td colspan="3" style="text-align:center;padding:16px;color:var(--c-text-3);">Nenhum aluno matriculado.</td></tr>';
+      atualizarContadores();return;
+    }
+    S.matriculas.forEach(function(m){
+      var fObj=S.frequencias[m.id]||{freq:'P',anotacao:''};
+      var faltas=S.contFaltas[m.id]||0;
+      var classFaltas=faltas===0?'zero':faltas<=3?'baixo':'alto';
       var tr=document.createElement('tr');
       tr.innerHTML=
-        '<td class="diario-nome">'+(m.NomeExibicao||m.AlunoID||'—')+(m.PcD?'<span class="badge-pcd">PcD</span>':'')+' </td>'+
-        '<td class="diario-id">'+(m.MatriculaID||'—')+'</td>'+
-        '<td class="diario-freq-btns">'+
-          ['P','F','J'].map(function(f){
-            return '<button class="btn-freq'+(freq.freq===f?' ativo '+f.toLowerCase():'')+'" data-mat="'+m.id+'" data-freq="'+f+'">'+f+'</button>';
-          }).join('')+
-        '</td>'+
-        '<td class="diario-faltas">'+faltas+'</td>'+
-        '<td><input class="diario-anotacao" data-mat="'+m.id+'" placeholder="Anotação…" value="'+(freq.anotacao||'')+'" /></td>';
-      tr.querySelectorAll('.btn-freq').forEach(function(btn){
+        '<td><div class="aluno-nome">'+(m.NomeExibicao||m.AlunoID||'—')+(m.PcD?'&nbsp;<span style="font-size:10px;background:#e0f0ff;color:#1565c0;border-radius:4px;padding:1px 5px">PcD</span>':'')+
+        '</div><div style="font-size:11px;color:var(--c-text-3);font-family:monospace">'+m.MatriculaID+'</div></td>'+
+        '<td class="col-faltas"><span class="badge-faltas '+classFaltas+'">'+faltas+'</span></td>'+
+        '<td class="col-freq">'+
+          '<div class="freq-btns">'+
+            ['P','F','J'].map(function(f){
+              return '<button class="freq-btn'+(fObj.freq===f?' ativo-'+f.toLowerCase():'')+'" data-mat="'+m.id+'" data-freq="'+f+'">'+f+'</button>';
+            }).join('')+
+          '</div>'+
+          '<div class="freq-justificativa'+(fObj.freq==='J'?' show':'')+'">'+
+            '<input type="text" data-just="'+m.id+'" placeholder="Justificativa…" value="'+(fObj.anotacao||'')+'" />'+
+          '</div>'+
+        '</td>';
+      tr.querySelectorAll('.freq-btn').forEach(function(btn){
         btn.addEventListener('click',function(){marcarFrequencia(m.id,btn.dataset.freq,tr);});
       });
-      tr.querySelector('.diario-anotacao').addEventListener('change',function(){
-        state.frequencias[m.id]=state.frequencias[m.id]||{freq:'P'};
-        state.frequencias[m.id].anotacao=this.value;
+      var just=tr.querySelector('[data-just]');
+      if(just)just.addEventListener('input',function(){
+        S.frequencias[m.id]=S.frequencias[m.id]||{freq:'P'};
+        S.frequencias[m.id].anotacao=this.value;
       });
       tbody.appendChild(tr);
     });
+    atualizarContadores();
   }
 
   function marcarFrequencia(matId,freq,tr){
-    state.frequencias[matId]=state.frequencias[matId]||{anotacao:''};
-    state.frequencias[matId].freq=freq;
-    tr.querySelectorAll('.btn-freq').forEach(function(b){
-      b.className='btn-freq'+(b.dataset.freq===freq?' ativo '+freq.toLowerCase():'');
+    S.frequencias[matId]=S.frequencias[matId]||{anotacao:''};
+    S.frequencias[matId].freq=freq;
+    tr.querySelectorAll('.freq-btn').forEach(function(b){
+      b.className='freq-btn'+(b.dataset.freq===freq?' ativo-'+freq.toLowerCase():'');
     });
+    var just=tr.querySelector('.freq-justificativa');
+    if(just)just.className='freq-justificativa'+(freq==='J'?' show':'');
+    atualizarContadores();
   }
 
   function marcarTodos(freq){
-    state.matriculas.forEach(function(m){
-      var tr=document.querySelector('[data-mat="'+m.id+'"][data-freq]');
-      if(tr){marcarFrequencia(m.id,freq,tr.closest('tr'));}
-      else{state.frequencias[m.id]=state.frequencias[m.id]||{anotacao:''};state.frequencias[m.id].freq=freq;}
+    S.matriculas.forEach(function(m){
+      var tr=document.querySelector('[data-mat="'+m.id+'"]');
+      if(tr)marcarFrequencia(m.id,freq,tr.closest('tr'));
+      else{S.frequencias[m.id]=S.frequencias[m.id]||{anotacao:''};S.frequencias[m.id].freq=freq;}
     });
     renderizarTabela();
   }
 
+  function atualizarContadores(){
+    var p=0,f=0,j=0;
+    S.matriculas.forEach(function(m){
+      var freq=(S.frequencias[m.id]||{}).freq||'P';
+      if(freq==='P')p++;else if(freq==='F')f++;else if(freq==='J')j++;
+    });
+    if(el('diario-cont-p'))el('diario-cont-p').textContent=p;
+    if(el('diario-cont-f'))el('diario-cont-f').textContent=f;
+    if(el('diario-cont-j'))el('diario-cont-j').textContent=j;
+  }
+
+  function renderizarHistorico(){
+    var corpo=el('historico-corpo');if(!corpo)return;
+    if(!S.conteudoHist.length){corpo.innerHTML='<div class="historico-vazio">Sem registros anteriores.</div>';return;}
+    var recentes=S.conteudoHist.slice(0,5);
+    corpo.innerHTML=recentes.map(function(c){
+      var pts=(c.data_aula||'').split('-');
+      var data=pts.length===3?pts[2]+'/'+pts[1]+'/'+pts[0]:c.data_aula||'';
+      return '<div class="historico-item">'+
+        '<div class="historico-data">'+data+'</div>'+
+        '<div class="historico-conteudo">'+(c.conteudo_ministrado||'—')+'</div>'+
+      '</div>';
+    }).join('');
+  }
+
+  function atualizarContador(){
+    var ta=el('diario-conteudo'),cnt=el('diario-conteudo-cont');
+    if(ta&&cnt)cnt.textContent=ta.value.length;
+  }
+
+  // ── Alertas ───────────────────────────────────────────────────────────────
+  function mostrarAlerta(msg,tipo){
+    var al=el('diario-alerta'),amsg=el('diario-alerta-msg');
+    if(!al)return;
+    al.className='diario-alerta show '+(tipo||'erro');
+    if(amsg)amsg.textContent=msg;
+  }
+  function esconderAlerta(){
+    var al=el('diario-alerta');if(al)al.className='diario-alerta';
+  }
+
+  // ── Salvar ────────────────────────────────────────────────────────────────
   function salvarDiario(){
-    if(!state.turmaSel||!state.dataSel){if(typeof toast==='function')toast('Selecione turma e data.','error');return;}
-    var lista=state.matriculas.map(function(m){
-      var f=state.frequencias[m.id]||{freq:'P',anotacao:''};
-      return{matricula_id:m.id,turma_id:state.turmaSel.id,semestre_id:state.turmaSel.semestre_id,data_aula:state.dataSel,frequencia:f.freq||'P',anotacao:f.anotacao||''};
+    if(!S.turmaSel||!S.dataSel){mostrarAlerta('Selecione turma e data.','erro');return;}
+    var btn=el('diario-btn-salvar');if(btn)btn.classList.add('loading');
+    esconderAlerta();
+    var lista=S.matriculas.map(function(m){
+      var fObj=S.frequencias[m.id]||{freq:'P',anotacao:''};
+      return{matricula_id:m.id,turma_id:S.turmaSel.id,semestre_id:S.turmaSel.semestre_id,
+             data_aula:S.dataSel,frequencia:fObj.freq||'P',anotacao:fObj.anotacao||''};
     });
     var conteudo=el('diario-conteudo')?el('diario-conteudo').value.trim():'';
-    Promise.all([
-      postApi('frequencias.salvar',{registros:lista}),
-      conteudo?postApi('conteudo.salvar',{turma_id:state.turmaSel.id,semestre_id:state.turmaSel.semestre_id,data_aula:state.dataSel,conteudo_ministrado:conteudo}):{sucesso:true},
-    ]).then(function(results){
-      var ok=results[0].sucesso&&results[1].sucesso;
-      if(typeof toast==='function')toast(ok?'Diário salvo com sucesso!':'Erro ao salvar: '+(results[0].mensagem||results[1].mensagem||''),ok?'success':'error');
-      if(ok) carregarCalendario(state.turmaSel);
+    var promessas=[api('frequencias.salvar',{registros:lista})];
+    if(conteudo)promessas.push(api('conteudo.salvar',{turma_id:S.turmaSel.id,semestre_id:S.turmaSel.semestre_id,data_aula:S.dataSel,conteudo_ministrado:conteudo}));
+    Promise.all(promessas).then(function(rs){
+      if(btn)btn.classList.remove('loading');
+      var ok=rs.every(function(r){return r.sucesso;});
+      if(ok){
+        mostrarAlerta('Diário salvo com sucesso!','sucesso');
+        // Atualiza badge para "Editando registro"
+        var badge=el('diario-header-badge');
+        if(badge){badge.className='diario-aula-header-badge salvo';badge.innerHTML='<span class="material-icons-round">check_circle</span><span>Editando registro</span>';}
+        // Atualiza histórico local
+        var idx=S.conteudoHist.findIndex(function(c){return c.data_aula===S.dataSel;});
+        if(idx>=0)S.conteudoHist[idx].conteudo_ministrado=conteudo;
+        else if(conteudo)S.conteudoHist.unshift({data_aula:S.dataSel,conteudo_ministrado:conteudo});
+        renderizarHistorico();
+      }else{
+        var msg=rs.map(function(r){return r.mensagem||'';}).filter(Boolean).join('; ');
+        mostrarAlerta('Erro ao salvar'+(msg?': '+msg:'.')+'.','erro');
+      }
+    }).catch(function(e){
+      if(btn)btn.classList.remove('loading');
+      mostrarAlerta('Erro de conexão: '+e.message,'erro');
     });
   }
 
+  // ── Eventos ───────────────────────────────────────────────────────────────
   function registrarEventos(){
-    el('btn-todos-p')&&el('btn-todos-p').addEventListener('click',function(){marcarTodos('P');});
-    el('btn-todos-f')&&el('btn-todos-f').addEventListener('click',function(){marcarTodos('F');});
-    el('btn-salvar-diario')&&el('btn-salvar-diario').addEventListener('click',salvarDiario);
+    // Turmas: filtro encerradas
+    var chk=el('diario-chk-encerradas');
+    if(chk)chk.addEventListener('change',function(){renderizarTurmas(this.checked);});
+    // Data: abrir diário
+    var btnAbrir=el('diario-btn-abrir');
+    if(btnAbrir)btnAbrir.addEventListener('click',abrirDiario);
+    // Trocar turma
+    var btnTrocar=el('diario-btn-trocar-turma');
+    if(btnTrocar)btnTrocar.addEventListener('click',function(){irStep('diario-step-turma');});
+    // Voltar à data
+    var btnVoltarData=el('diario-btn-voltar-data');
+    if(btnVoltarData)btnVoltarData.addEventListener('click',function(){irStep('diario-step-data');});
+    // Salvar
+    var btnSalvar=el('diario-btn-salvar');
+    if(btnSalvar)btnSalvar.addEventListener('click',salvarDiario);
+    // Todos P/F
+    var btnP=el('btn-todos-p'),btnF=el('btn-todos-f');
+    if(btnP)btnP.addEventListener('click',function(){marcarTodos('P');});
+    if(btnF)btnF.addEventListener('click',function(){marcarTodos('F');});
+    // Contador conteúdo
+    var ta=el('diario-conteudo');
+    if(ta)ta.addEventListener('input',atualizarContador);
+    // Data manual limpa o select e vice-versa
+    var manual=el('diario-data-manual'),selData=el('diario-select-data');
+    if(manual)manual.addEventListener('change',function(){if(this.value&&selData)selData.value='';});
+    if(selData)selData.addEventListener('change',function(){if(this.value&&manual)manual.value='';});
   }
 
   if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',init);}else{init();}
