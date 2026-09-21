@@ -919,7 +919,11 @@
     S.turmaTransSelecionada=null;
     if(el('modal-trans-aluno'))el('modal-trans-aluno').textContent='Aluno: '+(m.NomeExibicao||m.AlunoID)+' — turma atual: '+(S.turmaSel?S.turmaSel.TurmaID:'—');
     if(el('trans-alerta'))el('trans-alerta').className='t5-alerta erro';
-    if(el('trans-toggle-wrap'))el('trans-toggle-wrap').style.display=S.turmaSel?'flex':'none';
+    // Mudar de curso é decisão pedagógica — só coordenação/admin podem ver a
+    // opção "Outros cursos". Secretaria fica restrita ao mesmo curso (também
+    // reforçado no banco, via trigger em matriculas).
+    var podeOutrosCursos=['admin','coordenacao'].indexOf(S.papel)!==-1;
+    if(el('trans-toggle-wrap'))el('trans-toggle-wrap').style.display=(S.turmaSel&&podeOutrosCursos)?'flex':'none';
     if(el('trans-outros-cursos'))el('trans-outros-cursos').checked=false;
     if(el('btn-confirmar-trans'))el('btn-confirmar-trans').disabled=true;
     renderizarListaTransferencia();
