@@ -336,6 +336,28 @@ async function _usuariosRedefinirSenha(sb, dados) {
   return _ok(null, 'E-mail de redefinição enviado para ' + dados.email);
 }
 
+// -----------------------------------------------------------------------------
+// _nomesPublicos() — resolve nomes de usuários via a view `usuarios_publico`
+// (id, nome, external_id), que qualquer autenticado pode ler mesmo com a
+// tabela `usuarios` travada para admin/coordenação. Usada em todo lugar que
+// antes fazia join direto com `usuarios!fk(nome)` — esse join deixou de
+// funcionar para professor/secretaria depois que a leitura de `usuarios` foi
+// restrita (etapa 4 do plano de migração — revisão de RLS por papel).
+// -----------------------------------------------------------------------------
+async function _nomesPublicos(sb, ids) {
+  var unicos = (ids || []).filter(function(v) { return !!v; })
+    .filter(function(v, i, arr) { return arr.indexOf(v) === i; });
+  if (!unicos.length) return {};
+  var res = await sb.from('usuarios_publico').select('id, nome, external_id').in('id', unicos);
+  if (res.error) {
+    console.error('_nomesPublicos erro:', res.error);
+    return {};
+  }
+  var mapa = {};
+  (res.data || []).forEach(function(u) { mapa[u.id] = u; });
+  return mapa;
+}
+
 // =============================================================================
 // ALUNOS
 // =============================================================================
@@ -638,14 +660,22 @@ async function _semestresAtualizar(sb, dados) {
 
 async function _turmasListar(sb, dados) {
   var query = sb.from('turmas')
-    .select('*, semestres(rotulo), cursos(nome, sigla, external_id), professor:usuarios!professor_id(id, nome, external_id)')
+    .select('*, semestres(rotulo), cursos(nome, sigla, external_id)')
     .order('external_id');
   if (dados && dados.semestre_id) query = query.eq('semestre_id', dados.semestre_id);
   if (dados && dados.professor_id) query = query.eq('professor_id', dados.professor_id);
   if (dados && dados.situacao)     query = query.eq('situacao', dados.situacao);
   var res = await query;
   if (res.error) return _err(res.error.message);
-  return _ok(res.data);
+  var linhas = res.data || [];
+  // O join direto com `usuarios` não é mais possível para professor/secretaria
+  // (tabela travada a admin/coordenação) — nome do professor vem da view pública.
+  var mapaNomes = await _nomesPublicos(sb, linhas.map(function(t) { return t.professor_id; }));
+  linhas.forEach(function(t) {
+    var info = t.professor_id ? mapaNomes[t.professor_id] : null;
+    t.professor = info ? { id: info.id, nome: info.nome, external_id: info.external_id } : (t.professor_id ? { id: t.professor_id, nome: '', external_id: null } : null);
+  });
+  return _ok(linhas);
 }
 
 async function _turmasCriar(sb, dados) {
@@ -828,7 +858,7 @@ async function _notasSalvar(sb, dados) {
 
 async function _ocorrenciasListar(sb, dados) {
   var query = sb.from('ocorrencias')
-    .select('*, alunos(nome_completo, nome_social), usuarios!criado_por_id(nome), ocorrencia_destinatarios(usuario_id), ocorrencia_respostas(id, texto, criado_em, autor:usuarios!autor_id(nome))')
+    .select('*, alunos(nome_completo, nome_social), ocorrencia_destinatarios(usuario_id), ocorrencia_respostas(id, texto, criado_em, autor_id)')
     .order('criado_em', { ascending: false });
   if (dados && dados.aluno_id)     query = query.eq('aluno_id', dados.aluno_id);
   if (dados && dados.status)       query = query.eq('status', dados.status);
@@ -836,7 +866,22 @@ async function _ocorrenciasListar(sb, dados) {
   if (dados && dados.semestre_id)  query = query.eq('semestre_ref_id', dados.semestre_id);
   var res = await query;
   if (res.error) return _err(res.error.message);
-  return _ok(res.data);
+  var linhas = res.data || [];
+  // Nomes resolvidos à parte via usuarios_publico (join direto com `usuarios`
+  // não funciona mais para quem não é admin/coordenação).
+  var ids = [];
+  linhas.forEach(function(o) {
+    if (o.criado_por_id) ids.push(o.criado_por_id);
+    (o.ocorrencia_respostas || []).forEach(function(r) { if (r.autor_id) ids.push(r.autor_id); });
+  });
+  var mapaNomes = await _nomesPublicos(sb, ids);
+  linhas.forEach(function(o) {
+    o.usuarios = o.criado_por_id ? { nome: (mapaNomes[o.criado_por_id] || {}).nome || '' } : null;
+    (o.ocorrencia_respostas || []).forEach(function(r) {
+      r.autor = r.autor_id ? { nome: (mapaNomes[r.autor_id] || {}).nome || '' } : null;
+    });
+  });
+  return _ok(linhas);
 }
 
 // Papéis que podem ser usados como "destinatário" de uma ocorrência em vez
@@ -855,7 +900,10 @@ async function _resolverDestinatarios(sb, destinatarios) {
     .filter(function(p) { return PAPEIS_DESTINATARIO_VALIDOS.indexOf(p) !== -1; });
 
   if (papeis.length) {
-    var res = await sb.from('usuarios').select('id').eq('situacao_ativo', true).in('papel', papeis);
+    // Não dá mais para consultar `usuarios` diretamente (tabela travada a
+    // admin/coordenação) — a resolução por papel passa por uma function
+    // SECURITY DEFINER que só devolve o id, nunca o restante do cadastro.
+    var res = await sb.rpc('usuarios_ids_por_papel', { papeis: papeis });
     if (!res.error && res.data) {
       res.data.forEach(function(u) { usuarioIds.push(u.id); });
     }
@@ -976,11 +1024,16 @@ async function _relatoriosFrequencia(sb, dados) {
 async function _ocorrenciasListarRespostas(sb, dados) {
   if (!dados.ocorrenciaId) return _err('ocorrenciaId é obrigatório.', 400);
   var res = await sb.from('ocorrencia_respostas')
-    .select('*, autor:usuarios!autor_id(nome)')
+    .select('*')
     .eq('ocorrencia_id', dados.ocorrenciaId)
     .order('criado_em');
   if (res.error) return _err(res.error.message);
-  return _ok(res.data);
+  var linhas = res.data || [];
+  var mapaNomes = await _nomesPublicos(sb, linhas.map(function(r) { return r.autor_id; }));
+  linhas.forEach(function(r) {
+    r.autor = r.autor_id ? { nome: (mapaNomes[r.autor_id] || {}).nome || '' } : null;
+  });
+  return _ok(linhas);
 }
 
 async function _ocorrenciasExcluir(sb, dados) {
@@ -997,20 +1050,22 @@ async function _ocorrenciasProfessoresDasTurmas(sb, dados) {
   var semAtual = await sb.from('semestres').select('id').eq('semestre_atual', true).single();
   if (semAtual.error || !semAtual.data) return _ok([]);
   var mats = await sb.from('matriculas')
-    .select('turma_id, turmas!matriculas_turma_id_fkey(professor_id, estagio, curso_id, cursos(sigla), professor:usuarios!professor_id(id, nome))')
+    .select('turma_id, turmas!matriculas_turma_id_fkey(professor_id, estagio, curso_id, cursos(sigla))')
     .eq('aluno_id', dados.alunoId)
     .eq('semestre_id', semAtual.data.id)
     .eq('situacao', 'ATIVA');
   if (mats.error) return _err(mats.error.message);
+  var linhas = mats.data || [];
+  var mapaNomes = await _nomesPublicos(sb, linhas.map(function(m) { return m.turmas && m.turmas.professor_id; }));
   var profs = [];
   var vistos = {};
-  (mats.data || []).forEach(function(m) {
+  linhas.forEach(function(m) {
     var t = m.turmas;
-    if (!t || !t.professor) return;
-    var uid = t.professor.id;
+    if (!t || !t.professor_id) return;
+    var uid = t.professor_id;
     if (vistos[uid]) return;
     vistos[uid] = true;
-    profs.push({ UsuarioID: uid, Nome: t.professor.nome, Turma: m.turma_id, Estagio: t.estagio, CursoID: t.curso_id });
+    profs.push({ UsuarioID: uid, Nome: (mapaNomes[uid] || {}).nome || '', Turma: m.turma_id, Estagio: t.estagio, CursoID: t.curso_id });
   });
   return _ok(profs);
 }
@@ -1020,19 +1075,21 @@ async function _ocorrenciasTurmasAtivasDoAluno(sb, dados) {
   var semAtual = await sb.from('semestres').select('id').eq('semestre_atual', true).single();
   if (semAtual.error || !semAtual.data) return _ok([]);
   var mats = await sb.from('matriculas')
-    .select('turma_id, turmas!matriculas_turma_id_fkey(id, external_id, estagio, curso_id, professor_id, cursos(sigla), professor:usuarios!professor_id(nome))')
+    .select('turma_id, turmas!matriculas_turma_id_fkey(id, external_id, estagio, curso_id, professor_id, cursos(sigla))')
     .eq('aluno_id', dados.alunoId)
     .eq('semestre_id', semAtual.data.id)
     .eq('situacao', 'ATIVA');
   if (mats.error) return _err(mats.error.message);
+  var linhas = mats.data || [];
+  var mapaNomes = await _nomesPublicos(sb, linhas.map(function(m) { return m.turmas && m.turmas.professor_id; }));
   var usuario = Auth.getUsuario();
-  var turmas = (mats.data || []).map(function(m) {
+  var turmas = linhas.map(function(m) {
     var t = m.turmas;
     return {
       TurmaID:       t.external_id || t.id,
       id:            t.id,
       ProfessorID:   t.professor_id,
-      ProfessorNome: t.professor ? t.professor.nome : '',
+      ProfessorNome: t.professor_id ? ((mapaNomes[t.professor_id] || {}).nome || '') : '',
       Estagio:       t.estagio,
       CursoID:       t.curso_id,
     };
