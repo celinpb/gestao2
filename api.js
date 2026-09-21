@@ -186,15 +186,15 @@ async function _login(sb, dados) {
   // Se não parece ser e-mail, buscar e-mail pelo campo login na tabela usuarios
   var emailFinal = emailOuLogin;
   if (!emailOuLogin.includes('@')) {
-    var busca = await sb.from('usuarios')
-      .select('email')
-      .eq('login', emailOuLogin)
-      .eq('situacao_ativo', true)
-      .single();
+    // Antes do login não existe sessão (chamada como anon) — a tabela
+    // `usuarios` está travada para admin/coordenação, então essa resolução
+    // login→e-mail passa por uma function SECURITY DEFINER dedicada, que só
+    // devolve o e-mail (nunca o restante do cadastro) de uma conta ativa.
+    var busca = await sb.rpc('login_para_email', { login_busca: emailOuLogin });
     if (busca.error || !busca.data) {
       return _err('Usuário não encontrado.', 401);
     }
-    emailFinal = busca.data.email;
+    emailFinal = busca.data;
   }
 
   var res = await sb.auth.signInWithPassword({
@@ -348,7 +348,9 @@ async function _nomesPublicos(sb, ids) {
   var unicos = (ids || []).filter(function(v) { return !!v; })
     .filter(function(v, i, arr) { return arr.indexOf(v) === i; });
   if (!unicos.length) return {};
-  var res = await sb.from('usuarios_publico').select('id, nome, external_id').in('id', unicos);
+  // `usuarios_publico` é uma function (não uma view — o Supabase Advisor
+  // bloqueia views SECURITY DEFINER), então a chamada é via rpc().
+  var res = await sb.rpc('usuarios_publico', { ids: unicos });
   if (res.error) {
     console.error('_nomesPublicos erro:', res.error);
     return {};
