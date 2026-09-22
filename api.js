@@ -673,11 +673,39 @@ async function _turmasListar(sb, dados) {
   // O join direto com `usuarios` não é mais possível para professor/secretaria
   // (tabela travada a admin/coordenação) — nome do professor vem da view pública.
   var mapaNomes = await _nomesPublicos(sb, linhas.map(function(t) { return t.professor_id; }));
+  // Vagas restantes = vagas_totais - matrículas ATIVAS na turma. Calculado
+  // aqui (uma única query leve, sem embed) em vez de via view `turmas_vagas`
+  // (que existe no banco mas cujas colunas não estão documentadas em lugar
+  // nenhum do projeto) — usado para exibir e filtrar candidatas de
+  // transferência/matrícula por vaga disponível (f5-turmas.html / f5-matriculas.html).
+  var mapaVagas = await _matriculasAtivasPorTurma(sb, linhas.map(function(t) { return t.id; }));
   linhas.forEach(function(t) {
     var info = t.professor_id ? mapaNomes[t.professor_id] : null;
     t.professor = info ? { id: info.id, nome: info.nome, external_id: info.external_id } : (t.professor_id ? { id: t.professor_id, nome: '', external_id: null } : null);
+    var ocupadas = mapaVagas[t.id] || 0;
+    t.vagas_ocupadas = ocupadas;
+    t.vagas_restantes = (typeof t.vagas_totais === 'number') ? Math.max(0, t.vagas_totais - ocupadas) : null;
   });
   return _ok(linhas);
+}
+
+// -----------------------------------------------------------------------------
+// _matriculasAtivasPorTurma() — conta quantas matrículas ATIVA cada turma tem,
+// para calcular vagas restantes. Usado por _turmasListar (exibição/filtro) e
+// pelos checks de vaga em _matriculasCriar / _matriculasTransferir.
+// -----------------------------------------------------------------------------
+async function _matriculasAtivasPorTurma(sb, turmaIds) {
+  var unicos = (turmaIds || []).filter(function(v) { return !!v; })
+    .filter(function(v, i, arr) { return arr.indexOf(v) === i; });
+  if (!unicos.length) return {};
+  var res = await sb.from('matriculas').select('turma_id').eq('situacao', 'ATIVA').in('turma_id', unicos);
+  if (res.error) {
+    console.error('_matriculasAtivasPorTurma erro:', res.error);
+    return {};
+  }
+  var mapa = {};
+  (res.data || []).forEach(function(m) { mapa[m.turma_id] = (mapa[m.turma_id] || 0) + 1; });
+  return mapa;
 }
 
 async function _turmasCriar(sb, dados) {
@@ -713,6 +741,12 @@ async function _matriculasListar(sb, dados) {
   return _ok(res.data);
 }
 
+// Papéis que podem matricular/transferir além da capacidade de vagas de uma
+// turma (equivalente ao "forçar vaga" que existia em M5_Semestre.gs, nunca
+// portado ao migrar para o Supabase). Secretaria e professor NUNCA podem —
+// só admin/coordenação, decisão pedagógica.
+var PAPEIS_PODEM_FORCAR_VAGA = ['admin', 'coordenacao'];
+
 async function _matriculasCriar(sb, dados) {
   if (!dados.aluno_id || !dados.turma_id || !dados.semestre_id) {
     return _err('Aluno, turma e semestre são obrigatórios.', 400);
@@ -720,6 +754,13 @@ async function _matriculasCriar(sb, dados) {
   // Verificar semestre aberto
   var sem = await sb.from('semestres').select('edicao_ativa').eq('id', dados.semestre_id).single();
   if (sem.error || !sem.data.edicao_ativa) return _err('Semestre fechado para edição.', 403);
+
+  // Checagem de vaga — espelha o comportamento antigo de m5_criarMatricula
+  // (M5_Semestre.gs): sem vaga, secretaria/professor são bloqueados; admin/
+  // coordenação recebem confirmacaoNecessaria e só prosseguem reenviando com
+  // forcar_vaga:true.
+  var checagem = await _checarVagaTurma(sb, dados.turma_id, dados.forcar_vaga);
+  if (checagem) return checagem;
 
   var res = await sb.from('matriculas').insert({
     aluno_id:    dados.aluno_id,
@@ -732,6 +773,45 @@ async function _matriculasCriar(sb, dados) {
     return _err(res.error.message);
   }
   return _ok(res.data, 'Matrícula realizada.');
+}
+
+// -----------------------------------------------------------------------------
+// _checarVagaTurma() — verifica se a turma de destino tem vaga disponível.
+// Retorna null quando pode prosseguir (tem vaga, ou não tem mas foi forçado
+// por quem pode). Retorna um objeto de resposta { sucesso:false, ... } quando
+// a operação deve parar ali: bloqueio definitivo (papel sem permissão de
+// forçar) ou pedido de confirmação (admin/coordenação, ainda sem forcar_vaga).
+// -----------------------------------------------------------------------------
+async function _checarVagaTurma(sb, turmaId, forcarVaga) {
+  var turma = await sb.from('turmas').select('vagas_totais').eq('id', turmaId).single();
+  if (turma.error || !turma.data || typeof turma.data.vagas_totais !== 'number') {
+    return null; // turma sem vagas_totais definido — não dá para checar, segue.
+  }
+  var mapaVagas = await _matriculasAtivasPorTurma(sb, [turmaId]);
+  var matriculasAtivas = mapaVagas[turmaId] || 0;
+  var temVaga = matriculasAtivas < turma.data.vagas_totais;
+  if (temVaga) return null;
+
+  var usuario = Auth.getUsuario();
+  var papel = usuario ? usuario.papel : '';
+  var podeForcar = PAPEIS_PODEM_FORCAR_VAGA.indexOf(papel) !== -1;
+
+  if (!podeForcar) {
+    return _err('Turma sem vagas disponíveis (' + matriculasAtivas + '/' + turma.data.vagas_totais + ').', 409);
+  }
+  if (!forcarVaga) {
+    return {
+      sucesso: false,
+      dados: {
+        confirmacaoNecessaria: true,
+        vagasTotais:      turma.data.vagas_totais,
+        matriculasAtivas: matriculasAtivas,
+      },
+      mensagem: 'Turma sem vagas disponíveis (' + matriculasAtivas + '/' + turma.data.vagas_totais + '). Confirme para prosseguir mesmo assim.',
+      codigo: 409,
+    };
+  }
+  return null; // forcarVaga === true e o papel pode — segue com a operação.
 }
 
 async function _matriculasAtualizarSituacao(sb, dados) {
@@ -751,6 +831,11 @@ async function _matriculasTransferir(sb, dados) {
   // Buscar matrícula original
   var orig = await sb.from('matriculas').select('*').eq('id', dados.matricula_origem_id).single();
   if (orig.error || !orig.data) return _err('Matrícula de origem não encontrada.', 404);
+
+  // Mesma checagem de vaga da criação de matrícula, agora sobre a turma de
+  // destino da transferência.
+  var checagem = await _checarVagaTurma(sb, dados.turma_destino_id, dados.forcar_vaga);
+  if (checagem) return checagem;
 
   // Criar nova matrícula na turma destino
   var nova = await sb.from('matriculas').insert({
@@ -780,7 +865,13 @@ async function _matriculasTransferir(sb, dados) {
 // =============================================================================
 
 async function _frequenciasListar(sb, dados) {
-  var query = sb.from('frequencias').select('*, alunos(nome_completo, nome_social)');
+  // Sem embed de `alunos` aqui de propósito: `frequencias` não tem uma FK
+  // direta para `alunos` (só `matricula_id`), então `select('*, alunos(...)')`
+  // fazia a consulta INTEIRA falhar sem erro visível na tela — parecia que a
+  // gravação anterior tinha "sumido" ao reabrir a mesma aula, quando na
+  // verdade a LEITURA é que nunca voltava com dado nenhum. Os nomes já vêm
+  // por outro caminho (matriculas.listar) em todas as telas que usam isto.
+  var query = sb.from('frequencias').select('*');
   if (dados && dados.turma_id)    query = query.eq('turma_id', dados.turma_id);
   if (dados && dados.matricula_id) query = query.eq('matricula_id', dados.matricula_id);
   if (dados && dados.data_aula)   query = query.eq('data_aula', dados.data_aula);
