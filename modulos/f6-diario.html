@@ -417,13 +417,15 @@
     var diasNums = diasTurmaNumeros(turma);
     var hoje = hojeISO();
 
-    // NOTA (etapa 4 do plano de migração): a ação 'calendario.listar' ainda
-    // não existe em api.js — o calendário letivo (feriados/recessos) do
-    // Apps Script não foi migrado para o Supabase. A chamada abaixo falha
-    // graciosamente (res.sucesso=false) e cai no fallback por DiaSemana da
-    // turma, sem excluir feriados. Follow-up: migrar tabela de calendário
-    // letivo e implementar `calendario.listar` em api.js.
-    postApi('calendario.listar', {turmaId: turma.TurmaID}).then(function(res){
+    // Calendário letivo real (tabela `calendario`, importada em
+    // claude/etapa6-calendario-letivo.sql e exposta via `calendario.listar`
+    // em api.js). Contrato real: { semestre_id } → linhas
+    // { data_aula: 'YYYY-MM-DD', tipo: 'LETIVO'|'NAO_LETIVO', descricao }.
+    // Antes desta correção a chamada usava o contrato antigo do Apps Script
+    // (turmaId / DataAula em DD/MM/YYYY / DiaLetivo booleano), que nunca
+    // bateu com nenhum backend real — sempre caía no fallback por
+    // DiaSemana da turma, sem excluir feriados.
+    postApi('calendario.listar', {semestre_id: turma.semestre_id}).then(function(res){
       sel.innerHTML='<option value="">Selecione uma data…</option>';
 
       // Monta conjunto de datas NÃO-letivas (para exclusão)
@@ -433,9 +435,9 @@
 
       if(res.sucesso && res.dados && res.dados.length > 0){
         res.dados.forEach(function(d){
-          var iso = dmyParaISO(d.DataAula);
+          var iso = String(d.data_aula||'').substring(0,10);
           if(!iso) return;
-          if(d.DiaLetivo === false || d.DiaLetivo === 'FALSE' || d.DiaLetivo === '' || !d.DiaLetivo){
+          if(d.tipo === 'NAO_LETIVO'){
             naoLetivas[iso] = true;
           } else {
             datasLetivas.push(iso);
@@ -452,7 +454,8 @@
         datasLetivas.sort();
         inicioISO = datasLetivas[0];
       }
-      // Fallback: 12 semanas atrás (protege caso o calendário esteja vazio)
+      // Fallback: 12 semanas atrás (protege caso o calendário esteja vazio,
+      // ex.: semestre sem importação ainda)
       if(!inicioISO){
         var doze = new Date(hoje + 'T12:00:00');
         doze.setDate(doze.getDate() - 84);
@@ -485,8 +488,8 @@
         // Turma sem DiaSemana definido: cai no comportamento anterior (só datas letivas do calendário)
         if(res.sucesso && res.dados){
           res.dados.forEach(function(d){
-            if(!d.DiaLetivo) return;
-            var iso = dmyParaISO(d.DataAula);
+            if(d.tipo !== 'LETIVO') return;
+            var iso = String(d.data_aula||'').substring(0,10);
             if(iso && iso <= hoje) dias.push(iso);
           });
         }
