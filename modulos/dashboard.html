@@ -187,6 +187,9 @@
     ],
   };
 
+  // Valores reais de `ocorrencias.tipo` (sem acento — ver f4-alunos.html /
+  // oco-tipo select), com as variantes acentuadas mantidas por segurança
+  // caso algum registro antigo tenha sido salvo com acento.
   var TIPO_CLASS = {
     'Ausencia avisada':'ausencia','Ausência avisada':'ausencia',
     'Contato com responsavel':'contato','Contato com responsável':'contato',
@@ -208,25 +211,29 @@
   };
 
   function el(id) { return document.getElementById(id); }
+  function postApi(acao, dados) { return window.postApi(acao, dados); }
 
-  function postApiDash(acao, dados) {
-    if (typeof window.postApi === 'function') return window.postApi(acao, dados);
-    // Fallback Apps Script
-    return new Promise(function(resolve, reject) {
-      var token = null;
-      try {
-        google.script.run
-          .withSuccessHandler(function(s) {
-            token = s && s.token ? s.token : null;
-            google.script.run
-              .withSuccessHandler(resolve)
-              .withFailureHandler(reject)
-              .processarRequisicao(JSON.stringify({acao:acao, token:token, dados:dados||{}}));
-          })
-          .withFailureHandler(reject)
-          .getSessaoAtiva();
-      } catch(e) { reject(e); }
-    });
+  // Normaliza um registro de `ocorrencias` (snake_case + joins de api.js,
+  // ver _ocorrenciasListar) para o formato PascalCase que este arquivo usa —
+  // mesmo padrão já aplicado em f4-alunos.html para a mesma ação.
+  function normOco(o) {
+    if (!o) return o;
+    var al = o.alunos || {};
+    var nomeSocial = al.nome_social || '';
+    return {
+      OcorrenciaID:  o.id,
+      id:            o.id,
+      AlunoID:       o.aluno_id,
+      AlunoNome:     nomeSocial || al.nome_completo || '',
+      Tipo:          o.tipo || '',
+      Titulo:        o.titulo || '',
+      Descricao:     o.descricao || '',
+      Status:        o.status || '',
+      CriadoPor:     o.criado_por_id,
+      CriadoPorNome: (o.usuarios && o.usuarios.nome) || '',
+      DataCriacao:   o.criado_em || '',
+      TurmaID:       o.turma_id || '',
+    };
   }
 
   function fmtData(d) {
@@ -260,20 +267,21 @@
 
   // ── Ocorrências ───────────────────────────────────────────────────────────────
   function carregarOcorrencias() {
-    // Admin e coordenação: listagem geral via ocorrencias.listarPendentes
-    // Professor e secretaria: busca por usuarioId nos destinatários (back-end filtra)
-    postApiDash('ocorrencias.listarPendentes', {
-      papel:     state.papel,
-      usuarioId: state.usuarioId,
-    })
-    .then(function(res) {
-      state.ocorrencias = (res.sucesso && res.dados) ? res.dados : [];
-      renderOcorrencias();
-    })
-    .catch(function() {
-      state.ocorrencias = [];
-      renderOcorrencias();
-    });
+    // `ocorrencias.listarPendentes` nunca existiu em api.js (era uma rota só
+    // do Apps Script) — a ação real é `ocorrencias.listar`, que aceita um
+    // filtro `status`. A visibilidade por papel (admin/coordenação veem
+    // tudo; professor/secretaria só o que criaram ou onde são destinatários)
+    // é responsabilidade do RLS de `ocorrencias` no banco, não deste
+    // arquivo — mesmo padrão já usado em f4-alunos.html para a mesma ação.
+    postApi('ocorrencias.listar', { status: 'PENDENTE' })
+      .then(function(res) {
+        state.ocorrencias = (res.sucesso && res.dados) ? res.dados.map(normOco) : [];
+        renderOcorrencias();
+      })
+      .catch(function() {
+        state.ocorrencias = [];
+        renderOcorrencias();
+      });
   }
 
   function renderOcorrencias() {
@@ -308,8 +316,7 @@
           '<div class="dash-oco-meta">'+
             '<span class="dash-oco-tipo '+cls+'">'+o.Tipo+'</span>'+
             '<span>'+fmtData(o.DataCriacao)+'</span>'+
-            '<span>Por: '+(o.CriadoPorNome||o.CriadoPor||'—')+'</span>'+
-            (o.TurmaAtual ? '<span>Turma: '+o.TurmaAtual+'</span>' : '')+
+            '<span>Por: '+(o.CriadoPorNome||'—')+'</span>'+
           '</div>'+
         '</div>';
       card.addEventListener('click', function() { abrirDetalhe(o); });
@@ -328,8 +335,7 @@
       '<span class="dash-oco-tipo '+cls+'">'+oco.Tipo+'</span>'+
       '<span>'+fmtData(oco.DataCriacao)+'</span>'+
       '<span>Aluno: '+(oco.AlunoNome||oco.AlunoID||'—')+'</span>'+
-      (oco.TurmaAtual ? '<span>Turma: '+oco.TurmaAtual+'</span>' : '')+
-      '<span>Por: '+(oco.CriadoPorNome||oco.CriadoPor||'—')+'</span>';
+      '<span>Por: '+(oco.CriadoPorNome||'—')+'</span>';
     el('det-desc').textContent = oco.Descricao || '';
     el('det-thread').innerHTML = '<div class="dash-oco-spinner"></div>';
     el('det-reply-input').value = '';
@@ -366,9 +372,20 @@
   }
 
   function carregarRespostas(ocoId) {
-    postApiDash('ocorrencias.listarRespostas', { ocorrenciaId: ocoId })
+    // _ocorrenciasListarRespostas (api.js) devolve {id, texto, criado_em,
+    // autor_id, autor:{nome}} — sem flag de "é minha", calculada aqui
+    // comparando com o usuário logado.
+    postApi('ocorrencias.listarRespostas', { ocorrenciaId: ocoId })
       .then(function(res) {
-        renderThread((res.sucesso && res.dados) ? res.dados : []);
+        var lista = (res.sucesso && res.dados) ? res.dados : [];
+        renderThread(lista.map(function(r) {
+          return {
+            Texto:       r.texto || '',
+            AutorNome:   (r.autor && r.autor.nome) || '',
+            DataCriacao: r.criado_em || '',
+            EhMinha:     r.autor_id === state.usuarioId,
+          };
+        }));
       })
       .catch(function() { renderThread([]); });
   }
@@ -382,12 +399,11 @@
     }
     cont.innerHTML = '';
     respostas.forEach(function(r) {
-      var minha = r.EhMinha === true || r.EhMinha === 'true';
       var div = document.createElement('div');
-      div.className = 'dash-oco-msg' + (minha ? ' minha' : '');
+      div.className = 'dash-oco-msg' + (r.EhMinha ? ' minha' : '');
       div.innerHTML =
         '<div class="dash-oco-msg-bubble">'+r.Texto+'</div>'+
-        '<div class="dash-oco-msg-autor">'+(minha?'Você':r.AutorNome)+' · '+fmtData(r.DataCriacao)+'</div>';
+        '<div class="dash-oco-msg-autor">'+(r.EhMinha?'Você':(r.AutorNome||'—'))+' · '+fmtData(r.DataCriacao)+'</div>';
       cont.appendChild(div);
     });
     cont.scrollTop = cont.scrollHeight;
@@ -400,7 +416,7 @@
     if (!texto) return;
     var btn = el('btn-det-reply');
     if (btn) btn.disabled = true;
-    postApiDash('ocorrencias.adicionarResposta', {
+    postApi('ocorrencias.adicionarResposta', {
       ocorrenciaId: state.ocoSel.OcorrenciaID,
       texto:        texto,
     }).then(function(res) {
@@ -415,7 +431,7 @@
   }
 
   function resolverOco(ocoId) {
-    postApiDash('ocorrencias.atualizarStatus', { ocorrenciaId: ocoId, novoStatus: 'RESOLVIDA' })
+    postApi('ocorrencias.atualizarStatus', { ocorrenciaId: ocoId, novoStatus: 'RESOLVIDA' })
       .then(function(res) {
         if (!res.sucesso) { if(typeof toast==='function') toast(res.mensagem||'Erro.','error'); return; }
         if(typeof toast==='function') toast('Ocorrencia marcada como resolvida.','success');
@@ -426,33 +442,32 @@
       .catch(function() { if(typeof toast==='function') toast('Erro de comunicacao.','error'); });
   }
 
-  // ── Rota back-end: ocorrencias.listarPendentes ──────────────────────────────
-  // Esta rota precisa existir no M6_Roteador.gs. Ela chama m4_listarOcorrenciasPendentes()
-  // que filtra por papel/usuarioId e retorna apenas PENDENTE, enriquecidas com
-  // AlunoNome e CriadoPorNome.
-
   // ── Init ──────────────────────────────────────────────────────────────────────
   function init() {
+    // App.usuario/App.semestre vêm de index.html (onLoginSucesso/carregarShell)
+    // e carregam, respectivamente, o registro de `usuarios` e de `semestres`
+    // direto do Supabase — ambos em snake_case (papel, id, rotulo,
+    // edicao_ativa...), não no PascalCase do sistema antigo.
     var usuario  = (typeof App !== 'undefined') ? App.usuario  : null;
     var semestre = (typeof App !== 'undefined') ? App.semestre : null;
 
     if (usuario) {
-      var primeiroNome = (usuario.Nome || '').split(' ')[0];
+      var primeiroNome = (usuario.nome || usuario.Nome || '').split(' ')[0];
       var tituloEl = el('dash-titulo');
-      if (tituloEl) tituloEl.textContent = 'Ola, ' + primeiroNome + '!';
-      state.usuarioId = usuario.UsuarioID || '';
-      state.papel     = usuario.Papel     || '';
+      if (tituloEl) tituloEl.textContent = 'Olá, ' + primeiroNome + '!';
+      state.usuarioId = usuario.id || '';
+      state.papel     = usuario.papel || usuario.Papel || '';
     }
 
     var semestreEl = el('dash-semestre');
     if (semestreEl && semestre) {
-      semestreEl.textContent = semestre.Semestre || '—';
+      semestreEl.textContent = semestre.rotulo || semestre.external_id || '—';
       var statusEl = el('dash-status-semestre');
-      if (statusEl && semestre.EdicaoAtiva === false) {
+      if (statusEl && semestre.edicao_ativa === false) {
         statusEl.style.background  = 'rgba(230,57,70,0.15)';
         statusEl.style.color       = '#E63946';
         statusEl.style.borderColor = 'rgba(230,57,70,0.25)';
-        statusEl.innerHTML = '<span class="material-icons-round">lock</span><span>Fechado para edicao</span>';
+        statusEl.innerHTML = '<span class="material-icons-round">lock</span><span>Fechado para edição</span>';
       }
     } else if (semestreEl) {
       semestreEl.textContent = 'Nenhum semestre ativo';
