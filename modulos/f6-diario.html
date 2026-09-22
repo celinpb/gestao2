@@ -597,8 +597,13 @@
       S.conteudoOriginal=conteudoExistente;
       atualizarContador();
 
-      // Histórico (outras datas)
-      var historico=conteudosLista.filter(function(c){ return String(c.data_aula||'').indexOf(dataISO)===-1; }).slice(-3).reverse();
+      // Histórico (outras datas) — conteudosLista já vem ordenada por
+      // data_aula DESC (mais recente primeiro, ver _conteudoListar em api.js),
+      // então os 3 primeiros itens são as 3 aulas mais recentes. Antes usava
+      // .slice(-3), que pegava os 3 ÚLTIMOS de um array já descendente — ou
+      // seja, as 3 aulas mais ANTIGAS, o oposto do que "Últimas aulas" deveria
+      // mostrar.
+      var historico=conteudosLista.filter(function(c){ return String(c.data_aula||'').indexOf(dataISO)===-1; }).slice(0,3);
       renderizarHistorico(historico);
 
       // Contagem de faltas (todas as datas)
