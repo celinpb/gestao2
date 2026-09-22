@@ -104,6 +104,10 @@ async function postApi(acao, dados) {
     if (acao === 'semestres.atualizar')  return await _semestresAtualizar(sb, dados);
     if (acao === 'semestres.getAtual')   return await _semestresGetAtual(sb);
 
+    // ── CALENDÁRIO LETIVO ─────────────────────────────────────────────────────
+    if (acao === 'calendario.listar')  return await _calendarioListar(sb, dados);
+    if (acao === 'calendario.salvar')  return await _calendarioSalvar(sb, dados);
+
     // ── TURMAS ────────────────────────────────────────────────────────────────
     if (acao === 'turmas.listar')    return await _turmasListar(sb, dados);
     if (acao === 'turmas.criar')     return await _turmasCriar(sb, dados);
@@ -654,6 +658,38 @@ async function _semestresAtualizar(sb, dados) {
   var res = await sb.from('semestres').update(dados).eq('id', dados.id);
   if (res.error) return _err(res.error.message);
   return _ok(null, 'Semestre atualizado.');
+}
+
+// =============================================================================
+// CALENDÁRIO LETIVO
+// =============================================================================
+// Tabela `calendario` (schema Supabase): id, semestre_id, data_aula, tipo
+// ('LETIVO'/'NAO_LETIVO'), descricao (motivo — feriado, ponto facultativo,
+// "Aulas ONLINE" etc., pode acompanhar tanto dias letivos quanto não
+// letivos), criado_em. A tabela já existia no schema mas nunca tinha sido
+// populada nem exposta aqui — o calendário letivo do Apps Script nunca foi
+// migrado (ver claude/technical-learnings.md e claude/etapa6-calendario-letivo.sql
+// para a importação dos dados do semestre atual).
+// -----------------------------------------------------------------------------
+
+async function _calendarioListar(sb, dados) {
+  var query = sb.from('calendario').select('*').order('data_aula');
+  if (dados && dados.semestre_id) query = query.eq('semestre_id', dados.semestre_id);
+  var res = await query;
+  if (res.error) return _err(res.error.message);
+  return _ok(res.data);
+}
+
+async function _calendarioSalvar(sb, dados) {
+  // dados.registros = [{ semestre_id, data_aula, tipo, descricao }, ...]
+  // Upsert por (semestre_id, data_aula) — permite tanto a importação inicial
+  // em lote quanto reenviar/corrigir um dia específico depois, sem duplicar
+  // linha. Exige a constraint única criada em
+  // claude/etapa6-calendario-letivo.sql.
+  if (!dados.registros || !dados.registros.length) return _err('Nenhum registro enviado.', 400);
+  var res = await sb.from('calendario').upsert(dados.registros, { onConflict: 'semestre_id,data_aula' });
+  if (res.error) return _err(res.error.message);
+  return _ok(null, 'Calendário salvo.');
 }
 
 // =============================================================================
