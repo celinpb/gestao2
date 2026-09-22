@@ -312,7 +312,11 @@
         <div class="mat-vazio" style="padding:24px 0;text-align:center;color:var(--c-text-3,#9898B0);font-size:13px;">Carregando turmas...</div>
       </div>
       <div class="m5-trans-aviso" id="m5-trans-aviso-vaga">
-        Turma sem vagas. Apenas coordenação e admin podem forçar esta transferência.
+        <span id="m5-trans-aviso-vaga-msg">Turma sem vagas. Apenas coordenação e admin podem forçar esta transferência.</span>
+        <div class="acoes" id="m5-trans-aviso-vaga-acoes" style="display:none;gap:8px;margin-top:10px;">
+          <button class="btn-m5-forcar-cancelar" id="btn-m5-trans-forcar-cancelar" type="button">Cancelar</button>
+          <button class="btn-m5-forcar" id="btn-m5-trans-forcar-confirmar" type="button">Transferir mesmo assim</button>
+        </div>
       </div>
     </div>
     <div class="m5-modal-footer" style="gap:8px;">
@@ -328,7 +332,7 @@
 <script>
 (function(){
   'use strict';
-  var state={matriculas:[],turmas:[],busca:'',filtroTurma:'',filtroSit:'ATIVA',papel:'',podeEditar:false,matriculaParaSit:null,matriculaParaTrans:null,turmaTransSelecionada:null,novaAlunoSel:null};
+  var state={matriculas:[],turmas:[],busca:'',filtroTurma:'',filtroSit:'ATIVA',papel:'',podeEditar:false,matriculaParaSit:null,matriculaParaTrans:null,turmaTransSelecionada:null,novaAlunoSel:null,novaMatriculaPendente:null};
   function postApi(a,d){return window.postApi(a,d);}
   function el(id){return document.getElementById(id);}
   function val(id){return el(id)?el(id).value.trim():'';}
@@ -348,8 +352,16 @@
   }
   function normT(t){
     if(!t)return t;
-    var c=t.cursos||{};
-    return{id:t.id,TurmaID:t.external_id||t.id,Estagio:t.estagio||'',CursoSigla:c.sigla||'',semestre_id:t.semestre_id,curso_id:t.curso_id,SituacaoTurma:t.situacao||'ATIVA'};
+    var c=t.cursos||{},p=t.professor||{};
+    return{
+      id:t.id,TurmaID:t.external_id||t.id,Estagio:t.estagio||'',CursoSigla:c.sigla||'',
+      Modalidade:t.modalidade||'',DiaSemana:t.dia_semana||'',Horario:t.horario||'',
+      ProfessorNome:p.nome||'',VagasTotais:t.vagas_totais||0,
+      // Calculadas em _turmasListar (api.js) a partir das matrículas ATIVAS.
+      VagasOcupadas:(typeof t.vagas_ocupadas==='number')?t.vagas_ocupadas:null,
+      VagasRestantes:(typeof t.vagas_restantes==='number')?t.vagas_restantes:null,
+      semestre_id:t.semestre_id,curso_id:t.curso_id,SituacaoTurma:t.situacao||'ATIVA'
+    };
   }
 
   function init(){
@@ -478,6 +490,8 @@
     state.turmaTransSelecionada=null;
     if(el('m5-trans-aluno'))el('m5-trans-aluno').textContent='Aluno: '+(m.NomeExibicao||m.AlunoID)+' — turma atual: '+(m.TurmaID||'—');
     if(el('m5-trans-alerta'))el('m5-trans-alerta').className='m5-trans-alerta erro';
+    if(el('m5-trans-aviso-vaga'))el('m5-trans-aviso-vaga').classList.remove('show');
+    if(el('m5-trans-aviso-vaga-acoes'))el('m5-trans-aviso-vaga-acoes').style.display='none';
     // Mudar de curso é decisão pedagógica — só coordenação/admin veem a opção
     // "Outros cursos". Secretaria fica restrita ao mesmo curso (também
     // reforçado no banco, via trigger em matriculas).
@@ -495,23 +509,40 @@
     var turmaOrigem=state.turmas.find(function(t){return t.id===m.turma_id;});
     var origemId=m.turma_id;
     var cursoOrigem=turmaOrigem?turmaOrigem.curso_id:null;
+    // Mesma regra de f5-turmas.html: secretaria (checkbox nem aparece) e
+    // admin/coordenação com a checkbox desmarcada só veem turmas do MESMO
+    // curso com vaga disponível; marcando "Outros cursos", admin/coordenação
+    // passam por cima da regra de vagas inteiramente (mesmo curso sem vaga
+    // incluso, além de outros cursos) — a confirmação de "forçar vaga" (se
+    // necessária) acontece ao confirmar a transferência.
     var candidatas=state.turmas.filter(function(t){
       if(t.id===origemId) return false;
       if(t.SituacaoTurma!=='ATIVA') return false;
-      if(!outrosCursos && cursoOrigem && t.curso_id!==cursoOrigem) return false;
-      return true;
+      if(outrosCursos) return true;
+      if(cursoOrigem && t.curso_id!==cursoOrigem) return false;
+      var temVaga=(typeof t.VagasRestantes!=='number')||t.VagasRestantes>0;
+      return temVaga;
     });
     if(!candidatas.length){
-      cont.innerHTML='<div class="mat-vazio" style="padding:24px 0;text-align:center;color:var(--c-text-3);font-size:13px;">Nenhuma turma de destino disponível'+(outrosCursos?'.':' — marque "Outros cursos" para ver mais opções.')+'</div>';
+      cont.innerHTML='<div class="mat-vazio" style="padding:24px 0;text-align:center;color:var(--c-text-3);font-size:13px;">Nenhuma turma de destino disponível'+(outrosCursos?'.':' — marque "Outros cursos" para ver mais opções, ou verifique se há turmas com vaga.')+'</div>';
       return;
     }
     cont.innerHTML='';
     candidatas.forEach(function(t){
       var item=document.createElement('div'); item.className='m5-trans-item'; item.dataset.id=t.id;
+      var metaPartes=[];
+      if(t.DiaSemana)metaPartes.push(t.DiaSemana);
+      if(t.Horario)metaPartes.push(t.Horario);
+      if(t.Modalidade)metaPartes.push(t.Modalidade);
+      if(t.ProfessorNome)metaPartes.push(t.ProfessorNome);
+      var temVaga=(typeof t.VagasRestantes!=='number')||t.VagasRestantes>0;
+      var vagasTxt=(typeof t.VagasRestantes==='number')?(temVaga?(t.VagasRestantes+' vaga'+(t.VagasRestantes!==1?'s':'')):'Sem vagas'):'';
       item.innerHTML=
         '<div>'+
           '<div class="m5-trans-nome">'+(t.TurmaID||'—')+' — '+(t.Estagio||t.CursoSigla||'—')+'</div>'+
-        '</div>';
+          '<div class="m5-trans-meta">'+metaPartes.join(' · ')+'</div>'+
+        '</div>'+
+        (vagasTxt?'<span class="m5-trans-vagas '+(temVaga?'ok':'cheio')+'">'+vagasTxt+'</span>':'');
       item.addEventListener('click',function(){
         document.querySelectorAll('.m5-trans-item').forEach(function(i){i.classList.remove('selecionado');});
         item.classList.add('selecionado');
@@ -522,16 +553,28 @@
     });
   }
 
-  function confirmarTransferencia(){
+  function confirmarTransferencia(forcarVaga){
     if(!state.matriculaParaTrans||!state.turmaTransSelecionada)return;
     var btn=el('btn-confirmar-m5-trans'); if(btn)btn.disabled=true;
-    // _matriculasTransferir (api.js) espera exatamente estas duas chaves.
-    postApi('matriculas.transferir',{
+    if(el('m5-trans-aviso-vaga'))el('m5-trans-aviso-vaga').classList.remove('show');
+    if(el('m5-trans-aviso-vaga-acoes'))el('m5-trans-aviso-vaga-acoes').style.display='none';
+    // _matriculasTransferir (api.js) espera exatamente estas duas chaves,
+    // mais forcar_vaga quando admin/coordenação confirmam transferir mesmo
+    // sem vaga disponível na turma de destino.
+    var payload={
       matricula_origem_id: state.matriculaParaTrans.id,
       turma_destino_id:    state.turmaTransSelecionada.id,
-    }).then(function(res){
+    };
+    if(forcarVaga) payload.forcar_vaga=true;
+    postApi('matriculas.transferir',payload).then(function(res){
       if(!res.sucesso){
         if(btn)btn.disabled=false;
+        if(res.dados&&res.dados.confirmacaoNecessaria){
+          if(el('m5-trans-aviso-vaga-msg'))el('m5-trans-aviso-vaga-msg').textContent=res.mensagem||'Turma sem vagas disponíveis.';
+          if(el('m5-trans-aviso-vaga'))el('m5-trans-aviso-vaga').classList.add('show');
+          if(el('m5-trans-aviso-vaga-acoes'))el('m5-trans-aviso-vaga-acoes').style.display='flex';
+          return;
+        }
         if(el('m5-trans-alerta')){el('m5-trans-alerta').className='m5-trans-alerta show erro';var sp=el('m5-trans-alerta').querySelector('span:last-child');if(sp)sp.textContent=res.mensagem||'Erro ao transferir.';}
         return;
       }
@@ -566,19 +609,33 @@
     });
   }
 
-  function salvarNovaMatricula(){
+  function salvarNovaMatricula(forcarVaga){
     if(!state.novaAlunoSel){if(typeof toast==='function')toast('Selecione um aluno.','error');return;}
     var turmaId=el('m5-nova-turma')?el('m5-nova-turma').value:''; // ID real
     if(!turmaId){if(typeof toast==='function')toast('Selecione uma turma.','error');return;}
+    if(el('m5-nova-aviso-vaga'))el('m5-nova-aviso-vaga').classList.remove('show');
     var btn=el('btn-m5-nova-salvar');if(btn){btn.disabled=true;btn.classList.add('loading');}
     postApi('semestres.getAtual',{}).then(function(res){
       var semId=(res.sucesso&&res.dados)?res.dados.id:'';
-      postApi('matriculas.criar',{aluno_id:state.novaAlunoSel.id,turma_id:turmaId,semestre_id:semId}).then(function(res2){
+      var payload={aluno_id:state.novaAlunoSel.id,turma_id:turmaId,semestre_id:semId};
+      if(forcarVaga) payload.forcar_vaga=true;
+      state.novaMatriculaPendente=payload;
+      postApi('matriculas.criar',payload).then(function(res2){
         if(btn){btn.disabled=false;btn.classList.remove('loading');}
-        if(!res2.sucesso){if(typeof toast==='function')toast(res2.mensagem||'Erro.','error');return;}
+        if(!res2.sucesso){
+          // admin/coordenação podem matricular além da capacidade da turma —
+          // api.js devolve confirmacaoNecessaria em vez de bloquear direto.
+          if(res2.dados&&res2.dados.confirmacaoNecessaria){
+            if(el('m5-nova-aviso-vaga-msg'))el('m5-nova-aviso-vaga-msg').textContent=res2.mensagem||'Turma sem vagas disponíveis.';
+            if(el('m5-nova-aviso-vaga'))el('m5-nova-aviso-vaga').classList.add('show');
+            return;
+          }
+          if(typeof toast==='function')toast(res2.mensagem||'Erro.','error');
+          return;
+        }
         if(typeof toast==='function')toast('Matrícula realizada.','success');
         if(el('m5-modal-nova'))el('m5-modal-nova').style.display='none'; // ID real
-        state.novaAlunoSel=null;
+        state.novaAlunoSel=null;state.novaMatriculaPendente=null;
         carregarMatriculas();
       });
     });
@@ -590,13 +647,16 @@
     if(el('m5-nova-aluno-dropdown'))el('m5-nova-aluno-dropdown').innerHTML='';
     if(el('m5-nova-aluno-selecionado'))el('m5-nova-aluno-selecionado').classList.remove('show');
     if(el('m5-nova-alerta'))el('m5-nova-alerta').className='m5-nova-alerta erro';
+    if(el('m5-nova-aviso-vaga'))el('m5-nova-aviso-vaga').classList.remove('show');
+    state.novaMatriculaPendente=null;
     // Popular select de turmas — ID real: m5-nova-turma
     var sel=el('m5-nova-turma');
     if(sel){
       sel.innerHTML='<option value="">Selecione a turma…</option>';
       state.turmas.forEach(function(t){
         var opt=document.createElement('option');
-        opt.value=t.id; opt.textContent=t.TurmaID+' — '+(t.Estagio||t.CursoSigla||'');
+        var vagasTxt=(typeof t.VagasRestantes==='number')?(' ('+(t.VagasRestantes>0?t.VagasRestantes+' vagas':'sem vagas')+')'):'';
+        opt.value=t.id; opt.textContent=t.TurmaID+' — '+(t.Estagio||t.CursoSigla||'')+vagasTxt;
         sel.appendChild(opt);
       });
     }
@@ -621,13 +681,24 @@
       if(el('m5-nova-aluno-busca'))el('m5-nova-aluno-busca').value='';
     });
     // Salvar nova matrícula — ID real: btn-m5-nova-salvar
-    el('btn-m5-nova-salvar')&&el('btn-m5-nova-salvar').addEventListener('click',salvarNovaMatricula);
+    el('btn-m5-nova-salvar')&&el('btn-m5-nova-salvar').addEventListener('click',function(){salvarNovaMatricula(false);});
+    // "Matricular mesmo assim" — admin/coordenação forçando vaga
+    el('btn-m5-forcar-confirmar')&&el('btn-m5-forcar-confirmar').addEventListener('click',function(){salvarNovaMatricula(true);});
+    el('btn-m5-forcar-cancelar')&&el('btn-m5-forcar-cancelar').addEventListener('click',function(){
+      if(el('m5-nova-aviso-vaga'))el('m5-nova-aviso-vaga').classList.remove('show');
+    });
     // Cancelar modal nova — ID real: btn-m5-nova-cancelar
     el('btn-m5-nova-cancelar')&&el('btn-m5-nova-cancelar').addEventListener('click',function(){if(el('m5-modal-nova'))el('m5-modal-nova').style.display='none';});
     el('m5-modal-nova')&&el('m5-modal-nova').addEventListener('click',function(e){if(e.target===this)this.style.display='none';});
     // Modal transferir matrícula
     el('m5-trans-outros-cursos')&&el('m5-trans-outros-cursos').addEventListener('change',function(){if(state.matriculaParaTrans)renderizarListaTransferencia(state.matriculaParaTrans);});
-    el('btn-confirmar-m5-trans')&&el('btn-confirmar-m5-trans').addEventListener('click',confirmarTransferencia);
+    el('btn-confirmar-m5-trans')&&el('btn-confirmar-m5-trans').addEventListener('click',function(){confirmarTransferencia(false);});
+    el('btn-m5-trans-forcar-confirmar')&&el('btn-m5-trans-forcar-confirmar').addEventListener('click',function(){confirmarTransferencia(true);});
+    el('btn-m5-trans-forcar-cancelar')&&el('btn-m5-trans-forcar-cancelar').addEventListener('click',function(){
+      if(el('m5-trans-aviso-vaga'))el('m5-trans-aviso-vaga').classList.remove('show');
+      if(el('m5-trans-aviso-vaga-acoes'))el('m5-trans-aviso-vaga-acoes').style.display='none';
+      if(el('btn-confirmar-m5-trans'))el('btn-confirmar-m5-trans').disabled=!state.turmaTransSelecionada;
+    });
     el('btn-cancelar-m5-trans')&&el('btn-cancelar-m5-trans').addEventListener('click',function(){if(el('m5-modal-trans'))el('m5-modal-trans').style.display='none';});
     el('m5-modal-trans')&&el('m5-modal-trans').addEventListener('click',function(e){if(e.target===this)this.style.display='none';});
     // Modal situação — botões data-sit disparam confirmarSituacao
