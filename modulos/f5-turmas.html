@@ -518,7 +518,11 @@
         <div class="mat-vazio">Carregando turmas...</div>
       </div>
       <div class="t5-trans-aviso" id="trans-aviso-vaga">
-        Turma sem vagas. Apenas coordenacao e admin podem forcar esta transferencia.
+        <span id="trans-aviso-vaga-msg">Turma sem vagas. Apenas coordenação e admin podem forçar esta transferência.</span>
+        <div id="trans-aviso-vaga-acoes" style="display:none;gap:8px;margin-top:10px;">
+          <button class="btn-cancelar-t5" id="btn-trans-forcar-cancelar" type="button" style="height:30px;font-size:12px;">Cancelar</button>
+          <button class="btn-t5 btn-t5-primario" id="btn-trans-forcar-confirmar" type="button" style="height:30px;font-size:12px;">Transferir mesmo assim</button>
+        </div>
       </div>
     </div>
     <div class="t5-modal-footer" style="gap:8px;">
@@ -694,6 +698,9 @@
       Estagio:t.estagio||'', Modalidade:t.modalidade||'',
       DiaSemana:t.dia_semana||'', Horario:t.horario||'', Turno:t.turno||'',
       VagasTotais:t.vagas_totais||20, SituacaoTurma:t.situacao||'ATIVA',
+      // Calculadas em _turmasListar (api.js) a partir das matrículas ATIVAS.
+      VagasOcupadas:(typeof t.vagas_ocupadas==='number')?t.vagas_ocupadas:null,
+      VagasRestantes:(typeof t.vagas_restantes==='number')?t.vagas_restantes:null,
       GrupoWhatsapp:t.grupo_whatsapp||'', LinkMeet:t.link_meet||'', LinkClassroom:t.link_classroom||'',
       DataInicio:t.data_inicio||'', DataFim:t.data_fim||'',
       semestre_id:t.semestre_id, curso_id:t.curso_id, professor_id:t.professor_id,
@@ -805,7 +812,7 @@
         '<td>'+(t.ProfessorNome||'—')+'</td>'+
         '<td>'+(t.DiaSemana||'—')+'</td>'+
         '<td>'+(t.Horario||'—')+'</td>'+
-        '<td>'+(t.VagasTotais||'—')+'</td>'+
+        '<td>'+((t.VagasOcupadas!=null)?(t.VagasOcupadas+'/'+(t.VagasTotais||'—')):(t.VagasTotais||'—'))+'</td>'+
         '<td><span class="badge-sit-turma '+(t.SituacaoTurma||'ativa').toLowerCase()+'">'+(t.SituacaoTurma||'ATIVA')+'</span></td>';
       tr.addEventListener('click',function(){selecionarTurma(t);});
       tbody.appendChild(tr);
@@ -851,7 +858,8 @@
       'inf-id':t.TurmaID,'inf-curso':t.CursoNome||t.CursoSigla,
       'inf-estagio':t.Estagio,'inf-modalidade':t.Modalidade,'inf-situacao':t.SituacaoTurma,
       'inf-dia':t.DiaSemana,'inf-horario':t.Horario,'inf-turno':t.Turno,
-      'inf-prof':t.ProfessorNome,'inf-vagas':t.VagasTotais,
+      'inf-prof':t.ProfessorNome,
+      'inf-vagas':(t.VagasOcupadas!=null)?(t.VagasOcupadas+'/'+t.VagasTotais+' ocupadas'):t.VagasTotais,
       'inf-data-inicio':t.DataInicio||'','inf-data-fim':t.DataFim||'',
     };
     Object.keys(campos).forEach(function(id){if(el(id))el(id).textContent=campos[id]||'—';});
@@ -919,6 +927,8 @@
     S.turmaTransSelecionada=null;
     if(el('modal-trans-aluno'))el('modal-trans-aluno').textContent='Aluno: '+(m.NomeExibicao||m.AlunoID)+' — turma atual: '+(S.turmaSel?S.turmaSel.TurmaID:'—');
     if(el('trans-alerta'))el('trans-alerta').className='t5-alerta erro';
+    if(el('trans-aviso-vaga'))el('trans-aviso-vaga').classList.remove('show');
+    if(el('trans-aviso-vaga-acoes'))el('trans-aviso-vaga-acoes').style.display='none';
     // Mudar de curso é decisão pedagógica — só coordenação/admin podem ver a
     // opção "Outros cursos". Secretaria fica restrita ao mesmo curso (também
     // reforçado no banco, via trigger em matriculas).
@@ -935,24 +945,43 @@
     var outrosCursos=el('trans-outros-cursos')&&el('trans-outros-cursos').checked;
     var origemId=S.turmaSel?S.turmaSel.id:null;
     var cursoOrigem=S.turmaSel?S.turmaSel.curso_id:null;
+    // Regras (ver f-config.html "Regras de acesso por papel"):
+    //  - Secretaria (checkbox "Outros cursos" nem aparece p/ ela): só turmas
+    //    do MESMO curso E com vaga disponível.
+    //  - Admin/coordenação, checkbox DESMARCADA: mesmo padrão (mesmo curso +
+    //    com vaga).
+    //  - Admin/coordenação, checkbox MARCADA: podem passar por cima da regra
+    //    de vagas inteiramente — mostra qualquer turma ativa (outro curso ou
+    //    mesmo curso, com ou sem vaga); a confirmação de "forçar vaga" (se
+    //    necessária) acontece ao confirmar a transferência.
     var candidatas=S.turmas.filter(function(t){
       if(t.id===origemId) return false;
       if(t.SituacaoTurma!=='ATIVA') return false;
-      if(!outrosCursos && cursoOrigem && t.curso_id!==cursoOrigem) return false;
-      return true;
+      if(outrosCursos) return true;
+      if(cursoOrigem && t.curso_id!==cursoOrigem) return false;
+      var temVaga=(typeof t.VagasRestantes!=='number')||t.VagasRestantes>0;
+      return temVaga;
     });
     if(!candidatas.length){
-      cont.innerHTML='<div class="mat-vazio">Nenhuma turma de destino disponível'+(outrosCursos?'.':' — marque "Outros cursos" para ver mais opções.')+'</div>';
+      cont.innerHTML='<div class="mat-vazio">Nenhuma turma de destino disponível'+(outrosCursos?'.':' — marque "Outros cursos" para ver mais opções, ou verifique se há turmas com vaga.')+'</div>';
       return;
     }
     cont.innerHTML='';
     candidatas.forEach(function(t){
       var item=document.createElement('div'); item.className='t5-trans-item'; item.dataset.id=t.id;
+      var metaPartes=[];
+      if(t.DiaSemana)metaPartes.push(t.DiaSemana);
+      if(t.Horario)metaPartes.push(t.Horario);
+      if(t.Modalidade)metaPartes.push(t.Modalidade);
+      if(t.ProfessorNome)metaPartes.push(t.ProfessorNome);
+      var temVaga=(typeof t.VagasRestantes!=='number')||t.VagasRestantes>0;
+      var vagasTxt=(typeof t.VagasRestantes==='number')?(temVaga?(t.VagasRestantes+' vaga'+(t.VagasRestantes!==1?'s':'')):'Sem vagas'):'';
       item.innerHTML=
         '<div>'+
           '<div class="t5-trans-nome">'+(t.TurmaID||'—')+' — '+(t.Estagio||t.CursoSigla||'—')+'</div>'+
-          '<div class="t5-trans-meta">'+(t.DiaSemana||'')+(t.Horario?' · '+t.Horario:'')+'</div>'+
-        '</div>';
+          '<div class="t5-trans-meta">'+metaPartes.join(' · ')+'</div>'+
+        '</div>'+
+        (vagasTxt?'<span class="t5-trans-vagas '+(temVaga?'ok':'cheio')+'">'+vagasTxt+'</span>':'');
       item.addEventListener('click',function(){
         document.querySelectorAll('.t5-trans-item').forEach(function(i){i.classList.remove('selecionado');});
         item.classList.add('selecionado');
@@ -963,16 +992,28 @@
     });
   }
 
-  function confirmarTransferencia(){
+  function confirmarTransferencia(forcarVaga){
     if(!S.matriculaParaTrans||!S.turmaTransSelecionada)return;
     var btn=el('btn-confirmar-trans'); if(btn)btn.disabled=true;
-    // _matriculasTransferir (api.js) espera exatamente estas duas chaves.
-    postApi('matriculas.transferir',{
+    if(el('trans-aviso-vaga'))el('trans-aviso-vaga').classList.remove('show');
+    if(el('trans-aviso-vaga-acoes'))el('trans-aviso-vaga-acoes').style.display='none';
+    // _matriculasTransferir (api.js) espera exatamente estas duas chaves,
+    // mais forcar_vaga quando admin/coordenação confirmam transferir mesmo
+    // sem vaga disponível na turma de destino.
+    var payload={
       matricula_origem_id: S.matriculaParaTrans.id,
       turma_destino_id:    S.turmaTransSelecionada.id,
-    }).then(function(res){
+    };
+    if(forcarVaga) payload.forcar_vaga=true;
+    postApi('matriculas.transferir',payload).then(function(res){
       if(!res.sucesso){
         if(btn)btn.disabled=false;
+        if(res.dados&&res.dados.confirmacaoNecessaria){
+          if(el('trans-aviso-vaga-msg'))el('trans-aviso-vaga-msg').textContent=res.mensagem||'Turma sem vagas disponíveis.';
+          if(el('trans-aviso-vaga'))el('trans-aviso-vaga').classList.add('show');
+          if(el('trans-aviso-vaga-acoes'))el('trans-aviso-vaga-acoes').style.display='flex';
+          return;
+        }
         if(el('trans-alerta')){el('trans-alerta').className='t5-alerta show erro';var sp=el('trans-alerta').querySelector('span:last-child');if(sp)sp.textContent=res.mensagem||'Erro ao transferir.';}
         return;
       }
@@ -1114,15 +1155,28 @@
     });
   }
 
-  function salvarNovaMatricula(){
+  function salvarNovaMatricula(forcarVaga){
     if(!S.turmaSel){if(typeof toast==='function')toast('Selecione uma turma primeiro.','error');return;}
     if(!_alunoSel){if(typeof toast==='function')toast('Selecione um aluno.','error');return;}
     var btn=el('btn-add-mat'); if(btn){btn.disabled=true;btn.classList.add('loading');}
     postApi('semestres.getAtual',{}).then(function(res){
       var semId=(res.sucesso&&res.dados)?res.dados.id:'';
-      postApi('matriculas.criar',{aluno_id:_alunoSel.id,turma_id:S.turmaSel.id,semestre_id:semId}).then(function(res2){
+      var payload={aluno_id:_alunoSel.id,turma_id:S.turmaSel.id,semestre_id:semId};
+      if(forcarVaga) payload.forcar_vaga=true;
+      postApi('matriculas.criar',payload).then(function(res2){
         if(btn){btn.disabled=false;btn.classList.remove('loading');}
-        if(!res2.sucesso){if(typeof toast==='function')toast(res2.mensagem||'Erro.','error');return;}
+        if(!res2.sucesso){
+          // admin/coordenação podem matricular além da capacidade da turma —
+          // api.js devolve confirmacaoNecessaria em vez de bloquear direto.
+          if(res2.dados&&res2.dados.confirmacaoNecessaria){
+            if(confirm((res2.mensagem||'Turma sem vagas disponíveis.')+'\n\nMatricular mesmo assim?')){
+              salvarNovaMatricula(true);
+            }
+            return;
+          }
+          if(typeof toast==='function')toast(res2.mensagem||'Erro.','error');
+          return;
+        }
         if(typeof toast==='function')toast('Matrícula realizada.','success');
         _alunoSel=null;
         if(el('add-mat-aluno-id'))el('add-mat-aluno-id').value='';
@@ -1233,7 +1287,13 @@
     el('t5-criar-overlay')&&el('t5-criar-overlay').addEventListener('click',function(e){if(e.target===this)this.style.display='none';});
     // Modal transferir matrícula
     el('trans-outros-cursos')&&el('trans-outros-cursos').addEventListener('change',renderizarListaTransferencia);
-    el('btn-confirmar-trans')&&el('btn-confirmar-trans').addEventListener('click',confirmarTransferencia);
+    el('btn-confirmar-trans')&&el('btn-confirmar-trans').addEventListener('click',function(){confirmarTransferencia(false);});
+    el('btn-trans-forcar-confirmar')&&el('btn-trans-forcar-confirmar').addEventListener('click',function(){confirmarTransferencia(true);});
+    el('btn-trans-forcar-cancelar')&&el('btn-trans-forcar-cancelar').addEventListener('click',function(){
+      if(el('trans-aviso-vaga'))el('trans-aviso-vaga').classList.remove('show');
+      if(el('trans-aviso-vaga-acoes'))el('trans-aviso-vaga-acoes').style.display='none';
+      if(el('btn-confirmar-trans'))el('btn-confirmar-trans').disabled=!S.turmaTransSelecionada;
+    });
     el('btn-cancelar-trans')&&el('btn-cancelar-trans').addEventListener('click',function(){if(el('modal-trans-overlay'))el('modal-trans-overlay').style.display='none';});
     el('modal-trans-overlay')&&el('modal-trans-overlay').addEventListener('click',function(e){if(e.target===this)this.style.display='none';});
     // Modal situação matrícula — botões data-sit disparam confirmarSituacao
