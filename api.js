@@ -819,9 +819,56 @@ async function _matriculasAtualizarSituacao(sb, dados) {
   var campos = { situacao: dados.situacao };
   if (dados.motivo_cancelamento) campos.motivo_cancelamento = dados.motivo_cancelamento;
   if (dados.situacao === 'CANCELADA') campos.data_cancelamento = new Date().toISOString();
+
+  // Buscar a matrícula ANTES de atualizar — a cascata de inativação do aluno
+  // (abaixo) só se aplica quando ela estava ATIVA antes deste cancelamento
+  // (cancelar uma matrícula já TRANCADA/CONCLUIDA não deve disparar nada).
+  var atual = await sb.from('matriculas').select('id, aluno_id, semestre_id, situacao').eq('id', dados.id).single();
+  if (atual.error || !atual.data) return _err('Matrícula não encontrada.', 404);
+
   var res = await sb.from('matriculas').update(campos).eq('id', dados.id);
   if (res.error) return _err(res.error.message);
-  return _ok(null, 'Situação da matrícula atualizada.');
+
+  // CASCATA: cancelamento da ÚNICA matrícula ATIVA do aluno no semestre —
+  // porta a regra de m5_atualizarSituacaoMatricula (M5_Semestre.gs, sistema
+  // antigo): ao cancelar uma matrícula, se essa era a última matrícula ATIVA
+  // do aluno NAQUELE SEMESTRE, o cadastro do aluno também é inativado,
+  // reaproveitando o motivo do cancelamento. Se o aluno ainda tiver outra
+  // matrícula ATIVA no mesmo semestre, nada além do cancelamento desta
+  // matrícula acontece. Escopo deliberadamente por semestre (não olha outros
+  // semestres) — diferente do botão manual "Inativar" (`alunos.inativar`),
+  // que é sempre uma ação explícita e não olha matrículas.
+  var aviso = '';
+  if (dados.situacao === 'CANCELADA' && atual.data.situacao === 'ATIVA') {
+    aviso = await _inativarAlunoSeSemMatriculaAtiva(sb, atual.data.aluno_id, atual.data.semestre_id, dados.id);
+  }
+  return _ok(null, 'Situação da matrícula atualizada.' + aviso);
+}
+
+// -----------------------------------------------------------------------------
+// _inativarAlunoSeSemMatriculaAtiva() — ver comentário acima em
+// _matriculasAtualizarSituacao. Conta as matrículas ATIVA do aluno no mesmo
+// semestre (excluindo a que acabou de ser cancelada); se não sobrar nenhuma,
+// inativa `alunos.situacao_ativo`. Nunca lança — no pior caso (ex.: papel sem
+// permissão de UPDATE em `alunos`), devolve um aviso e a matrícula já
+// cancelada continua válida.
+// -----------------------------------------------------------------------------
+async function _inativarAlunoSeSemMatriculaAtiva(sb, alunoId, semestreId, matriculaExcluidaId) {
+  var outras = await sb.from('matriculas').select('id', { count: 'exact', head: true })
+    .eq('aluno_id', alunoId).eq('semestre_id', semestreId).eq('situacao', 'ATIVA')
+    .neq('id', matriculaExcluidaId);
+  if (outras.error) {
+    console.error('_inativarAlunoSeSemMatriculaAtiva erro ao contar outras matrículas:', outras.error);
+    return '';
+  }
+  if ((outras.count || 0) > 0) return ''; // aluno ainda tem outra matrícula ATIVA neste semestre — não inativa.
+
+  var upd = await sb.from('alunos').update({ situacao_ativo: false }).eq('id', alunoId);
+  if (upd.error) {
+    console.error('_inativarAlunoSeSemMatriculaAtiva erro ao inativar aluno:', upd.error);
+    return ' Atenção: não foi possível inativar automaticamente o cadastro do aluno — ' + upd.error.message;
+  }
+  return ' O cadastro do aluno foi inativado automaticamente (esta era sua última matrícula ativa no semestre).';
 }
 
 async function _matriculasTransferir(sb, dados) {
