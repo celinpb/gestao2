@@ -141,6 +141,10 @@ async function postApi(acao, dados) {
     if (acao === 'config.get')   return await _configGet(sb);
     if (acao === 'config.salvar') return await _configSalvar(sb, dados);
 
+    // ── PÚBLICO-ALVO (tipos) ──────────────────────────────────────────────────
+    if (acao === 'publicoAlvo.listar') return await _publicoAlvoListar(sb, dados);
+    if (acao === 'publicoAlvo.salvar') return await _publicoAlvoSalvar(sb, dados);
+
     // ── RELATÓRIOS ────────────────────────────────────────────────────────────
     // ── COMENTÁRIOS ───────────────────────────────────────────────────────────
     if (acao === 'comentarios.listar') return await _comentariosListar(sb, dados);
@@ -1187,6 +1191,66 @@ async function _configSalvar(sb, dados) {
   var res = await sb.from('config_escola').update(dados).neq('id', '00000000-0000-0000-0000-000000000000');
   if (res.error) return _err(res.error.message);
   return _ok(null, 'Configurações salvas.');
+}
+
+// =============================================================================
+// PÚBLICO-ALVO (tipos)
+// =============================================================================
+// Tabela `publico_alvo_tipos` (claude/etapa8-publico-alvo.sql): id, nome,
+// prioritario, ativo, ordem, criado_em, atualizado_em.
+//   • Leitura: qualquer autenticado (o select do cadastro de alunos precisa).
+//   • Escrita: só admin (RLS). Não existe exclusão — tipo que sai de uso é
+//     inativado (ativo = false), para não deixar aluno apontando para nada.
+//   • alunos_sensiveis.publico_alvo guarda o TEXTO de `nome`, não o id. Ao
+//     renomear um tipo, um trigger no banco atualiza o texto em todos os
+//     alunos que o usam — não é preciso fazer nada aqui para isso.
+// -----------------------------------------------------------------------------
+
+async function _publicoAlvoListar(sb, dados) {
+  var query = sb.from('publico_alvo_tipos')
+    .select('id, nome, prioritario, ativo, ordem')
+    .order('ordem')
+    .order('nome');
+  if (dados && dados.somenteAtivos) query = query.eq('ativo', true);
+  var res = await query;
+  if (res.error) return _err(res.error.message);
+  return _ok(res.data || []);
+}
+
+async function _publicoAlvoSalvar(sb, dados) {
+  dados = dados || {};
+  var campos = {};
+  if ('nome' in dados) {
+    var nome = String(dados.nome || '').trim();
+    if (!nome) return _err('Informe o nome do tipo.', 400);
+    campos.nome = nome;
+  }
+  if ('prioritario' in dados) campos.prioritario = !!dados.prioritario;
+  if ('ativo' in dados)       campos.ativo = !!dados.ativo;
+  if ('ordem' in dados) {
+    var ordem = parseInt(dados.ordem, 10);
+    if (isNaN(ordem)) return _err('Ordem inválida.', 400);
+    campos.ordem = ordem;
+  }
+
+  var res;
+  if (dados.id) {
+    // .select() para saber se alguma linha foi realmente alterada: quando o
+    // RLS barra um UPDATE, o Supabase não devolve erro — só zero linhas.
+    res = await sb.from('publico_alvo_tipos').update(campos).eq('id', dados.id).select();
+  } else {
+    if (!campos.nome) return _err('Informe o nome do tipo.', 400);
+    res = await sb.from('publico_alvo_tipos').insert(campos).select();
+  }
+  if (res.error) {
+    if (res.error.code === '23505') return _err('Já existe um tipo com esse nome.', 409);
+    if (res.error.code === '42501') return _err('Somente o administrador pode alterar os tipos de público-alvo.', 403);
+    return _err(res.error.message);
+  }
+  if (!res.data || !res.data.length) {
+    return _err('Nenhuma alteração gravada. Somente o administrador pode alterar os tipos de público-alvo.', 403);
+  }
+  return _ok(res.data[0], dados.id ? 'Tipo atualizado.' : 'Tipo criado.');
 }
 
 // =============================================================================
