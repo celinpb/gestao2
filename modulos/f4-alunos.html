@@ -517,14 +517,10 @@
         <div class="form-grid col1">
           <div class="form-field">
             <label>Público-alvo <span class="req">*</span></label>
+            <!-- Opções carregadas do banco (tabela publico_alvo_tipos, gerida
+                 pelo admin em Configurações) por montarSelectPublico(). -->
             <select class="form-input" id="f-publico">
-              <option value="">Selecione…</option>
-              <option>Público Geral (não se encaixa em nenhuma das categorias abaixo)</option>
-              <option>Professores da rede estadual ou municipal da Paraíba (Educação básica)</option>
-              <option>Servidores públicos estaduais ou municipais da Paraíba</option>
-              <option>Estudantes de graduação ou pós-graduação</option>
-              <option>Profissionais de saúde da rede pública da Paraíba</option>
-              <option>Outro</option>
+              <option value="">Carregando…</option>
             </select>
             <span class="form-erro-msg" id="err-publico">Selecione o público-alvo.</span>
           </div>
@@ -680,6 +676,10 @@
     ocoPainelAtivo:  'ficha',
     _usuarioId:      '',
     ocoAlunoId:      null,
+    // Público-alvo: tipos vindos do banco e o valor que o select deve mostrar
+    tiposPublico:        [],
+    tiposPublicoCarregados: false,
+    publicoValorAtual:   '',
   };
 
   var buscarTimer = null;
@@ -1068,6 +1068,58 @@
   }
 
   // =========================================================
+  // PÚBLICO-ALVO — select montado a partir do banco
+  // =========================================================
+  // Os tipos vêm de `publico_alvo_tipos` (gerida pelo admin em
+  // Configurações). Só os ATIVOS aparecem para escolha. Se o aluno sendo
+  // editado já tiver um valor que não está entre os ativos (um tipo que o
+  // admin inativou depois, por exemplo), esse valor continua aparecendo e
+  // selecionado — assim salvar a ficha nunca apaga nem troca o público-alvo
+  // do aluno sem alguém escolher isso de propósito.
+  function escHtml(s) {
+    return (s===null||s===undefined) ? '' : String(s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; });
+  }
+
+  function carregarTiposPublico() {
+    return postApi('publicoAlvo.listar', {}).then(function(res) {
+      if (!res.sucesso) { console.warn('Não foi possível carregar os tipos de público-alvo:', res.mensagem); return; }
+      state.tiposPublico = res.dados || [];
+      state.tiposPublicoCarregados = true;
+      // Se o modal já estiver aberto quando a lista chegar, remonta o select
+      // preservando o valor que ele deveria mostrar.
+      if (el('modal-overlay') && el('modal-overlay').style.display !== 'none') {
+        montarSelectPublico(state.publicoValorAtual);
+      }
+    }).catch(function(e) { console.warn('Erro ao carregar tipos de público-alvo:', e); });
+  }
+
+  function montarSelectPublico(valorAtual) {
+    var sel = el('f-publico'); if (!sel) return;
+    valorAtual = valorAtual || '';
+    state.publicoValorAtual = valorAtual;
+    if (!state.tiposPublicoCarregados) {
+      // Lista ainda não chegou: mostra o valor atual (se houver) para não
+      // parecer vazio; carregarTiposPublico() remonta quando responder.
+      sel.innerHTML = '<option value="">Carregando…</option>' +
+        (valorAtual ? '<option value="'+escHtml(valorAtual)+'">'+escHtml(valorAtual)+'</option>' : '');
+      sel.value = valorAtual;
+      return;
+    }
+    var ativos = state.tiposPublico.filter(function(t){ return t.ativo; });
+    var html = '<option value="">Selecione…</option>';
+    ativos.forEach(function(t) {
+      html += '<option value="'+escHtml(t.nome)+'">'+escHtml(t.nome)+'</option>';
+    });
+    var estaEntreAtivos = ativos.some(function(t){ return t.nome === valorAtual; });
+    if (valorAtual && !estaEntreAtivos) {
+      var inativo = state.tiposPublico.some(function(t){ return t.nome === valorAtual; });
+      html += '<option value="'+escHtml(valorAtual)+'">'+escHtml(valorAtual)+(inativo ? ' (tipo inativo)' : ' (fora da lista atual)')+'</option>';
+    }
+    sel.innerHTML = html;
+    sel.value = valorAtual;
+  }
+
+  // =========================================================
   // MODAL EDITAR / NOVO
   // =========================================================
   // Reseta o formulário do modal: limpa todos os campos, esconde os grupos
@@ -1087,6 +1139,7 @@
     state.modoModal = 'novo';
     state.alunoSelecionado = null;
     limparModal();
+    montarSelectPublico('');
     el('modal-titulo').textContent='Novo aluno';
     mostrarAba('pessoal');
     el('modal-overlay').style.display='flex';
@@ -1126,7 +1179,7 @@
     set('f-cpf', a.CPFouCIN); set('f-cep', a.CEP); set('f-endereco', a.Endereco);
     set('f-numero', a.Numero); set('f-complemento', a.Complemento);
     set('f-bairro', a.Bairro); set('f-municipio', a.Municipio); set('f-uf', a.UF);
-    set('f-publico', a.PublicoAluno); set('f-comprovante', a.PublicoComprovanteURL);
+    montarSelectPublico(a.PublicoAluno); set('f-comprovante', a.PublicoComprovanteURL);
   }
 
   function abrirModalEditar(a) {
@@ -1601,6 +1654,8 @@
     }
     registrarEventos();
     carregarAlunos();
+    // Só quem cadastra/edita aluno abre o formulário com o select de público-alvo.
+    if (state.podeEditar) carregarTiposPublico();
   }
 
   if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded',init); } else { init(); }
