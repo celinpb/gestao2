@@ -954,13 +954,49 @@ async function _frequenciasListar(sb, dados) {
   // gravação anterior tinha "sumido" ao reabrir a mesma aula, quando na
   // verdade a LEITURA é que nunca voltava com dado nenhum. Os nomes já vêm
   // por outro caminho (matriculas.listar) em todas as telas que usam isto.
-  var query = sb.from('frequencias').select('*');
-  if (dados && dados.turma_id)    query = query.eq('turma_id', dados.turma_id);
-  if (dados && dados.matricula_id) query = query.eq('matricula_id', dados.matricula_id);
-  if (dados && dados.data_aula)   query = query.eq('data_aula', dados.data_aula);
-  var res = await query;
-  if (res.error) return _err(res.error.message);
-  return _ok(res.data);
+  //
+  // Paginação interna (2026-09-25): sem `.range()`, o PostgREST/Supabase
+  // aplica um teto padrão de linhas por consulta (tipicamente 1000) e
+  // trunca silenciosamente — sem erro — qualquer resultado maior, o que é
+  // um risco real aqui: `frequencias.listar({})` sem filtro (usado pelo
+  // relatório condensado em f8-relatorios.html) pode facilmente passar de
+  // 1000 linhas. Em vez de expor `pagina`/`tamanhoPagina` na API pública
+  // (como `_alunosListar` faz) — o que quebraria todo mundo que já chama
+  // esta ação esperando `dados` como array simples (f6-diario.html e
+  // vários pontos de f8-relatorios.html) — a paginação acontece aqui
+  // dentro, de forma transparente: busca em lotes via `.range()` até não
+  // haver mais linhas, e devolve o array completo acumulado. O contrato
+  // externo (`{sucesso, dados: [...]}`) não muda para ninguém.
+  //
+  // TAMANHO_LOTE precisa ser MENOR OU IGUAL ao teto real configurado no
+  // projeto Supabase (Settings → API → "Max Rows"), senão o próprio lote
+  // pode vir truncado sem a gente perceber, reproduzindo o mesmo bug de
+  // outra forma. 500 é uma estimativa conservadora (o padrão de fábrica do
+  // Supabase é 1000) — ainda não confirmamos o valor real deste projeto
+  // especificamente, então isso fica sinalizado como pendência.
+  var TAMANHO_LOTE = 500;
+
+  function construirQuery() {
+    var q = sb.from('frequencias').select('*');
+    if (dados && dados.turma_id)    q = q.eq('turma_id', dados.turma_id);
+    if (dados && dados.matricula_id) q = q.eq('matricula_id', dados.matricula_id);
+    if (dados && dados.data_aula)   q = q.eq('data_aula', dados.data_aula);
+    return q;
+  }
+
+  var acumulado = [];
+  var pagina = 0;
+  while (true) {
+    var de = pagina * TAMANHO_LOTE;
+    var ate = de + TAMANHO_LOTE - 1;
+    var res = await construirQuery().range(de, ate);
+    if (res.error) return _err(res.error.message);
+    var lote = res.data || [];
+    acumulado = acumulado.concat(lote);
+    if (lote.length < TAMANHO_LOTE) break;
+    pagina++;
+  }
+  return _ok(acumulado);
 }
 
 async function _frequenciasSalvar(sb, dados) {
