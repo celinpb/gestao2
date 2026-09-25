@@ -396,7 +396,7 @@
         <option value="situacao_matricula">Situação da matrícula</option>
         <option value="genero">Gênero do aluno</option>
         <option value="raca">Raça / Cor</option>
-        <option value="publico">Público-alvo</option>
+        <option value="publico" disabled>Público-alvo (dado sensível — indisponível)</option>
         <option value="municipio">Município</option>
         <option value="pcd">PcD</option>
         <option value="menor">Faixa etária (menor / maior)</option>
@@ -493,177 +493,1109 @@
 <script>
 (function(){
   'use strict';
-  var S={turmas:[],semestres:[],papel:'',config:{}};
-  function postApi(a,d){return window.postApi(a,d);}
-  function el(id){return document.getElementById(id);}
-  function val(id){return el(id)?el(id).value.trim():'';}
-  function fmtData(d){if(!d)return '—';var p=d.substring(0,10).split('-');return p[2]+'/'+p[1]+'/'+p[0];}
 
-  function normT(t){var c=t.cursos||{};return{id:t.id,TurmaID:t.external_id||t.id,Estagio:t.estagio||'',CursoSigla:c.sigla||'',DiaSemana:t.dia_semana||'',Horario:t.horario||'',semestre_id:t.semestre_id};}
-  function normM(m){var al=m.alunos||{};var ns=al.nome_social||'';return{id:m.id,MatriculaID:m.external_id||m.id,AlunoID:al.external_id||m.aluno_id,NomeExibicao:ns||al.nome_completo||'',SituacaoMatricula:m.situacao||'ATIVA',aluno_id:m.aluno_id};}
-  function normAv(a){return{id:a.id,ComponenteNota:a.componente_nota||'',Tipo:a.tipo||'',QntNotas:a.quantidade_notas||1,NotaAprovacao:a.nota_aprovacao};}
-  function normNota(n){return{MatriculaID:n.matricula_id,ComponenteNota:n.componente_nota||'',SubcomponenteNota:n.subcomponente_nota||'',ValorNota:n.valor_nota};}
+  var S = {
+    turmas: [], semestres: [], semestreAtual: null, config: {},
+    avaliacoes: [], cursos: [], calendario: [], papel: '', usuarioId: '',
+    tipoAtual: '', alunosTodos: null, ultimoAlunosTurmaCampos: null
+  };
 
+  // Tipos de relatório ocultados do menu, e bloqueados no gerador, para o
+  // papel 'professor'. Motivo: ao contrário de turmas.listar (já filtrada
+  // por professor_id via RLS — ver claude/etapa4-correcoes-rls.sql), as
+  // policies de SELECT de alunos/matriculas/notas não são restritas por
+  // professor — qualquer autenticado lê a tabela inteira. 'alunos-geral'
+  // (alunos.listar sem filtro) e 'condensado' (matriculas.listar/
+  // notas.listar por semestre inteiro, sem turma_id) vazariam dados de
+  // alunos e turmas de outros professores caso um professor os gerasse,
+  // quebrando o escopo "só o que é próprio" documentado no plano de testes
+  // por papel. Os demais tipos exigem escolher uma turma no <select>
+  // r8-param-turma, que já vem pré-filtrada pelo RLS de `turmas`, então
+  // ficam automaticamente restritos sem precisar de tratamento aqui.
+  var TIPOS_OCULTOS_PROFESSOR = ['alunos-geral', 'condensado'];
+
+  function aplicarRestricoesPapel(){
+    if(S.papel !== 'professor') return;
+    TIPOS_OCULTOS_PROFESSOR.forEach(function(tipo){
+      var card = document.querySelector('.r8-tipo-card[data-tipo="'+tipo+'"]');
+      if(card) card.style.display = 'none';
+    });
+  }
+
+  function postApi(a,d){ return window.postApi(a,d); }
+  function el(id){ return document.getElementById(id); }
+  function val(id){ return el(id) ? el(id).value.trim() : ''; }
+  function esc(s){ return (s===null||s===undefined) ? '' : String(s).replace(/[&<>"]/g, function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function fmtData(d){ if(!d) return '—'; var p=String(d).substring(0,10).split('-'); if(p.length<3) return String(d); return p[2]+'/'+p[1]+'/'+p[0]; }
+  function hoje(){ return new Date().toISOString().substring(0,10); }
+
+  // ── NORMALIZADORES ──────────────────────────────────────────────────────
+  function normT(t){
+    var c=t.cursos||{}, p=t.professor||{};
+    return {
+      id:t.id, TurmaID:t.external_id||t.id, Estagio:t.estagio||'',
+      CursoID:t.curso_id, CursoNome:c.nome||'', CursoSigla:c.sigla||'',
+      DiaSemana:t.dia_semana||'', Horario:t.horario||'', Modalidade:t.modalidade||'',
+      Situacao:t.situacao||'', ProfessorID:t.professor_id||'', ProfessorNome:p.nome||'',
+      VagasTotais:(typeof t.vagas_totais==='number')?t.vagas_totais:null,
+      DataInicio:t.data_inicio||'', DataFim:t.data_fim||'',
+      semestre_id:t.semestre_id
+    };
+  }
+  function normM(m){
+    var al=m.alunos||{}, ns=al.nome_social||'';
+    return {
+      id:m.id, MatriculaID:m.external_id||m.id, AlunoID:al.external_id||m.aluno_id,
+      NomeExibicao:ns||al.nome_completo||'', PcD:al.pcd||false,
+      SituacaoMatricula:m.situacao||'ATIVA', aluno_id:m.aluno_id, turma_id:m.turma_id
+    };
+  }
+  function normAv(a){
+    return { id:a.id, ComponenteNota:a.componente_nota||'', Tipo:a.tipo||'',
+      QntNotas:a.quantidade_notas||1, NotaAprovacao:a.nota_aprovacao };
+  }
+  function normNota(n){
+    return { MatriculaID:n.matricula_id, ComponenteNota:n.componente_nota||'',
+      SubcomponenteNota:n.subcomponente_nota||'', ValorNota:n.valor_nota };
+  }
+
+  // -----------------------------------------------------------------------
+  // listarTudo(acao, filtros) — busca TODAS as páginas de uma ação que
+  // suporta o contrato real de paginação de api.js (pagina/tamanhoPagina na
+  // requisição, totalPaginas na resposta — hoje só `alunos.listar`
+  // implementa isso, ver _alunosListar em api.js). Substitui o antigo
+  // `tamanhoPagina:5000` (um número fixo "grande o suficiente" torcendo
+  // para não truncar) por um laço que respeita o total real devolvido pelo
+  // banco a cada página, então nunca perde registros silenciosamente,
+  // qualquer que seja o tamanho da base. `tamanhoPagina` aqui é só o
+  // tamanho de cada requisição interna (não visível ao usuário) — o mesmo
+  // padrão de paginação de verdade já usado com UI em f4-alunos.html.
+  // -----------------------------------------------------------------------
+  function listarTudo(acao, filtros, tamanhoPagina){
+    tamanhoPagina = tamanhoPagina || 200;
+    var acumulado = [];
+    function buscarPagina(pagina){
+      var dados = Object.assign({}, filtros, { pagina:pagina, tamanhoPagina:tamanhoPagina });
+      return postApi(acao, dados).then(function(r){
+        if(!r.sucesso) return Promise.reject(new Error(r.mensagem || ('Erro ao buscar '+acao+'.')));
+        var pagina2 = (r.dados && r.dados.dados) ? r.dados.dados : [];
+        acumulado = acumulado.concat(pagina2);
+        var totalPaginas = (r.dados && r.dados.totalPaginas) || 1;
+        if(pagina < totalPaginas) return buscarPagina(pagina+1);
+        return acumulado;
+      });
+    }
+    return buscarPagina(1);
+  }
+
+  function carregarAlunosTodos(){
+    if(S.alunosTodos) return Promise.resolve(S.alunosTodos);
+    return listarTudo('alunos.listar', {}).then(function(lista){
+      var mapa={};
+      lista.forEach(function(a){ mapa[a.id]=a; });
+      S.alunosTodos=mapa;
+      return mapa;
+    });
+  }
+
+  // ── INICIALIZAÇÃO ────────────────────────────────────────────────────────
   function init(){
     var u=(typeof App!=='undefined'&&App.usuario)?App.usuario:null;
-    if(u) S.papel=u.papel||u.Papel||'';
+    if(u){ S.papel=u.papel||''; S.usuarioId=u.id||''; }
+    aplicarRestricoesPapel();
     Promise.all([
       postApi('turmas.listar',{}),
       postApi('semestres.listar',{}),
       postApi('config.get',{}),
+      postApi('avaliacoes.listar',{}),
+      postApi('cursos.listar',{}),
+      postApi('calendario.listar',{}),
     ]).then(function(r){
       S.turmas=(r[0].sucesso&&r[0].dados)?r[0].dados.map(normT):[];
       S.semestres=(r[1].sucesso&&r[1].dados)?r[1].dados:[];
       S.config=(r[2].sucesso&&r[2].dados)?r[2].dados:{};
-      popularSelects();
+      S.avaliacoes=(r[3].sucesso&&r[3].dados)?r[3].dados.map(normAv):[];
+      S.cursos=(r[4].sucesso&&r[4].dados)?r[4].dados:[];
+      // Calendário letivo (tabela `calendario`, ver claude/etapa6-calendario-letivo.sql).
+      // Buscado sem filtro de semestre aqui — cada seção que precisar filtra
+      // por S.semestreAtual.id (ou pelo semestre_id da turma) no momento do
+      // uso. Ainda não consumido por nenhum relatório nesta etapa (Seção 0);
+      // as seções 7/8/10 do plano de adaptação passam a usar isto no lugar
+      // das heurísticas atuais.
+      S.calendario=(r[5].sucesso&&r[5].dados)?r[5].dados:[];
+      S.semestreAtual = S.semestres.find(function(s){return s.semestre_atual;}) || null;
     });
     registrarEventos();
   }
 
-  function popularSelects(){
-    // Turmas
-    ['r8-sel-turma','r8-sel-turma-lista','r8-sel-turma-freq','r8-sel-turma-grade'].forEach(function(id){
-      var sel=el(id);if(!sel)return;
-      sel.innerHTML='<option value="">Selecione a turma…</option>';
-      S.turmas.forEach(function(t){
-        var opt=document.createElement('option');
-        opt.value=t.id;opt.textContent=t.TurmaID+' — '+(t.Estagio||t.CursoSigla||'');
-        sel.appendChild(opt);
-      });
+  // ── NAVEGAÇÃO ENTRE PAINÉIS ─────────────────────────────────────────────
+  function fecharTudo(){
+    ['r8-params','r8c-painel','r8cr-painel','r8-preview-wrap','r8c-resultado','r8cr-resultado'].forEach(function(id){
+      if(el(id)) el(id).classList.remove('show');
     });
-    // Semestres
-    ['r8-sel-semestre'].forEach(function(id){
-      var sel=el(id);if(!sel)return;
-      sel.innerHTML='<option value="">Todos</option>';
-      S.semestres.forEach(function(s){
-        var opt=document.createElement('option');
-        opt.value=s.id;opt.textContent=s.rotulo||s.external_id||'';
-        if(s.semestre_atual)opt.selected=true;
-        sel.appendChild(opt);
-      });
+    document.querySelectorAll('.r8-tipo-card').forEach(function(c){ c.classList.remove('sel'); });
+    S.tipoAtual='';
+  }
+
+  function abrirParametros(tipo){
+    if(el('r8-preview-wrap')) el('r8-preview-wrap').classList.remove('show');
+    if(el('r8c-resultado')) el('r8c-resultado').classList.remove('show');
+    if(el('r8cr-resultado')) el('r8cr-resultado').classList.remove('show');
+    if(tipo==='condensado'){
+      if(el('r8-params')) el('r8-params').classList.remove('show');
+      if(el('r8cr-painel')) el('r8cr-painel').classList.remove('show');
+      if(el('r8c-painel')) el('r8c-painel').classList.add('show');
+      popularCondensadoSemestre();
+    } else if(tipo==='controle-registros'){
+      if(el('r8-params')) el('r8-params').classList.remove('show');
+      if(el('r8c-painel')) el('r8c-painel').classList.remove('show');
+      if(el('r8cr-painel')) el('r8cr-painel').classList.add('show');
+      popularControleProfessores();
+      if(el('r8cr-data')&&!el('r8cr-data').value) el('r8cr-data').value=hoje();
+      if(el('r8cr-semana-data')&&!el('r8cr-semana-data').value) el('r8cr-semana-data').value=hoje();
+      togglemodoControle();
+    } else {
+      if(el('r8c-painel')) el('r8c-painel').classList.remove('show');
+      if(el('r8cr-painel')) el('r8cr-painel').classList.remove('show');
+      if(el('r8-params')) el('r8-params').classList.add('show');
+      configurarParametrosPadrao(tipo);
+    }
+  }
+
+  var TITULOS_TIPO = {
+    'boletim':'Boletim individual','turmas-alunos':'Turmas com alunos','alunos-geral':'Listagem geral de alunos',
+    'frequencia-turma':'Frequência por turma','resultados-turma':'Resultados por turma',
+    'alunos-turma-campos':'Alunos por turma (campos)','conteudo-turma':'Conteúdos da turma',
+    'grade-frequencia':'Grade de frequência'
+  };
+  var TIPOS_COM_TURMA=['boletim','frequencia-turma','resultados-turma','alunos-turma-campos','conteudo-turma','grade-frequencia'];
+  var TIPOS_OUTRAS_SIT=['boletim','alunos-turma-campos','turmas-alunos','frequencia-turma','resultados-turma','grade-frequencia'];
+
+  function configurarParametrosPadrao(tipo){
+    var precisaTurma = TIPOS_COM_TURMA.indexOf(tipo)!==-1;
+    if(el('r8-param-turma-wrap')) el('r8-param-turma-wrap').style.display = precisaTurma?'':'none';
+    if(precisaTurma) popularSelectTurma();
+    if(el('r8-param-aluno-wrap')) el('r8-param-aluno-wrap').style.display = (tipo==='boletim')?'':'none';
+    if(el('r8-param-aluno')) el('r8-param-aluno').value='';
+    if(el('r8-campos-wrap')) el('r8-campos-wrap').style.display = (tipo==='alunos-turma-campos')?'':'none';
+    if(tipo==='alunos-turma-campos') popularCamposCheck();
+    if(el('r8-lbl-chk-outras-situacoes')) el('r8-lbl-chk-outras-situacoes').style.display = TIPOS_OUTRAS_SIT.indexOf(tipo)!==-1?'flex':'none';
+    if(el('r8-chk-outras-situacoes')) el('r8-chk-outras-situacoes').checked=false;
+    // 'Incluir inativos' só tem efeito real em 'alunos-geral' (gerarAlunosGeral
+    // é a única função que lê este parâmetro — ver revisão da Seção 1/2 em
+    // claude/plano-f8-relatorios.md). Nos demais tipos ele ficava visível sem
+    // fazer nada (bug encontrado nesta revisão): marcar/desmarcar não mudava
+    // o resultado do boletim nem de turmas-alunos, o que confundiria quem
+    // estivesse testando. Escondido agora fora do único tipo que o usa.
+    if(el('r8-lbl-chk-inativos')) el('r8-lbl-chk-inativos').style.display = (tipo==='alunos-geral')?'flex':'none';
+
+    if(el('r8-chk-inativos')) el('r8-chk-inativos').checked=false;
+    if(el('r8-params-titulo-txt')) el('r8-params-titulo-txt').textContent='Parâmetros — '+(TITULOS_TIPO[tipo]||'');
+  }
+
+  function popularSelectTurma(){
+    var sel=el('r8-param-turma'); if(!sel) return;
+    var atual=sel.value;
+    sel.innerHTML='<option value="">Selecione a turma…</option>';
+    S.turmas.forEach(function(t){
+      var opt=document.createElement('option');
+      opt.value=t.id;
+      opt.textContent=t.TurmaID+' — '+(t.Estagio||t.CursoSigla||'')+(t.ProfessorNome?' ('+t.ProfessorNome+')':'');
+      sel.appendChild(opt);
+    });
+    if(atual) sel.value=atual;
+  }
+
+  var CAMPOS_ALUNO=[
+    {v:'external_id',   l:'ID do aluno',      get:function(a){return a.external_id||a.id||'—';}},
+    {v:'nome_completo', l:'Nome',             get:function(a){return a.nome_social||a.nome_completo||'—';}},
+    {v:'nascimento',    l:'Nascimento',       get:function(a){return fmtData(a.nascimento);}},
+    {v:'genero',        l:'Gênero',           get:function(a){return a.genero||'—';}},
+    {v:'raca',          l:'Raça/Cor',         get:function(a){return a.raca||'—';}},
+    {v:'telefone',      l:'Telefone',         get:function(a){return a.telefone||'—';}},
+    {v:'email',         l:'E-mail',           get:function(a){return a.email||'—';}},
+    {v:'municipio',     l:'Município',        get:function(a){return a.municipio||'—';}},
+    {v:'uf',            l:'UF',               get:function(a){return a.uf||'—';}},
+    {v:'bairro',        l:'Bairro',           get:function(a){return a.bairro||'—';}},
+    {v:'pcd',           l:'PcD',              get:function(a){return a.pcd?'Sim':'Não';}}
+  ];
+  var CAMPOS_PADRAO=['external_id','nome_completo'];
+
+  function popularCamposCheck(){
+    var wrap=el('r8-campos-check'); if(!wrap) return;
+    wrap.innerHTML='';
+    CAMPOS_ALUNO.forEach(function(c){
+      var label=document.createElement('label'); label.className='r8-check-item';
+      var chk=document.createElement('input'); chk.type='checkbox'; chk.value=c.v;
+      chk.checked = CAMPOS_PADRAO.indexOf(c.v)!==-1;
+      label.appendChild(chk);
+      label.appendChild(document.createTextNode(c.l));
+      wrap.appendChild(label);
     });
   }
 
-  function gerarRelatorio(){
-    var tipo=el('r8-tipo-rel')?el('r8-tipo-rel').value:'';
-    var turmaId=val('r8-sel-turma');
-    var somenteAtivos=el('r8-somente-ativos')?el('r8-somente-ativos').checked:true;
-    var saida=el('r8-saida');if(!saida)return;
-    if(!turmaId&&tipo!=='lista-alunos'){saida.innerHTML='<p style="color:var(--c-text-3);padding:20px;">Selecione uma turma para gerar o relatório.</p>';return;}
-    saida.innerHTML='<div class="r8-spinner"></div><p>Gerando relatório…</p>';
-    if(tipo==='boletim'||tipo==='') gerarBoletim(turmaId,somenteAtivos,saida);
-    else if(tipo==='frequencia-turma') gerarFrequencia(turmaId,somenteAtivos,saida);
-    else if(tipo==='lista-chamada')    gerarListaChamada(turmaId,somenteAtivos,saida);
-    else if(tipo==='lista-alunos')     gerarListaAlunos(saida);
-    else saida.innerHTML='<p>Tipo de relatório não implementado ainda.</p>';
+  // ── CONDENSADO — popular selects ────────────────────────────────────────
+  function popularCondensadoSemestre(){
+    var sel=el('r8c-semestre'); if(!sel) return;
+    sel.innerHTML='';
+    S.semestres.forEach(function(s){
+      var opt=document.createElement('option');
+      opt.value=s.id; opt.textContent=s.rotulo||s.external_id||s.id;
+      if(s.semestre_atual) opt.selected=true;
+      sel.appendChild(opt);
+    });
   }
 
-  function gerarBoletim(turmaId,somenteAtivos,saida){
+  // ── CONTROLE DE REGISTROS — popular professores ─────────────────────────
+  function popularControleProfessores(){
+    var sel=el('r8cr-professor'); if(!sel) return;
+    var atual=sel.value;
+    var vistos={}, profs=[];
+    S.turmas.forEach(function(t){
+      if(t.ProfessorID && !vistos[t.ProfessorID]){ vistos[t.ProfessorID]=true; profs.push({id:t.ProfessorID, nome:t.ProfessorNome||'—'}); }
+    });
+    profs.sort(function(a,b){ return a.nome.localeCompare(b.nome,'pt-BR'); });
+    sel.innerHTML='<option value="">Todos os professores</option>';
+    profs.forEach(function(p){
+      var opt=document.createElement('option'); opt.value=p.id; opt.textContent=p.nome;
+      sel.appendChild(opt);
+    });
+    if(atual) sel.value=atual;
+  }
+
+  function togglemodoControle(){
+    var modo=val('r8cr-modo');
+    if(el('r8cr-data-wrap'))  el('r8cr-data-wrap').style.display  = (modo==='data')?'':'none';
+    if(el('r8cr-semana-wrap'))el('r8cr-semana-wrap').style.display= (modo==='semana')?'':'none';
+    if(el('r8cr-aviso-prof')) el('r8cr-aviso-prof').classList.toggle('show', modo==='semestre');
+  }
+
+  // ── IMPRESSÃO ────────────────────────────────────────────────────────────
+  function imprimirConteudo(htmlConteudo){
+    var win=window.open('','_blank');
+    if(!win){ alert('Permita pop-ups neste site para imprimir/gerar PDF.'); return; }
+    var estilos=Array.prototype.map.call(document.querySelectorAll('style'), function(s){return s.textContent;}).join('\n');
+    win.document.open();
+    win.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Relatório</title><style>'+estilos+'</style></head><body>'+htmlConteudo+'</body></html>');
+    win.document.close();
+    setTimeout(function(){ try{ win.focus(); win.print(); }catch(e){} }, 350);
+  }
+
+  // ── CABEÇALHO INSTITUCIONAL ──────────────────────────────────────────────
+  // Logo institucional: arquivo estático servido pelo próprio GitHub Pages,
+  // na raiz do repositório (mesmo nível de index.html/api.js — ver "GitHub
+  // Pages estrutura.txt"). Caminho relativo simples (sem barra inicial):
+  // como index.html injeta este módulo via fetch/innerHTML em vez de
+  // navegar para outra URL, o caminho é resolvido contra a URL do próprio
+  // index.html, então funciona tanto em site de usuário quanto em site de
+  // projeto (ex.: usuario.github.io/repo/), onde uma barra inicial ("/…")
+  // apontaria para a raiz do domínio, não do repositório, e quebraria.
+  // Usamos o arquivo de 192×192 (dos quatro disponíveis: 192, 180, 512 e o
+  // logo.png "padrão" sem tamanho declarado): a caixa em tela/impressão é
+  // de 52×52px, e 192px dá margem de sobra para nitidez em telas de alta
+  // densidade e na resolução de impressão sem carregar o arquivo de maior
+  // tamanho (512×512, pensado para PWA, não para repetir em cada folha de
+  // um relatório com várias páginas). object-fit:contain (CSS já existente
+  // em .r8-cab-logo) evita distorção caso a proporção real do arquivo não
+  // seja perfeitamente quadrada. Antes disto, o cabeçalho nunca mostrava a
+  // logo de verdade — só um selo com as duas primeiras letras da sigla da
+  // escola — daí o "placeholder errado" que o usuário via no sistema antigo
+  // também aparecer migrado sem querer. onerror simplesmente esconde a tag
+  // (sem laço de fallback para o selo de sigla) para não depender de função
+  // global — este HTML é reaproveitado tal e qual dentro da janela de
+  // impressão (imprimirConteudo), que é outro `window`, sem acesso às
+  // funções deste módulo.
+  function headerInstitucional(subtitulo){
+    var c=S.config||{};
+    var sem=S.semestreAtual?(S.semestreAtual.rotulo||''):'';
+    return '<div class="r8-cab">'+
+      '<img src="logo192x192.png" alt="Logo da escola" class="r8-cab-logo" onerror="this.style.display=\'none\';">'+
+      '<div class="r8-cab-info">'+
+        '<div class="r8-cab-nome">'+esc(c.nome_escola||c.sigla_escola||'')+'</div>'+
+        '<div class="r8-cab-sub">'+esc(subtitulo||'')+'</div>'+
+        '<div class="r8-cab-sem">Semestre: '+esc(sem)+' · Emitido em '+fmtData(hoje())+'</div>'+
+      '</div></div>';
+  }
+
+  // ── PREVIEW ──────────────────────────────────────────────────────────────
+  function mostrarPreview(titulo, html){
+    if(el('r8-preview-label')) el('r8-preview-label').textContent=titulo;
+    if(el('r8-preview-conteudo')) el('r8-preview-conteudo').innerHTML=html;
+    if(el('r8-params')) el('r8-params').classList.remove('show');
+    if(el('r8-preview-wrap')) el('r8-preview-wrap').classList.add('show');
+    // "Baixar XLSX" só faz sentido para 'alunos-turma-campos', e só quando
+    // essa geração realmente produziu dados (S.ultimoAlunosTurmaCampos é
+    // limpo em gerarRelatorioPrincipal antes de qualquer outro tipo rodar,
+    // e mostrarEstadoVazio nunca chega a setá-lo).
+    if(el('btn-r8-xlsx')) el('btn-r8-xlsx').style.display =
+      (S.tipoAtual==='alunos-turma-campos' && S.ultimoAlunosTurmaCampos) ? 'inline-flex' : 'none';
+  }
+  function mostrarEstadoVazio(msg){
+    mostrarPreview(TITULOS_TIPO[S.tipoAtual]||'Relatório', '<p class="r8-estado">'+esc(msg)+'</p>');
+  }
+
+  // ── DISPATCHER PRINCIPAL ────────────────────────────────────────────────
+  function gerarRelatorioPrincipal(){
+    var tipo=S.tipoAtual;
+
+    // Segunda barreira (além do card ocultado em aplicarRestricoesPapel):
+    // mesmo que o card esteja escondido, nada impede tecnicamente que
+    // S.tipoAtual chegue aqui com um desses valores (ex.: DOM manipulado à
+    // mão). Repetir a checagem aqui garante que a restrição vale mesmo se a
+    // camada de UI for contornada — a proteção de dado real ainda depende
+    // do RLS do banco, isto é só defesa em profundidade no cliente.
+    if(S.papel==='professor' && TIPOS_OCULTOS_PROFESSOR.indexOf(tipo)!==-1){
+      alert('Este relatório não está disponível para o seu papel.');
+      return;
+    }
+
+    // Limpa os dados da última exportação XLSX a menos que o tipo atual
+    // seja justamente 'alunos-turma-campos' (que vai repopular mais abaixo)
+    // — evita o botão "Baixar XLSX" reaparecer com dados de uma turma/tipo
+    // anterior depois que o usuário troca de relatório.
+    if(tipo!=='alunos-turma-campos') S.ultimoAlunosTurmaCampos=null;
+
+    var turmaId=val('r8-param-turma');
+    var alunoFiltro=val('r8-param-aluno');
+    var incluirInativos=el('r8-chk-inativos')?el('r8-chk-inativos').checked:false;
+    var incluirOutras=el('r8-chk-outras-situacoes')?el('r8-chk-outras-situacoes').checked:false;
+    var camposSel=Array.prototype.map.call(
+      document.querySelectorAll('#r8-campos-check input:checked'), function(i){return i.value;}
+    );
+
+    if(TIPOS_COM_TURMA.indexOf(tipo)!==-1 && !turmaId){
+      alert('Selecione uma turma para gerar este relatório.');
+      return;
+    }
+
+    var btn=el('btn-r8-gerar');
+    if(btn){ btn.disabled=true; btn.classList.add('loading'); }
+    var finalizar=function(){ if(btn){ btn.disabled=false; btn.classList.remove('loading'); } };
+
+    var promessa;
+    if(tipo==='boletim')              promessa=gerarBoletim(turmaId, alunoFiltro, incluirInativos, incluirOutras);
+    else if(tipo==='turmas-alunos')   promessa=gerarTurmasComAlunos(incluirInativos, incluirOutras);
+    else if(tipo==='alunos-geral')    promessa=gerarAlunosGeral(incluirInativos);
+    else if(tipo==='frequencia-turma')promessa=gerarFrequenciaTurma(turmaId, incluirOutras);
+    else if(tipo==='resultados-turma')promessa=gerarResultadosTurma(turmaId, incluirOutras);
+    else if(tipo==='alunos-turma-campos') promessa=gerarAlunosTurmaCampos(turmaId, camposSel, incluirOutras);
+    else if(tipo==='conteudo-turma')  promessa=gerarConteudoTurma(turmaId);
+    else if(tipo==='grade-frequencia')promessa=gerarGradeFrequencia(turmaId, incluirOutras);
+    else { finalizar(); mostrarEstadoVazio('Tipo de relatório não reconhecido.'); return; }
+
+    promessa.then(finalizar).catch(function(e){
+      finalizar();
+      console.error('Erro ao gerar relatório ['+tipo+']:', e);
+      mostrarEstadoVazio('Não foi possível gerar o relatório: '+(e&&e.message?e.message:'erro desconhecido.'));
+    });
+  }
+
+  // ── 1) BOLETIM INDIVIDUAL ───────────────────────────────────────────────
+  function calcularResultadoComponente(av, notasAluno){
+    var valores=[];
+    for(var i=1;i<=av.QntNotas;i++){
+      var sub=av.ComponenteNota+' '+i;
+      var n=notasAluno.find(function(x){return x.ComponenteNota===av.ComponenteNota && x.SubcomponenteNota===sub;});
+      if(n && n.ValorNota!==null && n.ValorNota!=='') valores.push(parseFloat(n.ValorNota));
+    }
+    var media=null, situacao='PENDENTE';
+    if(av.QntNotas>0 && valores.length===av.QntNotas){
+      media = (av.Tipo==='Nota bruta') ? valores[0] : (valores.reduce(function(a,b){return a+b;},0)/valores.length);
+      situacao = (av.NotaAprovacao!==null && av.NotaAprovacao!==undefined && media>=av.NotaAprovacao) ? 'APROVADO' : 'REPROVADO';
+    }
+    return {media:media, situacao:situacao, lancadas:valores.length};
+  }
+
+  function avaliacoesDaTurma(turma){
+    var curso = turma ? S.cursos.find(function(c){return c.id===turma.CursoID;}) : null;
+    if(curso && curso.curso_avaliacoes && curso.curso_avaliacoes.length){
+      var ids=curso.curso_avaliacoes.slice().sort(function(a,b){return (a.ordem||0)-(b.ordem||0);}).map(function(x){return x.avaliacao_id;});
+      var lista=[];
+      ids.forEach(function(id){
+        var av=S.avaliacoes.find(function(a){return a.id===id;});
+        if(av) lista.push(av);
+      });
+      if(lista.length) return lista;
+    }
+    return S.avaliacoes; // fallback: nenhuma vinculação de curso encontrada — usa todas
+  }
+
+  function resumoFreq(freqs){
+    var p=freqs.filter(function(f){return f.frequencia==='P';}).length;
+    var f=freqs.filter(function(f){return f.frequencia==='F';}).length;
+    var tot=freqs.length;
+    var pct=tot>0?Math.round(p/tot*100):null;
+    return {presencas:p, faltas:f, total:tot, pct:pct};
+  }
+
+  function gerarBoletim(turmaId, alunoFiltro, incluirInativos, incluirOutras){
     var turma=S.turmas.find(function(t){return t.id===turmaId;});
-    Promise.all([
-      postApi('matriculas.listar',{turma_id:turmaId}),
-      postApi('avaliacoes.listar',{}),
-    ]).then(function(r){
-      var matriculas=(r[0].sucesso&&r[0].dados)?r[0].dados.map(normM):[];
-      if(somenteAtivos) matriculas=matriculas.filter(function(m){return m.SituacaoMatricula==='ATIVA';});
-      var avaliacoes=(r[1].sucesso&&r[1].dados)?r[1].dados.map(normAv):[];
-      Promise.all(matriculas.map(function(m){
-        return Promise.all([postApi('notas.listar',{matricula_id:m.id}),postApi('frequencias.listar',{matricula_id:m.id})]);
+    return postApi('matriculas.listar',{turma_id:turmaId}).then(function(r){
+      var matriculas=(r.sucesso&&r.dados)?r.dados.map(normM):[];
+      if(!incluirOutras) matriculas=matriculas.filter(function(m){return m.SituacaoMatricula==='ATIVA';});
+      if(alunoFiltro){
+        var f=alunoFiltro.toLowerCase();
+        matriculas=matriculas.filter(function(m){ return (m.MatriculaID||'').toLowerCase()===f || (m.AlunoID||'').toLowerCase()===f; });
+      }
+      if(!matriculas.length){ mostrarEstadoVazio('Nenhum aluno encontrado para os filtros selecionados.'); return; }
+      var avaliacoesTurma=avaliacoesDaTurma(turma);
+      return Promise.all(matriculas.map(function(m){
+        return Promise.all([
+          postApi('notas.listar',{matricula_id:m.id}),
+          postApi('frequencias.listar',{matricula_id:m.id}),
+          postApi('comentarios.listar',{matricula_id:m.id}),
+        ]);
       })).then(function(dados){
-        var html='<h2 class="r8-titulo-rel">Boletim — '+(turma?turma.TurmaID:'')+' · '+(turma?turma.Estagio||turma.CursoSigla:'')+'</h2>';
+        var html='';
         matriculas.forEach(function(m,idx){
           var notas=(dados[idx][0].sucesso&&dados[idx][0].dados)?dados[idx][0].dados.map(normNota):[];
           var freqs=(dados[idx][1].sucesso&&dados[idx][1].dados)?dados[idx][1].dados:[];
-          var presencas=freqs.filter(function(f){return f.frequencia==='P';}).length;
-          var faltas=freqs.filter(function(f){return f.frequencia==='F';}).length;
-          var total=freqs.length;
-          var pct=total>0?Math.round(presencas/total*100):0;
-          html+='<div class="r8-boletim-aluno">';
-          html+='<div class="r8-boletim-nome">'+(m.NomeExibicao||m.AlunoID)+'</div>';
-          html+='<div class="r8-boletim-meta">'+m.MatriculaID+' · Sit: '+m.SituacaoMatricula+'</div>';
-          html+='<div class="r8-boletim-freq">Frequência: '+presencas+'/'+total+' ('+pct+'%) — '+(pct>=75?'<span style="color:green">APROVADO</span>':'<span style="color:red">REPROVADO</span>')+' em freq.</div>';
-          // Notas por componente
-          avaliacoes.forEach(function(av){
-            html+='<div class="r8-boletim-secao">'+av.ComponenteNota+'</div>';
-            var vals=[];
-            for(var i=1;i<=av.QntNotas;i++){
-              var sub=av.ComponenteNota+' '+i;
-              var n=notas.find(function(x){return x.ComponenteNota===av.ComponenteNota&&x.SubcomponenteNota===sub;});
-              var v=n&&n.ValorNota!==null?n.ValorNota:'—';
-              html+='<span class="r8-boletim-nota">'+sub+': <b>'+v+'</b></span> ';
-              if(v!=='—')vals.push(parseFloat(v));
-            }
-            if(vals.length===av.QntNotas){
-              var media=vals.reduce(function(a,b){return a+b;})/vals.length;
-              html+=' → Média: <b>'+media.toFixed(1)+'</b> <span style="color:'+(media>=av.NotaAprovacao?'green':'red')+'">'+(media>=av.NotaAprovacao?'AP':'RE')+'</span>';
-            }
+          var comentarios=(dados[idx][2].sucesso&&dados[idx][2].dados)?dados[idx][2].dados:[];
+          var freq=resumoFreq(freqs);
+          var componentes=avaliacoesTurma.map(function(av){ return {av:av, r:calcularResultadoComponente(av, notas)}; });
+          var algumaPendente=componentes.some(function(c){return c.r.situacao==='PENDENTE';});
+          var algumReprovado=componentes.some(function(c){return c.r.situacao==='REPROVADO';});
+          var situacaoGeral = (freq.pct!==null && freq.pct<75) ? 'RETIDO'
+            : (algumaPendente ? 'PENDENTE' : (algumReprovado ? 'REPROVADO' : 'APROVADO'));
+
+          html+='<div class="r8-folha">';
+          html+=headerInstitucional('Boletim individual');
+          html+='<div class="r8-boletim-header">';
+          html+='<div><div class="r8-boletim-nome">'+esc(m.NomeExibicao||m.AlunoID)+'</div>';
+          html+='<div class="r8-boletim-meta">Matrícula '+esc(m.MatriculaID)+' · Turma '+esc(turma?turma.TurmaID:'')+' · '+esc(turma?(turma.Estagio||turma.CursoSigla):'')+' · Situação: '+esc(m.SituacaoMatricula)+'</div></div>';
+          html+='<span class="r8-resultado-geral '+situacaoGeral+'">'+situacaoGeral+'</span>';
+          html+='</div>';
+
+          html+='<div class="r8-freq-row">';
+          html+='<span class="r8-freq-item">Presenças: <strong>'+freq.presencas+'</strong></span>';
+          html+='<span class="r8-freq-item">Faltas: <strong>'+freq.faltas+'</strong></span>';
+          html+='<span class="r8-freq-item">Frequência: <strong>'+(freq.pct!==null?freq.pct+'%':'—')+'</strong></span>';
+          html+='</div>';
+
+          html+='<div class="r8-boletim-notas">';
+          componentes.forEach(function(c){
+            var valorTxt = c.r.media!==null ? c.r.media.toFixed(1) : '—';
+            var classe = c.r.situacao==='APROVADO'?'ap':(c.r.situacao==='REPROVADO'?'rep':'');
+            html+='<div class="r8-nota-box"><div class="r8-nota-box-label">'+esc(c.av.ComponenteNota)+'</div>';
+            html+='<div class="r8-nota-box-valor '+classe+'">'+valorTxt+'</div></div>';
           });
           html+='</div>';
+
+          if(comentarios.length){
+            html+='<div class="r8-boletim-secao">Comentários</div>';
+            comentarios.forEach(function(co){
+              html+='<div class="r8-com-texto">Etapa '+esc(co.etapa)+': '+esc(co.comentario)+'</div>';
+            });
+          }
+          html+='</div>'; // .r8-folha
         });
-        saida.innerHTML=html;
+        mostrarPreview('Boletim — '+(turma?turma.TurmaID:''), html);
       });
     });
   }
 
-  function gerarFrequencia(turmaId,somenteAtivos,saida){
+  // ── 2) TURMAS COM ALUNOS ────────────────────────────────────────────────
+  function gerarTurmasComAlunos(incluirInativos, incluirOutras){
+    var turmasAlvo = S.semestreAtual ? S.turmas.filter(function(t){return t.semestre_id===S.semestreAtual.id;}) : S.turmas.slice();
+    if(!turmasAlvo.length){ mostrarEstadoVazio('Nenhuma turma encontrada.'); return Promise.resolve(); }
+    return Promise.all(turmasAlvo.map(function(t){ return postApi('matriculas.listar',{turma_id:t.id}); })).then(function(resultados){
+      var html='<div class="r8-folha">'+headerInstitucional('Turmas com alunos');
+      html+='<h2 class="r8-titulo-rel">Turmas com alunos matriculados</h2>';
+      turmasAlvo.forEach(function(t, idx){
+        var matriculas=(resultados[idx].sucesso&&resultados[idx].dados)?resultados[idx].dados.map(normM):[];
+        if(!incluirOutras) matriculas=matriculas.filter(function(m){return m.SituacaoMatricula==='ATIVA';});
+        matriculas.sort(function(a,b){return (a.NomeExibicao||'').localeCompare(b.NomeExibicao||'','pt-BR');});
+        html+='<div class="r8-boletim-secao">'+esc(t.TurmaID)+' — '+esc(t.Estagio||t.CursoSigla)+' ('+matriculas.length+' aluno'+(matriculas.length===1?'':'s')+')</div>';
+        if(!matriculas.length){ html+='<p style="font-size:8.5pt;color:#9898B0;margin-bottom:10px;">Nenhum aluno.</p>'; return; }
+        html+='<table class="r8-table"><thead><tr><th>Nome</th><th class="c">Matrícula</th><th class="c">Situação</th></tr></thead><tbody>';
+        matriculas.forEach(function(m){
+          html+='<tr><td>'+esc(m.NomeExibicao||m.AlunoID)+'</td><td class="c">'+esc(m.MatriculaID)+'</td><td class="c">'+esc(m.SituacaoMatricula)+'</td></tr>';
+        });
+        html+='</tbody></table>';
+      });
+      html+='</div>';
+      mostrarPreview('Turmas com alunos', html);
+    });
+  }
+
+  // ── 3) LISTAGEM GERAL DE ALUNOS ─────────────────────────────────────────
+  function gerarAlunosGeral(incluirInativos){
+    return listarTudo('alunos.listar', {somenteAtivos:!incluirInativos}).then(function(lista){
+      if(!lista.length){ mostrarEstadoVazio('Nenhum aluno encontrado.'); return; }
+      var html='<div class="r8-folha">'+headerInstitucional('Listagem geral de alunos');
+      html+='<h2 class="r8-titulo-rel">Listagem geral de alunos'+(incluirInativos?' (incl. inativos)':'')+'</h2>';
+      html+='<table class="r8-table"><thead><tr><th>Nome</th><th class="c">ID</th><th class="c">Município/UF</th><th class="c">Telefone</th><th class="c">Situação</th></tr></thead><tbody>';
+      lista.forEach(function(a){
+        var nome=a.nome_social||a.nome_completo||'—';
+        html+='<tr><td>'+esc(nome)+'</td><td class="c">'+esc(a.external_id||'—')+'</td>';
+        html+='<td class="c">'+esc(a.municipio||'—')+(a.uf?'/'+esc(a.uf):'')+'</td>';
+        html+='<td class="c">'+esc(a.telefone||'—')+'</td>';
+        html+='<td class="c">'+(a.situacao_ativo!==false?'Ativo':'Inativo')+'</td></tr>';
+      });
+      html+='</tbody></table></div>';
+      mostrarPreview('Listagem geral de alunos', html);
+    });
+  }
+
+  // ── 4) FREQUÊNCIA POR TURMA ─────────────────────────────────────────────
+  function gerarFrequenciaTurma(turmaId, incluirOutras){
     var turma=S.turmas.find(function(t){return t.id===turmaId;});
-    Promise.all([
+    return Promise.all([
       postApi('matriculas.listar',{turma_id:turmaId}),
       postApi('frequencias.listar',{turma_id:turmaId}),
     ]).then(function(r){
       var matriculas=(r[0].sucesso&&r[0].dados)?r[0].dados.map(normM):[];
-      if(somenteAtivos) matriculas=matriculas.filter(function(m){return m.SituacaoMatricula==='ATIVA';});
+      if(!incluirOutras) matriculas=matriculas.filter(function(m){return m.SituacaoMatricula==='ATIVA';});
       var freqAll=(r[1].sucesso&&r[1].dados)?r[1].dados:[];
-      var html='<h2 class="r8-titulo-rel">Frequência — '+(turma?turma.TurmaID:'')+' · '+(turma?turma.Estagio||turma.CursoSigla:'')+'</h2>';
+      if(!matriculas.length){ mostrarEstadoVazio('Nenhum aluno encontrado nesta turma.'); return; }
+      var html='<div class="r8-folha">'+headerInstitucional('Frequência por turma');
+      html+='<h2 class="r8-titulo-rel">Frequência — '+esc(turma?turma.TurmaID:'')+' · '+esc(turma?(turma.Estagio||turma.CursoSigla):'')+'</h2>';
       html+='<table class="r8-table"><thead><tr><th>Nome</th><th class="c">Matr.</th><th class="c">Presenças</th><th class="c">Faltas</th><th class="c">Freq.%</th><th class="c">Sit.</th></tr></thead><tbody>';
       matriculas.forEach(function(m){
         var fa=freqAll.filter(function(f){return f.matricula_id===m.id;});
-        var p=fa.filter(function(f){return f.frequencia==='P';}).length;
-        var f=fa.filter(function(f){return f.frequencia==='F';}).length;
-        var tot=fa.length;
-        var pct=tot>0?Math.round(p/tot*100):0;
-        html+='<tr><td>'+(m.NomeExibicao||m.AlunoID||'—')+'</td><td class="c">'+m.MatriculaID+'</td><td class="c">'+p+'</td><td class="c">'+f+'</td><td class="c">'+pct+'%</td><td class="c" style="color:'+(pct>=75?'green':'red')+'">'+(pct>=75?'AP':'RE')+'</td></tr>';
+        var resumo=resumoFreq(fa);
+        html+='<tr><td>'+esc(m.NomeExibicao||m.AlunoID)+'</td><td class="c">'+esc(m.MatriculaID)+'</td>';
+        html+='<td class="c">'+resumo.presencas+'</td><td class="c">'+resumo.faltas+'</td>';
+        html+='<td class="c">'+(resumo.pct!==null?resumo.pct+'%':'—')+'</td>';
+        html+='<td class="c">'+(resumo.pct!==null&&resumo.pct>=75?'AP':'RE')+'</td></tr>';
       });
-      html+='</tbody></table>';
-      saida.innerHTML=html;
+      html+='</tbody></table></div>';
+      mostrarPreview('Frequência — '+(turma?turma.TurmaID:''), html);
     });
   }
 
-  function gerarListaChamada(turmaId,somenteAtivos,saida){
+  // ── 5) RESULTADOS POR TURMA ─────────────────────────────────────────────
+  function gerarResultadosTurma(turmaId, incluirOutras){
     var turma=S.turmas.find(function(t){return t.id===turmaId;});
-    postApi('matriculas.listar',{turma_id:turmaId}).then(function(r){
+    return postApi('matriculas.listar',{turma_id:turmaId}).then(function(r){
       var matriculas=(r.sucesso&&r.dados)?r.dados.map(normM):[];
-      if(somenteAtivos)matriculas=matriculas.filter(function(m){return m.SituacaoMatricula==='ATIVA';});
+      if(!incluirOutras) matriculas=matriculas.filter(function(m){return m.SituacaoMatricula==='ATIVA';});
+      if(!matriculas.length){ mostrarEstadoVazio('Nenhum aluno encontrado nesta turma.'); return; }
+      var avaliacoesTurma=avaliacoesDaTurma(turma);
+      return Promise.all(matriculas.map(function(m){
+        return Promise.all([postApi('notas.listar',{matricula_id:m.id}), postApi('frequencias.listar',{matricula_id:m.id})]);
+      })).then(function(dados){
+        var contagem={aprovados:0, reprovados:0, retidosFalta:0, pendentes:0};
+        var linhas=matriculas.map(function(m, idx){
+          var notas=(dados[idx][0].sucesso&&dados[idx][0].dados)?dados[idx][0].dados.map(normNota):[];
+          var freqs=(dados[idx][1].sucesso&&dados[idx][1].dados)?dados[idx][1].dados:[];
+          var freq=resumoFreq(freqs);
+          var componentes=avaliacoesTurma.map(function(av){ return calcularResultadoComponente(av, notas); });
+          var medias=componentes.filter(function(c){return c.media!==null;}).map(function(c){return c.media;});
+          var mediaGeral = medias.length ? (medias.reduce(function(a,b){return a+b;},0)/medias.length) : null;
+          var algumaPendente=componentes.some(function(c){return c.situacao==='PENDENTE';});
+          var algumReprovado=componentes.some(function(c){return c.situacao==='REPROVADO';});
+          var situacao = (freq.pct!==null && freq.pct<75) ? 'RETIDO'
+            : (algumaPendente ? 'PENDENTE' : (algumReprovado ? 'REPROVADO' : 'APROVADO'));
+          if(situacao==='RETIDO') contagem.retidosFalta++;
+          else if(situacao==='APROVADO') contagem.aprovados++;
+          else if(situacao==='REPROVADO') contagem.reprovados++;
+          else contagem.pendentes++;
+          return { m:m, mediaGeral:mediaGeral, situacao:situacao, pct:freq.pct };
+        });
+
+        var html='<div class="r8-folha">'+headerInstitucional('Resultados por turma');
+        html+='<h2 class="r8-titulo-rel">Resultados — '+esc(turma?turma.TurmaID:'')+' · '+esc(turma?(turma.Estagio||turma.CursoSigla):'')+'</h2>';
+        html+='<table class="r8-table"><thead><tr><th>Total</th><th>Aprovados</th><th>Reprovados</th><th>Retidos por falta</th><th>Pendentes</th></tr></thead><tbody>';
+        html+='<tr><td class="c">'+linhas.length+'</td><td class="c">'+contagem.aprovados+'</td><td class="c">'+contagem.reprovados+'</td><td class="c">'+contagem.retidosFalta+'</td><td class="c">'+contagem.pendentes+'</td></tr>';
+        html+='</tbody></table>';
+        html+='<table class="r8-table"><thead><tr><th>Nome</th><th class="c">Matr.</th><th class="c">Média geral</th><th class="c">Freq.%</th><th class="c">Situação</th></tr></thead><tbody>';
+        linhas.forEach(function(l){
+          html+='<tr><td>'+esc(l.m.NomeExibicao||l.m.AlunoID)+'</td><td class="c">'+esc(l.m.MatriculaID)+'</td>';
+          html+='<td class="c">'+(l.mediaGeral!==null?l.mediaGeral.toFixed(1):'—')+'</td>';
+          html+='<td class="c">'+(l.pct!==null?l.pct+'%':'—')+'</td><td class="c">'+l.situacao+'</td></tr>';
+        });
+        html+='</tbody></table></div>';
+        mostrarPreview('Resultados — '+(turma?turma.TurmaID:''), html);
+      });
+    });
+  }
+
+  // ── 6) ALUNOS POR TURMA (CAMPOS) ────────────────────────────────────────
+  function gerarAlunosTurmaCampos(turmaId, camposSel, incluirOutras){
+    var turma=S.turmas.find(function(t){return t.id===turmaId;});
+    if(!camposSel.length) camposSel=CAMPOS_PADRAO.slice();
+    return Promise.all([ postApi('matriculas.listar',{turma_id:turmaId}), carregarAlunosTodos() ]).then(function(r){
+      var matriculas=(r[0].sucesso&&r[0].dados)?r[0].dados.map(normM):[];
+      if(!incluirOutras) matriculas=matriculas.filter(function(m){return m.SituacaoMatricula==='ATIVA';});
+      if(!matriculas.length){ mostrarEstadoVazio('Nenhum aluno encontrado nesta turma.'); return; }
+      var mapaAlunos=r[1];
       matriculas.sort(function(a,b){return (a.NomeExibicao||'').localeCompare(b.NomeExibicao||'','pt-BR');});
-      var html='<h2 class="r8-titulo-rel">Lista de chamada — '+(turma?turma.TurmaID:'')+' · '+(turma?turma.Estagio||turma.CursoSigla:'')+'</h2>';
-      html+='<table class="r8-table"><thead><tr><th class="c">#</th><th>Nome</th><th class="c">Matr.</th><th class="c">Situação</th></tr></thead><tbody>';
-      matriculas.forEach(function(m,i){
-        html+='<tr><td class="c">'+(i+1)+'</td><td>'+(m.NomeExibicao||m.AlunoID||'—')+'</td><td class="c">'+m.MatriculaID+'</td><td class="c">'+m.SituacaoMatricula+'</td></tr>';
+      var colunas=CAMPOS_ALUNO.filter(function(c){return camposSel.indexOf(c.v)!==-1;});
+      var html='<div class="r8-folha">'+headerInstitucional('Alunos por turma');
+      html+='<h2 class="r8-titulo-rel">Alunos — '+esc(turma?turma.TurmaID:'')+' · '+esc(turma?(turma.Estagio||turma.CursoSigla):'')+'</h2>';
+      html+='<table class="r8-table"><thead><tr>';
+      colunas.forEach(function(c){ html+='<th>'+esc(c.l)+'</th>'; });
+      html+='<th class="c">Situação</th></tr></thead><tbody>';
+      // Linhas em texto puro (sem esc()/HTML) guardadas à parte para a
+      // exportação XLSX (ver baixarTabelaXLSX) — mesma fonte de dados da
+      // tabela em tela, não faz nova consulta nem faz parsing do DOM.
+      var linhasXlsx=[];
+      matriculas.forEach(function(m){
+        var aluno=mapaAlunos[m.aluno_id]||{};
+        html+='<tr>';
+        colunas.forEach(function(c){ html+='<td>'+esc(c.get(aluno))+'</td>'; });
+        html+='<td class="c">'+esc(m.SituacaoMatricula)+'</td></tr>';
+        var linha=colunas.map(function(c){ return c.get(aluno); });
+        linha.push(m.SituacaoMatricula);
+        linhasXlsx.push(linha);
       });
-      html+='</tbody></table>';
-      saida.innerHTML=html;
+      html+='</tbody></table></div>';
+      S.ultimoAlunosTurmaCampos={
+        turmaId: turma?turma.TurmaID:'turma',
+        cabecalho: colunas.map(function(c){return c.l;}).concat('Situação'),
+        linhas: linhasXlsx
+      };
+      mostrarPreview('Alunos por turma — '+(turma?turma.TurmaID:''), html);
     });
   }
 
-  function gerarListaAlunos(saida){
-    postApi('alunos.listar',{somenteAtivos:true}).then(function(r){
-      var lista=(r.sucesso&&r.dados)?r.dados:[];
-      var html='<h2 class="r8-titulo-rel">Lista geral de alunos ativos</h2>';
-      html+='<table class="r8-table"><thead><tr><th>Nome</th><th class="c">ID</th><th class="c">UF</th><th class="c">Telefone</th></tr></thead><tbody>';
-      lista.forEach(function(a){
-        var nome=a.nome_social||a.nome_completo||'—';
-        html+='<tr><td>'+nome+'</td><td class="c">'+(a.external_id||'—')+'</td><td class="c">'+(a.uf||'—')+'</td><td class="c">'+(a.telefone||'—')+'</td></tr>';
-      });
-      html+='</tbody></table>';
-      saida.innerHTML=html;
+  // -----------------------------------------------------------------------
+  // Exportação XLSX (Seção 6) — replica o botão "Baixar XLSX" da versão
+  // original (Apps Script), que carregava a biblioteca de planilhas sob
+  // demanda via CDN em vez de embutir no bundle. Usa SheetJS (xlsx), a
+  // mesma lib do padrão antigo, carregada uma única vez e reaproveitada em
+  // downloads seguintes na mesma sessão de página.
+  // -----------------------------------------------------------------------
+  function carregarLibXLSX(){
+    if(window.XLSX) return Promise.resolve(window.XLSX);
+    if(window.__xlsxCarregando) return window.__xlsxCarregando;
+    window.__xlsxCarregando = new Promise(function(resolve, reject){
+      var script=document.createElement('script');
+      script.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      script.onload=function(){ resolve(window.XLSX); };
+      script.onerror=function(){ window.__xlsxCarregando=null; reject(new Error('Não foi possível carregar a biblioteca de exportação XLSX. Verifique a conexão e tente novamente.')); };
+      document.head.appendChild(script);
+    });
+    return window.__xlsxCarregando;
+  }
+
+  function baixarTabelaXLSX(){
+    var dados=S.ultimoAlunosTurmaCampos;
+    if(!dados || !dados.linhas.length){ alert('Gere o relatório "Alunos por turma (campos)" antes de baixar.'); return; }
+    var btn=el('btn-r8-xlsx');
+    if(btn){ btn.disabled=true; btn.classList.add('loading'); }
+    var finalizar=function(){ if(btn){ btn.disabled=false; btn.classList.remove('loading'); } };
+    carregarLibXLSX().then(function(XLSX){
+      var aoa=[dados.cabecalho].concat(dados.linhas);
+      var ws=XLSX.utils.aoa_to_sheet(aoa);
+      var wb=XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Alunos');
+      var nomeSeguro=String(dados.turmaId).replace(/[^A-Za-z0-9_-]+/g,'_');
+      XLSX.writeFile(wb, 'alunos_'+nomeSeguro+'.xlsx');
+      finalizar();
+    }).catch(function(e){
+      finalizar();
+      alert(e && e.message ? e.message : 'Erro ao gerar o arquivo XLSX.');
     });
   }
 
+  // ── 7) CONTEÚDOS DA TURMA ───────────────────────────────────────────────
+  // Usa S.calendario (carregado no init(), ver claude/etapa6-calendario-
+  // letivo.sql) para listar TODAS as datas letivas do semestre da turma —
+  // registradas e previstas — em vez de só as que já têm conteúdo lançado,
+  // como fazia a versão anterior. Só o semestre atual tem calendário
+  // importado até agora, então, se a turma for de outro semestre (sem
+  // linhas em S.calendario), cai de volta no comportamento antigo (só o que
+  // foi registrado) em vez de mostrar uma tabela vazia.
+  function gerarConteudoTurma(turmaId){
+    var turma=S.turmas.find(function(t){return t.id===turmaId;});
+    return postApi('conteudo.listar',{turma_id:turmaId}).then(function(r){
+      var lista=(r.sucesso&&r.dados)?r.dados.slice():[];
+      var mapaConteudo={};
+      lista.forEach(function(c){ mapaConteudo[String(c.data_aula||'').substring(0,10)]=c.conteudo_ministrado||''; });
+
+      var semestreId=turma?turma.semestre_id:null;
+      var datasLetivas=(semestreId?S.calendario:[])
+        .filter(function(c){ return c.semestre_id===semestreId && c.tipo==='LETIVO'; })
+        .map(function(c){ return String(c.data_aula||'').substring(0,10); })
+        .sort();
+
+      if(!datasLetivas.length){
+        lista.sort(function(a,b){ return (a.data_aula||'').localeCompare(b.data_aula||''); });
+        if(!lista.length){ mostrarEstadoVazio('Nenhum conteúdo registrado nesta turma.'); return; }
+        var htmlFallback='<div class="r8-folha">'+headerInstitucional('Conteúdos da turma');
+        htmlFallback+='<h2 class="r8-titulo-rel">Conteúdos — '+esc(turma?turma.TurmaID:'')+' · '+esc(turma?(turma.Estagio||turma.CursoSigla):'')+'</h2>';
+        htmlFallback+='<div class="r8-subtitulo-rel">Calendário letivo não disponível para o semestre desta turma — mostrando apenas o conteúdo já registrado.</div>';
+        htmlFallback+='<table class="r8-table"><thead><tr><th class="c">Data</th><th>Conteúdo ministrado</th></tr></thead><tbody>';
+        lista.forEach(function(c){
+          htmlFallback+='<tr><td class="c">'+fmtData(c.data_aula)+'</td><td>'+esc(c.conteudo_ministrado||'')+'</td></tr>';
+        });
+        htmlFallback+='</tbody></table></div>';
+        mostrarPreview('Conteúdos — '+(turma?turma.TurmaID:''), htmlFallback);
+        return;
+      }
+
+      var hj=hoje();
+      var html='<div class="r8-folha">'+headerInstitucional('Conteúdos da turma');
+      html+='<h2 class="r8-titulo-rel">Conteúdos — '+esc(turma?turma.TurmaID:'')+' · '+esc(turma?(turma.Estagio||turma.CursoSigla):'')+'</h2>';
+      html+='<div class="r8-subtitulo-rel">Todas as datas letivas do semestre — registradas e previstas.</div>';
+      html+='<table class="r8-table"><thead><tr><th class="c">Data</th><th>Conteúdo ministrado</th></tr></thead><tbody>';
+      datasLetivas.forEach(function(d){
+        var conteudo=mapaConteudo[d];
+        var futura=d>hj;
+        var celula=conteudo?esc(conteudo):(futura?'<span style="color:#9898B0;font-style:italic;">(prevista)</span>':'<span style="color:#E63946;">(sem registro)</span>');
+        html+='<tr><td class="c">'+fmtData(d)+'</td><td>'+celula+'</td></tr>';
+      });
+      html+='</tbody></table></div>';
+      mostrarPreview('Conteúdos — '+(turma?turma.TurmaID:''), html);
+    });
+  }
+
+  // ── 8) GRADE DE FREQUÊNCIA ──────────────────────────────────────────────
+  function gerarGradeFrequencia(turmaId, incluirOutras){
+    var turma=S.turmas.find(function(t){return t.id===turmaId;});
+    return Promise.all([
+      postApi('matriculas.listar',{turma_id:turmaId}),
+      postApi('frequencias.listar',{turma_id:turmaId}),
+    ]).then(function(r){
+      var matriculas=(r[0].sucesso&&r[0].dados)?r[0].dados.map(normM):[];
+      if(!incluirOutras) matriculas=matriculas.filter(function(m){return m.SituacaoMatricula==='ATIVA';});
+      var freqAll=(r[1].sucesso&&r[1].dados)?r[1].dados:[];
+      if(!matriculas.length){ mostrarEstadoVazio('Nenhum aluno encontrado nesta turma.'); return; }
+      matriculas.sort(function(a,b){return (a.NomeExibicao||'').localeCompare(b.NomeExibicao||'','pt-BR');});
+
+      // Preferimos as datas letivas do calendário real da turma (S.calendario),
+      // que revelam também aulas letivas sem frequência lançada ainda. Se não
+      // houver calendário importado para o semestre desta turma, caímos de volta
+      // no comportamento antigo (datas derivadas apenas dos registros já lançados).
+      var hj=hoje();
+      var semestreId=turma?turma.semestre_id:null;
+      var datasLetivas=(semestreId?S.calendario:[])
+        .filter(function(c){ return c.semestre_id===semestreId && c.tipo==='LETIVO' && String(c.data_aula||'').substring(0,10)<=hj; })
+        .map(function(c){ return String(c.data_aula||'').substring(0,10); })
+        .sort();
+
+      var datas;
+      if(datasLetivas.length){
+        datas=datasLetivas;
+      } else {
+        datas=[];
+        freqAll.forEach(function(f){ if(datas.indexOf(f.data_aula)===-1) datas.push(f.data_aula); });
+        datas.sort();
+      }
+      if(!datas.length){ mostrarEstadoVazio('Nenhuma frequência registrada nesta turma ainda.'); return; }
+      var mapa={};
+      freqAll.forEach(function(f){ mapa[f.matricula_id+'|'+f.data_aula]=f.frequencia; });
+      var html='<div class="r8-folha paisagem">'+headerInstitucional('Grade de frequência');
+      html+='<h2 class="r8-titulo-rel">Grade de frequência — '+esc(turma?turma.TurmaID:'')+' · '+esc(turma?(turma.Estagio||turma.CursoSigla):'')+'</h2>';
+      if(!datasLetivas.length){
+        html+='<div class="r8-subtitulo-rel">Calendário letivo não disponível para o semestre desta turma — mostrando apenas as datas já lançadas.</div>';
+      }
+      html+='<table class="r8-table r8-grade-freq"><thead><tr><th>Nome</th>';
+      datas.forEach(function(d){ html+='<th class="c">'+fmtData(d).substring(0,5)+'</th>'; });
+      html+='</tr></thead><tbody>';
+      matriculas.forEach(function(m){
+        html+='<tr><td>'+esc(m.NomeExibicao||m.AlunoID)+'</td>';
+        datas.forEach(function(d){
+          var v=mapa[m.id+'|'+d]||(datasLetivas.length?'<span style="color:#E63946;">(s/reg.)</span>':'—');
+          html+='<td class="c">'+(mapa[m.id+'|'+d]?esc(v):v)+'</td>';
+        });
+        html+='</tr>';
+      });
+      html+='</tbody></table></div>';
+      mostrarPreview('Grade de frequência — '+(turma?turma.TurmaID:''), html);
+    });
+  }
+
+  // ── 9) RELATÓRIO CONDENSADO ─────────────────────────────────────────────
+  var LABEL_DIMENSAO={
+    idioma:'Idioma/Curso', turma:'Turma', professor:'Professor', modalidade:'Modalidade',
+    turno:'Dia da semana', situacao_matricula:'Situação da matrícula', genero:'Gênero',
+    raca:'Raça/Cor', publico:'Público-alvo', municipio:'Município', pcd:'PcD', menor:'Faixa etária'
+  };
+  var LABEL_METRICA={
+    total_matriculas:'Total', sit_ativa:'Ativas', sit_trancada:'Trancadas', sit_concluida:'Concluídas',
+    sit_cancelada:'Canceladas', aprovados:'Aprovados', reprovados:'Reprovados', pendentes:'Pendentes',
+    freq_media:'Freq. média (%)'
+  };
+
+  function calcularIdade(nascimento){
+    if(!nascimento) return null;
+    var nasc=new Date(nascimento+'T00:00:00');
+    if(isNaN(nasc.getTime())) return null;
+    var hj=new Date();
+    var idade=hj.getFullYear()-nasc.getFullYear();
+    var m=hj.getMonth()-nasc.getMonth();
+    if(m<0 || (m===0 && hj.getDate()<nasc.getDate())) idade--;
+    return idade;
+  }
+
+  function gerarCondensado(){
+    var semestreId=val('r8c-semestre');
+    var dimensao=val('r8c-dimensao');
+    var filtroSit=val('r8c-filtro-sit');
+    var incluirInativos=el('r8c-chk-inativos')?el('r8c-chk-inativos').checked:false;
+    var metricas=Array.prototype.map.call(document.querySelectorAll('.r8c-metricas-grid input:checked'), function(i){return i.value;});
+    if(!metricas.length) metricas=['total_matriculas'];
+
+    if(dimensao==='publico'){
+      alert('O agrupamento por Público-alvo depende de dados sensíveis protegidos e não está disponível neste relatório.');
+      return Promise.resolve();
+    }
+
+    var btn=el('r8c-btn-gerar');
+    if(btn){ btn.disabled=true; btn.classList.add('loading'); }
+
+    var precisaAlunos = ['genero','raca','municipio','pcd','menor'].indexOf(dimensao)!==-1 || !incluirInativos;
+    var precisaNotas = metricas.indexOf('aprovados')!==-1 || metricas.indexOf('reprovados')!==-1 || metricas.indexOf('pendentes')!==-1;
+    var precisaFreq = metricas.indexOf('freq_media')!==-1;
+
+    var chamadas=[ postApi('matriculas.listar',{semestre_id:semestreId}) ];
+    chamadas.push(precisaAlunos ? carregarAlunosTodos() : Promise.resolve({}));
+    chamadas.push(precisaNotas ? postApi('notas.listar',{semestre_id:semestreId}) : Promise.resolve(null));
+    chamadas.push(precisaFreq ? postApi('frequencias.listar',{}) : Promise.resolve(null));
+
+    return Promise.all(chamadas).then(function(r){
+      if(btn){ btn.disabled=false; btn.classList.remove('loading'); }
+      var matriculas=(r[0].sucesso&&r[0].dados)?r[0].dados.map(normM):[];
+      var mapaAlunos=r[1]||{};
+      var notasSemestre=(r[2]&&r[2].sucesso&&r[2].dados)?r[2].dados.map(normNota):null;
+      var freqTodas=(r[3]&&r[3].sucesso&&r[3].dados)?r[3].dados:null;
+
+      if(filtroSit) matriculas=matriculas.filter(function(m){return m.SituacaoMatricula===filtroSit;});
+      if(!incluirInativos){
+        matriculas=matriculas.filter(function(m){
+          var a=mapaAlunos[m.aluno_id];
+          return !a || a.situacao_ativo!==false;
+        });
+      }
+      if(!matriculas.length){ alert('Nenhuma matrícula encontrada para os filtros selecionados.'); return; }
+
+      var mapaTurmas={}; S.turmas.forEach(function(t){ mapaTurmas[t.id]=t; });
+
+      function chaveDimensao(m){
+        var t=mapaTurmas[m.turma_id]||{};
+        var a=mapaAlunos[m.aluno_id]||{};
+        switch(dimensao){
+          case 'idioma': return t.CursoSigla||t.CursoNome||'—';
+          case 'turma': return (t.TurmaID||'—')+' — '+(t.Estagio||'');
+          case 'professor': return t.ProfessorNome||'Sem professor';
+          case 'modalidade': return t.Modalidade||'—';
+          case 'turno': return t.DiaSemana||'—';
+          case 'situacao_matricula': return m.SituacaoMatricula;
+          case 'genero': return a.genero||'—';
+          case 'raca': return a.raca||'—';
+          case 'municipio': return a.municipio||'—';
+          case 'pcd': return a.pcd?'Com PcD':'Sem PcD';
+          case 'menor': var idade=calcularIdade(a.nascimento); return idade===null?'—':(idade<18?'Menor de idade':'Maior de idade');
+          default: return '—';
+        }
+      }
+
+      var grupos={}, ordem=[];
+      matriculas.forEach(function(m){
+        var chave=chaveDimensao(m);
+        if(!grupos[chave]){ grupos[chave]=[]; ordem.push(chave); }
+        grupos[chave].push(m);
+      });
+      ordem.sort(function(a,b){ return a.localeCompare(b,'pt-BR'); });
+
+      var avaliacoesPorTurma={};
+      function avaliacoesDe(turmaId){
+        if(!avaliacoesPorTurma[turmaId]) avaliacoesPorTurma[turmaId]=avaliacoesDaTurma(mapaTurmas[turmaId]);
+        return avaliacoesPorTurma[turmaId];
+      }
+
+      var linhas=ordem.map(function(chave){
+        var ms=grupos[chave];
+        var linha={ chave:chave, total_matriculas:ms.length,
+          sit_ativa:0, sit_trancada:0, sit_concluida:0, sit_cancelada:0,
+          aprovados:0, reprovados:0, pendentes:0, freq_media:null };
+        ms.forEach(function(m){
+          if(m.SituacaoMatricula==='ATIVA') linha.sit_ativa++;
+          else if(m.SituacaoMatricula==='TRANCADA') linha.sit_trancada++;
+          else if(m.SituacaoMatricula==='CONCLUIDA') linha.sit_concluida++;
+          else if(m.SituacaoMatricula==='CANCELADA') linha.sit_cancelada++;
+          if(notasSemestre){
+            var notasAluno=notasSemestre.filter(function(n){return n.MatriculaID===m.id;});
+            var avals=avaliacoesDe(m.turma_id);
+            var componentes=avals.map(function(av){return calcularResultadoComponente(av, notasAluno);});
+            var algumaPendente=componentes.some(function(c){return c.situacao==='PENDENTE';});
+            var algumReprovado=componentes.some(function(c){return c.situacao==='REPROVADO';});
+            if(algumaPendente) linha.pendentes++;
+            else if(algumReprovado) linha.reprovados++;
+            else linha.aprovados++;
+          }
+        });
+        if(freqTodas){
+          var idsMat=ms.map(function(m){return m.id;});
+          var freqsGrupo=freqTodas.filter(function(f){return idsMat.indexOf(f.matricula_id)!==-1;});
+          var resumo=resumoFreq(freqsGrupo);
+          linha.freq_media=resumo.pct;
+        }
+        return linha;
+      });
+
+      var totais={ total_matriculas:0, sit_ativa:0, sit_trancada:0, sit_concluida:0, sit_cancelada:0, aprovados:0, reprovados:0, pendentes:0 };
+      linhas.forEach(function(l){ Object.keys(totais).forEach(function(k){ totais[k]+=l[k]||0; }); });
+
+      var thead='<tr><th>'+esc(LABEL_DIMENSAO[dimensao]||dimensao)+'</th>';
+      metricas.forEach(function(mt){ thead+='<th class="num">'+esc(LABEL_METRICA[mt]||mt)+'</th>'; });
+      thead+='</tr>';
+
+      var tbody='';
+      linhas.forEach(function(l){
+        tbody+='<tr><td class="dim">'+esc(l.chave)+'</td>';
+        metricas.forEach(function(mt){
+          var v = mt==='freq_media' ? (l.freq_media!==null?l.freq_media+'%':'—') : (l[mt]||0);
+          tbody+='<td class="num">'+v+'</td>';
+        });
+        tbody+='</tr>';
+      });
+      tbody+='<tr class="total-row"><td class="dim">Total</td>';
+      metricas.forEach(function(mt){
+        var v = mt==='freq_media' ? '—' : (totais[mt]||0);
+        tbody+='<td class="num">'+v+'</td>';
+      });
+      tbody+='</tr>';
+
+      if(el('r8c-thead')) el('r8c-thead').innerHTML=thead;
+      if(el('r8c-tbody')) el('r8c-tbody').innerHTML=tbody;
+      var sem=S.semestres.find(function(s){return s.id===semestreId;});
+      if(el('r8c-resultado-titulo')) el('r8c-resultado-titulo').textContent='Condensado — '+(LABEL_DIMENSAO[dimensao]||dimensao)+' · '+(sem?(sem.rotulo||''):'');
+      if(el('r8c-painel')) el('r8c-painel').classList.remove('show');
+      if(el('r8c-resultado')) el('r8c-resultado').classList.add('show');
+    }).catch(function(e){
+      if(btn){ btn.disabled=false; btn.classList.remove('loading'); }
+      console.error('Erro no relatório condensado:', e);
+      alert('Não foi possível gerar o relatório condensado.');
+    });
+  }
+
+  // ── 10) CONTROLE DE REGISTROS ───────────────────────────────────────────
+  function inicioFimSemana(dataRef){
+    var d=new Date(dataRef+'T00:00:00');
+    var diaSemana=d.getDay(); // 0=domingo
+    var offsetSeg=(diaSemana===0)?-6:(1-diaSemana);
+    var inicio=new Date(d); inicio.setDate(d.getDate()+offsetSeg);
+    var fim=new Date(inicio); fim.setDate(inicio.getDate()+6);
+    function toISO(dt){ return dt.toISOString().substring(0,10); }
+    return { inicio:toISO(inicio), fim:toISO(fim) };
+  }
+
+  function gerarControleRegistros(){
+    var modo=val('r8cr-modo');
+    var professorId=val('r8cr-professor');
+    if(modo==='semestre' && !professorId){
+      alert('Neste modo é obrigatório escolher um professor.');
+      return Promise.resolve();
+    }
+    var turmasAlvo = S.turmas.filter(function(t){
+      if(S.semestreAtual && t.semestre_id!==S.semestreAtual.id) return false;
+      if(professorId && t.ProfessorID!==professorId) return false;
+      return true;
+    });
+    if(!turmasAlvo.length){ alert('Nenhuma turma encontrada para os filtros selecionados.'); return Promise.resolve(); }
+
+    var btn=el('r8cr-btn-gerar');
+    if(btn){ btn.disabled=true; btn.classList.add('loading'); }
+    var finalizar=function(){ if(btn){ btn.disabled=false; btn.classList.remove('loading'); } };
+
+    if(modo==='semestre'){
+      return Promise.all(turmasAlvo.map(function(t){ return postApi('frequencias.listar',{turma_id:t.id}); })).then(function(res){
+        finalizar();
+        var hj=hoje();
+        var corpo='<table class="r8cr-tabela"><thead><tr><th>Turma</th><th>Registros no período</th><th>Última aula registrada</th><th>Situação</th></tr></thead><tbody>';
+        turmasAlvo.forEach(function(t, idx){
+          var freqs=(res[idx].sucesso&&res[idx].dados)?res[idx].dados:[];
+          var datas=[]; freqs.forEach(function(f){ if(datas.indexOf(f.data_aula)===-1) datas.push(f.data_aula); });
+          datas.sort();
+          var ultima=datas.length?datas[datas.length-1]:null;
+          var diasSemUltima = ultima ? Math.floor((new Date(hj)-new Date(ultima))/86400000) : null;
+          var emDia = ultima && diasSemUltima<=8;
+          corpo+='<tr><td>'+esc(t.TurmaID)+' — '+esc(t.Estagio||t.CursoSigla)+'</td>';
+          corpo+='<td class="c">'+datas.length+'</td>';
+          corpo+='<td class="c">'+(ultima?fmtData(ultima):'Nenhum registro')+'</td>';
+          corpo+='<td class="c"><span class="r8cr-badge '+(emDia?'ok':'pend')+'">'+(emDia?'Em dia':'Em atraso')+'</span></td></tr>';
+        });
+        corpo+='</tbody></table>';
+        if(el('r8cr-corpo')) el('r8cr-corpo').innerHTML=corpo;
+        var prof=S.turmas.find(function(t){return t.ProfessorID===professorId;});
+        if(el('r8cr-resultado-titulo')) el('r8cr-resultado-titulo').textContent='Controle de registros — '+(prof?prof.ProfessorNome:'')+' · desde o início do semestre';
+        if(el('r8cr-painel')) el('r8cr-painel').classList.remove('show');
+        if(el('r8cr-resultado')) el('r8cr-resultado').classList.add('show');
+      });
+    }
+
+    var dataFiltro, tituloPeriodo;
+    if(modo==='data'){ dataFiltro=val('r8cr-data')||hoje(); tituloPeriodo='data '+fmtData(dataFiltro); }
+    else { var semana=inicioFimSemana(val('r8cr-semana-data')||hoje()); dataFiltro=semana; tituloPeriodo='semana de '+fmtData(semana.inicio)+' a '+fmtData(semana.fim); }
+
+    return Promise.all(turmasAlvo.map(function(t){ return postApi('frequencias.listar',{turma_id:t.id}); })).then(function(res){
+      finalizar();
+      var porProfessor={}, ordemProf=[];
+      turmasAlvo.forEach(function(t, idx){
+        var freqs=(res[idx].sucesso&&res[idx].dados)?res[idx].dados:[];
+        var registrouNoPeriodo;
+        if(modo==='data') registrouNoPeriodo = freqs.some(function(f){return f.data_aula===dataFiltro;});
+        else registrouNoPeriodo = freqs.some(function(f){return f.data_aula>=dataFiltro.inicio && f.data_aula<=dataFiltro.fim;});
+        var chaveProf=t.ProfessorID||'sem-professor';
+        if(!porProfessor[chaveProf]){ porProfessor[chaveProf]={ nome:t.ProfessorNome||'Sem professor', turmas:[] }; ordemProf.push(chaveProf); }
+        porProfessor[chaveProf].turmas.push({ turma:t, ok:registrouNoPeriodo });
+      });
+      ordemProf.sort(function(a,b){ return porProfessor[a].nome.localeCompare(porProfessor[b].nome,'pt-BR'); });
+
+      var totalOk=0, totalPend=0;
+      var corpo='';
+      ordemProf.forEach(function(chaveProf){
+        var grupo=porProfessor[chaveProf];
+        var ok=grupo.turmas.filter(function(x){return x.ok;}).length;
+        var pend=grupo.turmas.length-ok;
+        totalOk+=ok; totalPend+=pend;
+        corpo+='<div class="r8cr-secao"><div class="r8cr-prof-header"><span class="r8cr-prof-nome">'+esc(grupo.nome)+'</span></div>';
+        corpo+='<table class="r8cr-tabela"><tbody>';
+        grupo.turmas.forEach(function(x){
+          corpo+='<tr><td>'+esc(x.turma.TurmaID)+' — '+esc(x.turma.Estagio||x.turma.CursoSigla)+'</td>';
+          corpo+='<td class="c"><span class="r8cr-badge '+(x.ok?'ok':'pend')+'">'+(x.ok?'Registrado':'Pendente')+'</span></td></tr>';
+        });
+        corpo+='</tbody></table></div>';
+      });
+
+      if(el('r8cr-corpo')) el('r8cr-corpo').innerHTML=corpo;
+      if(el('r8cr-resultado-titulo')) el('r8cr-resultado-titulo').textContent='Controle de registros — '+tituloPeriodo+' ('+totalOk+' em dia, '+totalPend+' pendentes)';
+      if(el('r8cr-painel')) el('r8cr-painel').classList.remove('show');
+      if(el('r8cr-resultado')) el('r8cr-resultado').classList.add('show');
+    });
+  }
+
+  // ── EVENTOS ──────────────────────────────────────────────────────────────
   function registrarEventos(){
-    el('btn-gerar-rel')&&el('btn-gerar-rel').addEventListener('click',gerarRelatorio);
-    el('btn-imprimir')&&el('btn-imprimir').addEventListener('click',function(){window.print();});
+    if(el('r8-menu')) el('r8-menu').addEventListener('click', function(e){
+      var card=e.target.closest ? e.target.closest('.r8-tipo-card') : null;
+      if(!card) return;
+      document.querySelectorAll('.r8-tipo-card').forEach(function(c){ c.classList.remove('sel'); });
+      card.classList.add('sel');
+      S.tipoAtual=card.dataset.tipo;
+      abrirParametros(S.tipoAtual);
+    });
+
+    el('btn-r8-gerar') && el('btn-r8-gerar').addEventListener('click', gerarRelatorioPrincipal);
+    el('btn-r8-cancelar') && el('btn-r8-cancelar').addEventListener('click', fecharTudo);
+    el('btn-r8-novo') && el('btn-r8-novo').addEventListener('click', function(){
+      el('r8-preview-wrap').classList.remove('show');
+      el('r8-params').classList.add('show');
+    });
+    el('btn-r8-imprimir') && el('btn-r8-imprimir').addEventListener('click', function(){
+      imprimirConteudo(el('r8-preview-conteudo').innerHTML);
+    });
+    el('btn-r8-xlsx') && el('btn-r8-xlsx').addEventListener('click', baixarTabelaXLSX);
+
+    el('r8cr-modo') && el('r8cr-modo').addEventListener('change', togglemodoControle);
+    el('r8cr-btn-gerar') && el('r8cr-btn-gerar').addEventListener('click', gerarControleRegistros);
+    el('r8cr-btn-cancelar') && el('r8cr-btn-cancelar').addEventListener('click', fecharTudo);
+    el('r8cr-btn-imprimir') && el('r8cr-btn-imprimir').addEventListener('click', function(){
+      imprimirConteudo('<div class="r8-folha">'+(el('r8cr-resultado-titulo')?'<h2 class="r8-titulo-rel">'+esc(el('r8cr-resultado-titulo').textContent)+'</h2>':'')+el('r8cr-corpo').innerHTML+'</div>');
+    });
+
+    el('r8c-btn-gerar') && el('r8c-btn-gerar').addEventListener('click', gerarCondensado);
+    el('r8c-btn-cancelar') && el('r8c-btn-cancelar').addEventListener('click', fecharTudo);
+    el('r8c-btn-imprimir') && el('r8c-btn-imprimir').addEventListener('click', function(){
+      var tabelaHtml = el('r8c-tabela') ? el('r8c-tabela').outerHTML : '';
+      imprimirConteudo('<div class="r8-folha paisagem">'+(el('r8c-resultado-titulo')?'<h2 class="r8-titulo-rel">'+esc(el('r8c-resultado-titulo').textContent)+'</h2>':'')+tabelaHtml+'</div>');
+    });
   }
 
-  if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',init);}else{init();}
+  if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', init); } else { init(); }
 }());
 </script>
