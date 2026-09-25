@@ -1459,9 +1459,11 @@
       var subtitulo=(turma?turma.TurmaID:'')+' · '+(turma?(turma.Estagio||turma.CursoSigla):'')+
         (turma&&turma.ProfessorNome?' · Prof. '+turma.ProfessorNome:'');
 
-      // Datas letivas cruzadas com o(s) dia(s) da semana da turma, só até hoje
-      // (não faz sentido coluna de frequência para uma aula futura).
-      var datasCalendario=construirDatasTurma(turma).filter(function(d){ return !d.futura; });
+      // Datas letivas cruzadas com o(s) dia(s) da semana da turma — inclui
+      // também as datas futuras previstas (mesmo comportamento do arquivo em
+      // uso em produção: a coluna existe, só aparece "–" porque ainda não
+      // há frequência lançada para ela).
+      var datasCalendario=construirDatasTurma(turma);
 
       if(!datasCalendario.length){
         // Sem cruzamento possível — cai de volta para as datas que já têm ao
