@@ -527,7 +527,72 @@
   function val(id){ return el(id) ? el(id).value.trim() : ''; }
   function esc(s){ return (s===null||s===undefined) ? '' : String(s).replace(/[&<>"]/g, function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
   function fmtData(d){ if(!d) return '—'; var p=String(d).substring(0,10).split('-'); if(p.length<3) return String(d); return p[2]+'/'+p[1]+'/'+p[0]; }
+  function fmtTel(t){
+    if(!t) return '—';
+    var l=String(t).replace(/\D/g,'');
+    if(l.length===11) return l.replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');
+    if(l.length===10) return l.replace(/(\d{2})(\d{4})(\d{4})/,'($1) $2-$3');
+    return String(t);
+  }
   function hoje(){ return new Date().toISOString().substring(0,10); }
+
+  // ── Datas de aula previstas para uma turma (calendário × dia da semana) ──
+  // Mesmo padrão já usado (e em produção) em f6-diario.html: em vez de usar
+  // todo o calendário letivo do semestre, cruza com o(s) dia(s) da semana
+  // cadastrados na turma (turma.DiaSemana, ex.: "Segunda-Feira,Quarta-Feira"),
+  // para mostrar só as datas em que a turma de fato tem aula.
+  var DIAS_SEMANA_NUM_R8 = {
+    'SEGUNDA-FEIRA':1,'SEGUNDA':1,
+    'TERCA-FEIRA':2,'TERÇA-FEIRA':2,'TERCA':2,'TERÇA':2,
+    'QUARTA-FEIRA':3,'QUARTA':3,
+    'QUINTA-FEIRA':4,'QUINTA':4,
+    'SEXTA-FEIRA':5,'SEXTA':5,
+    'SABADO':6,'SÁBADO':6,'DOMINGO':0,
+  };
+  var MESES_ABREV_R8 = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  var DIAS_ABREV_R8  = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+
+  function diasTurmaNumeros(turma){
+    var raw = (turma && turma.DiaSemana) || '';
+    var nums = [];
+    if(!raw) return nums;
+    raw.toUpperCase().split(',').forEach(function(d){
+      var n = DIAS_SEMANA_NUM_R8[d.trim()];
+      if(n!==undefined) nums.push(n);
+    });
+    return nums;
+  }
+
+  /**
+   * Cruza o calendário letivo real (S.calendario, filtrado por semestre e
+   * tipo==='LETIVO') com o(s) dia(s) da semana cadastrados na turma — devolve
+   * só as datas em que a turma efetivamente tem aula prevista, não todo o
+   * calendário do semestre. Cada item: { iso, data, weekday, mes (chave
+   * AAAA-MM, p/ agrupar), mesLabel, futura }.
+   */
+  function construirDatasTurma(turma){
+    var diasNums = diasTurmaNumeros(turma);
+    if(!turma || !diasNums.length) return [];
+    var semestreId = turma.semestre_id;
+    var hj = hoje();
+    var datas = [];
+    S.calendario.forEach(function(c){
+      if(c.semestre_id!==semestreId || c.tipo!=='LETIVO') return;
+      var iso = String(c.data_aula||'').substring(0,10);
+      if(!iso) return;
+      var dt = new Date(iso+'T12:00:00');
+      if(isNaN(dt.getTime())) return;
+      if(diasNums.indexOf(dt.getDay())===-1) return;
+      datas.push({
+        iso: iso, data: dt, weekday: dt.getDay(),
+        mes: iso.substring(0,7),
+        mesLabel: MESES_ABREV_R8[dt.getMonth()]+'/'+iso.substring(2,4),
+        futura: iso>hj
+      });
+    });
+    datas.sort(function(a,b){ return a.data-b.data; });
+    return datas;
+  }
 
   // ── NORMALIZADORES ──────────────────────────────────────────────────────
   function normT(t){
@@ -668,7 +733,7 @@
     'alunos-turma-campos':'Alunos por turma (campos)','conteudo-turma':'Conteúdos da turma',
     'grade-frequencia':'Grade de frequência'
   };
-  var TIPOS_COM_TURMA=['boletim','frequencia-turma','resultados-turma','alunos-turma-campos','conteudo-turma','grade-frequencia'];
+  var TIPOS_COM_TURMA=['boletim','turmas-alunos','frequencia-turma','resultados-turma','alunos-turma-campos','conteudo-turma','grade-frequencia'];
   var TIPOS_OUTRAS_SIT=['boletim','alunos-turma-campos','turmas-alunos','frequencia-turma','resultados-turma','grade-frequencia'];
 
   function configurarParametrosPadrao(tipo){
@@ -717,7 +782,23 @@
     {v:'municipio',     l:'Município',        get:function(a){return a.municipio||'—';}},
     {v:'uf',            l:'UF',               get:function(a){return a.uf||'—';}},
     {v:'bairro',        l:'Bairro',           get:function(a){return a.bairro||'—';}},
-    {v:'pcd',           l:'PcD',              get:function(a){return a.pcd?'Sim':'Não';}}
+    {v:'pcd',           l:'PcD',              get:function(a){return a.pcd?'Sim':'Não';}},
+    // Campos de responsável — vêm de alunos_sensiveis, só acessível via a
+    // Edge Function alunos-sensiveis (ver carregarSensiveisTurma() logo
+    // abaixo). Marcados sensivel:true para só disparar a busca extra quando
+    // de fato selecionados. Restritos ao subconjunto que a própria Edge
+    // Function libera para professor (CAMPOS_PROFESSOR): nunca CPF,
+    // endereço, passaporte etc. — mesma decisão já tomada em f4-alunos.html,
+    // não é uma lacuna deste relatório.
+    {v:'menor',                    l:'Menor de idade',            sensivel:true, get:function(a){return (a._sens && a._sens.menor!==undefined)?(a._sens.menor?'Sim':'Não'):'—';}},
+    {v:'responsavel1_nome',        l:'Responsável 1 — Nome',       sensivel:true, get:function(a){return (a._sens && a._sens.responsavel1_nome)||'—';}},
+    {v:'responsavel1_parentesco',  l:'Responsável 1 — Parentesco', sensivel:true, get:function(a){return (a._sens && a._sens.responsavel1_parentesco)||'—';}},
+    {v:'responsavel1_telefone',    l:'Responsável 1 — Telefone',   sensivel:true, get:function(a){return (a._sens && a._sens.responsavel1_telefone)?fmtTel(a._sens.responsavel1_telefone):'—';}},
+    {v:'responsavel1_email',       l:'Responsável 1 — E-mail',     sensivel:true, get:function(a){return (a._sens && a._sens.responsavel1_email)||'—';}},
+    {v:'responsavel2_nome',        l:'Responsável 2 — Nome',       sensivel:true, get:function(a){return (a._sens && a._sens.responsavel2_nome)||'—';}},
+    {v:'responsavel2_parentesco',  l:'Responsável 2 — Parentesco', sensivel:true, get:function(a){return (a._sens && a._sens.responsavel2_parentesco)||'—';}},
+    {v:'responsavel2_telefone',    l:'Responsável 2 — Telefone',   sensivel:true, get:function(a){return (a._sens && a._sens.responsavel2_telefone)?fmtTel(a._sens.responsavel2_telefone):'—';}},
+    {v:'responsavel2_email',       l:'Responsável 2 — E-mail',     sensivel:true, get:function(a){return (a._sens && a._sens.responsavel2_email)||'—';}}
   ];
   var CAMPOS_PADRAO=['external_id','nome_completo'];
 
@@ -729,7 +810,7 @@
       var chk=document.createElement('input'); chk.type='checkbox'; chk.value=c.v;
       chk.checked = CAMPOS_PADRAO.indexOf(c.v)!==-1;
       label.appendChild(chk);
-      label.appendChild(document.createTextNode(c.l));
+      label.appendChild(document.createTextNode(c.l+(c.sensivel?' 🔒':'')));
       wrap.appendChild(label);
     });
   }
@@ -874,7 +955,7 @@
 
     var promessa;
     if(tipo==='boletim')              promessa=gerarBoletim(turmaId, alunoFiltro, incluirInativos, incluirOutras);
-    else if(tipo==='turmas-alunos')   promessa=gerarTurmasComAlunos(incluirInativos, incluirOutras);
+    else if(tipo==='turmas-alunos')   promessa=gerarTurmasComAlunos(turmaId, incluirOutras);
     else if(tipo==='alunos-geral')    promessa=gerarAlunosGeral(incluirInativos);
     else if(tipo==='frequencia-turma')promessa=gerarFrequenciaTurma(turmaId, incluirOutras);
     else if(tipo==='resultados-turma')promessa=gerarResultadosTurma(turmaId, incluirOutras);
@@ -892,18 +973,23 @@
 
   // ── 1) BOLETIM INDIVIDUAL ───────────────────────────────────────────────
   function calcularResultadoComponente(av, notasAluno){
-    var valores=[];
+    // Devolve também `subs` (uma entrada por subcomponente/nota lançada,
+    // com o valor bruto) — usado pelo Boletim individual para mostrar cada
+    // nota individualmente, não só a média do componente.
+    var subs=[];
     for(var i=1;i<=av.QntNotas;i++){
       var sub=av.ComponenteNota+' '+i;
       var n=notasAluno.find(function(x){return x.ComponenteNota===av.ComponenteNota && x.SubcomponenteNota===sub;});
-      if(n && n.ValorNota!==null && n.ValorNota!=='') valores.push(parseFloat(n.ValorNota));
+      subs.push({label:sub, valor:(n && n.ValorNota!==null && n.ValorNota!=='')?n.ValorNota:null});
     }
+    var valores=subs.filter(function(s){return s.valor!==null;}).map(function(s){return parseFloat(s.valor);});
     var media=null, situacao='PENDENTE';
     if(av.QntNotas>0 && valores.length===av.QntNotas){
       media = (av.Tipo==='Nota bruta') ? valores[0] : (valores.reduce(function(a,b){return a+b;},0)/valores.length);
+      media = parseFloat(media.toFixed(1));
       situacao = (av.NotaAprovacao!==null && av.NotaAprovacao!==undefined && media>=av.NotaAprovacao) ? 'APROVADO' : 'REPROVADO';
     }
-    return {media:media, situacao:situacao, lancadas:valores.length};
+    return {media:media, situacao:situacao, lancadas:valores.length, subs:subs};
   }
 
   function avaliacoesDaTurma(turma){
@@ -923,9 +1009,13 @@
   function resumoFreq(freqs){
     var p=freqs.filter(function(f){return f.frequencia==='P';}).length;
     var f=freqs.filter(function(f){return f.frequencia==='F';}).length;
+    var j=freqs.filter(function(f){return f.frequencia==='J';}).length;
     var tot=freqs.length;
-    var pct=tot>0?Math.round(p/tot*100):null;
-    return {presencas:p, faltas:f, total:tot, pct:pct};
+    // Faltas justificadas somam-se à presença para fins do cálculo do percentual
+    // de frequência (medida interna, não prevista na LDB — decisão institucional
+    // para não prejudicar alunos que não foram previamente informados da regra).
+    var pct=tot>0?Math.round((p+j)/tot*100):null;
+    return {presencas:p, faltas:f, justificadas:j, total:tot, pct:pct};
   }
 
   function gerarBoletim(turmaId, alunoFiltro, incluirInativos, incluirOutras){
@@ -946,47 +1036,69 @@
           postApi('comentarios.listar',{matricula_id:m.id}),
         ]);
       })).then(function(dados){
+        var resultadoLabel={APROVADO:'Aprovado', REPROVADO:'Reprovado', RETIDO:'Retido por frequência', PENDENTE:'Pendente'};
         var html='';
         matriculas.forEach(function(m,idx){
           var notas=(dados[idx][0].sucesso&&dados[idx][0].dados)?dados[idx][0].dados.map(normNota):[];
           var freqs=(dados[idx][1].sucesso&&dados[idx][1].dados)?dados[idx][1].dados:[];
           var comentarios=(dados[idx][2].sucesso&&dados[idx][2].dados)?dados[idx][2].dados:[];
           var freq=resumoFreq(freqs);
+          var retidoFalta = freq.pct!==null && freq.pct<75;
           var componentes=avaliacoesTurma.map(function(av){ return {av:av, r:calcularResultadoComponente(av, notas)}; });
           var algumaPendente=componentes.some(function(c){return c.r.situacao==='PENDENTE';});
           var algumReprovado=componentes.some(function(c){return c.r.situacao==='REPROVADO';});
-          var situacaoGeral = (freq.pct!==null && freq.pct<75) ? 'RETIDO'
+          var situacaoGeral = retidoFalta ? 'RETIDO'
             : (algumaPendente ? 'PENDENTE' : (algumReprovado ? 'REPROVADO' : 'APROVADO'));
 
           html+='<div class="r8-folha">';
-          html+=headerInstitucional('Boletim individual');
+          html+=headerInstitucional('Boletim');
+          html+='<div class="r8-titulo-rel">Boletim</div>';
+          html+='<div class="r8-subtitulo-rel">'+esc(turma?turma.TurmaID:'')+' · '+esc(turma?(turma.Estagio||turma.CursoSigla):'')+
+            (turma&&turma.DiaSemana?' · '+esc(turma.DiaSemana):'')+(turma&&turma.Horario?' '+esc(turma.Horario):'')+'</div>';
+
+          html+='<div class="r8-boletim-aluno">';
           html+='<div class="r8-boletim-header">';
           html+='<div><div class="r8-boletim-nome">'+esc(m.NomeExibicao||m.AlunoID)+'</div>';
-          html+='<div class="r8-boletim-meta">Matrícula '+esc(m.MatriculaID)+' · Turma '+esc(turma?turma.TurmaID:'')+' · '+esc(turma?(turma.Estagio||turma.CursoSigla):'')+' · Situação: '+esc(m.SituacaoMatricula)+'</div></div>';
-          html+='<span class="r8-resultado-geral '+situacaoGeral+'">'+situacaoGeral+'</span>';
+          html+='<div class="r8-boletim-meta">'+esc(m.MatriculaID)+' · Situação: '+esc(m.SituacaoMatricula)+'</div></div>';
+          html+='<span class="r8-resultado-geral '+situacaoGeral+'">'+(resultadoLabel[situacaoGeral]||situacaoGeral)+'</span>';
           html+='</div>';
 
-          html+='<div class="r8-freq-row">';
-          html+='<span class="r8-freq-item">Presenças: <strong>'+freq.presencas+'</strong></span>';
-          html+='<span class="r8-freq-item">Faltas: <strong>'+freq.faltas+'</strong></span>';
-          html+='<span class="r8-freq-item">Frequência: <strong>'+(freq.pct!==null?freq.pct+'%':'—')+'</strong></span>';
-          html+='</div>';
-
-          html+='<div class="r8-boletim-notas">';
+          // Uma seção por componente, com uma caixa de nota por subcomponente
+          // lançado e uma caixa de "Média" colorida por aprovado/reprovado —
+          // granularidade completa, como no arquivo em uso.
           componentes.forEach(function(c){
-            var valorTxt = c.r.media!==null ? c.r.media.toFixed(1) : '—';
-            var classe = c.r.situacao==='APROVADO'?'ap':(c.r.situacao==='REPROVADO'?'rep':'');
-            html+='<div class="r8-nota-box"><div class="r8-nota-box-label">'+esc(c.av.ComponenteNota)+'</div>';
-            html+='<div class="r8-nota-box-valor '+classe+'">'+valorTxt+'</div></div>';
+            html+='<div class="r8-boletim-secao">'+esc(c.av.ComponenteNota)+'</div>';
+            html+='<div class="r8-boletim-notas">';
+            c.r.subs.forEach(function(s){
+              html+='<div class="r8-nota-box"><div class="r8-nota-box-label">'+esc(s.label)+'</div>'+
+                '<div class="r8-nota-box-valor">'+(s.valor!==null&&s.valor!==undefined?esc(s.valor):'–')+'</div></div>';
+            });
+            var mediaClasse = c.r.situacao==='APROVADO'?'ap':(c.r.situacao==='REPROVADO'?'rep':'');
+            html+='<div class="r8-nota-box"><div class="r8-nota-box-label">Média</div>'+
+              '<div class="r8-nota-box-valor '+mediaClasse+'">'+(c.r.media!==null?c.r.media:'–')+'</div></div>';
+            html+='</div>';
           });
+
+          html+='<div class="r8-boletim-secao">Frequência</div>';
+          html+='<div class="r8-freq-row">';
+          html+='<div class="r8-freq-item">Total de aulas: <strong>'+freq.total+'</strong></div>';
+          html+='<div class="r8-freq-item">Presenças: <strong>'+freq.presencas+'</strong></div>';
+          html+='<div class="r8-freq-item">Faltas: <strong>'+freq.faltas+'</strong></div>';
+          html+='<div class="r8-freq-item">Justificadas: <strong>'+freq.justificadas+'</strong></div>';
+          html+='<div class="r8-freq-item">Frequência: <strong style="color:'+(retidoFalta?'#E63946':'#2A9D8F')+'">'+(freq.pct!==null?freq.pct+'%':'—')+'</strong>'+
+            (retidoFalta?' ⚠ Retido por falta':'')+'</div>';
           html+='</div>';
 
           if(comentarios.length){
-            html+='<div class="r8-boletim-secao">Comentários</div>';
             comentarios.forEach(function(co){
-              html+='<div class="r8-com-texto">Etapa '+esc(co.etapa)+': '+esc(co.comentario)+'</div>';
+              if(co.comentario){
+                html+='<div class="r8-boletim-secao">Comentário — Etapa '+esc(co.etapa)+'</div>';
+                html+='<div class="r8-com-texto">'+esc(co.comentario)+'</div>';
+              }
             });
           }
+          html+='</div>'; // .r8-boletim-aluno
+
           html+='</div>'; // .r8-folha
         });
         mostrarPreview('Boletim — '+(turma?turma.TurmaID:''), html);
@@ -995,26 +1107,27 @@
   }
 
   // ── 2) TURMAS COM ALUNOS ────────────────────────────────────────────────
-  function gerarTurmasComAlunos(incluirInativos, incluirOutras){
-    var turmasAlvo = S.semestreAtual ? S.turmas.filter(function(t){return t.semestre_id===S.semestreAtual.id;}) : S.turmas.slice();
-    if(!turmasAlvo.length){ mostrarEstadoVazio('Nenhuma turma encontrada.'); return Promise.resolve(); }
-    return Promise.all(turmasAlvo.map(function(t){ return postApi('matriculas.listar',{turma_id:t.id}); })).then(function(resultados){
-      var html='<div class="r8-folha">'+headerInstitucional('Turmas com alunos');
-      html+='<h2 class="r8-titulo-rel">Turmas com alunos matriculados</h2>';
-      turmasAlvo.forEach(function(t, idx){
-        var matriculas=(resultados[idx].sucesso&&resultados[idx].dados)?resultados[idx].dados.map(normM):[];
-        if(!incluirOutras) matriculas=matriculas.filter(function(m){return m.SituacaoMatricula==='ATIVA';});
-        matriculas.sort(function(a,b){return (a.NomeExibicao||'').localeCompare(b.NomeExibicao||'','pt-BR');});
-        html+='<div class="r8-boletim-secao">'+esc(t.TurmaID)+' — '+esc(t.Estagio||t.CursoSigla)+' ('+matriculas.length+' aluno'+(matriculas.length===1?'':'s')+')</div>';
-        if(!matriculas.length){ html+='<p style="font-size:8.5pt;color:#9898B0;margin-bottom:10px;">Nenhum aluno.</p>'; return; }
-        html+='<table class="r8-table"><thead><tr><th>Nome</th><th class="c">Matrícula</th><th class="c">Situação</th></tr></thead><tbody>';
-        matriculas.forEach(function(m){
-          html+='<tr><td>'+esc(m.NomeExibicao||m.AlunoID)+'</td><td class="c">'+esc(m.MatriculaID)+'</td><td class="c">'+esc(m.SituacaoMatricula)+'</td></tr>';
-        });
-        html+='</tbody></table>';
+  function gerarTurmasComAlunos(turmaId, incluirOutras){
+    var turma=S.turmas.find(function(t){return t.id===turmaId;});
+    return postApi('matriculas.listar',{turma_id:turmaId}).then(function(r){
+      var matriculas=(r.sucesso&&r.dados)?r.dados.map(normM):[];
+      if(!incluirOutras) matriculas=matriculas.filter(function(m){return m.SituacaoMatricula==='ATIVA';});
+      matriculas.sort(function(a,b){return (a.NomeExibicao||'').localeCompare(b.NomeExibicao||'','pt-BR');});
+
+      var html='<div class="r8-folha">'+headerInstitucional('Alunos matriculados');
+      html+='<h2 class="r8-titulo-rel">Alunos matriculados</h2>';
+      html+='<div class="r8-subtitulo-rel">'+esc(turma?turma.TurmaID:'')+' · '+esc(turma?(turma.Estagio||turma.CursoSigla):'')+
+        (turma&&turma.ProfessorNome?' · Prof. '+esc(turma.ProfessorNome):'')+
+        (turma&&turma.DiaSemana?' · '+esc(turma.DiaSemana):'')+(turma&&turma.Horario?' '+esc(turma.Horario):'')+
+        (turma&&turma.Modalidade?' · '+esc(turma.Modalidade):'')+'</div>';
+      html+='<table class="r8-table"><thead><tr><th class="c">#</th><th>Nome</th><th class="c">Matrícula</th><th class="c">Situação</th></tr></thead><tbody>';
+      matriculas.forEach(function(m,i){
+        html+='<tr><td class="c">'+(i+1)+'</td><td>'+esc(m.NomeExibicao||m.AlunoID)+'</td><td class="c">'+esc(m.MatriculaID)+'</td><td class="c">'+esc(m.SituacaoMatricula)+'</td></tr>';
       });
+      html+='</tbody></table>';
+      html+='<p style="font-size:8pt;color:#5C5C7A;">Total: '+matriculas.length+' matrícula(s)</p>';
       html+='</div>';
-      mostrarPreview('Turmas com alunos', html);
+      mostrarPreview('Alunos matriculados — '+(turma?turma.TurmaID:''), html);
     });
   }
 
@@ -1048,18 +1161,26 @@
       if(!incluirOutras) matriculas=matriculas.filter(function(m){return m.SituacaoMatricula==='ATIVA';});
       var freqAll=(r[1].sucesso&&r[1].dados)?r[1].dados:[];
       if(!matriculas.length){ mostrarEstadoVazio('Nenhum aluno encontrado nesta turma.'); return; }
+      var datasUnicas={};
+      freqAll.forEach(function(f){ if(f.data_aula) datasUnicas[String(f.data_aula).substring(0,10)]=true; });
+      var totalAulas=Object.keys(datasUnicas).length;
       var html='<div class="r8-folha">'+headerInstitucional('Frequência por turma');
       html+='<h2 class="r8-titulo-rel">Frequência — '+esc(turma?turma.TurmaID:'')+' · '+esc(turma?(turma.Estagio||turma.CursoSigla):'')+'</h2>';
-      html+='<table class="r8-table"><thead><tr><th>Nome</th><th class="c">Matr.</th><th class="c">Presenças</th><th class="c">Faltas</th><th class="c">Freq.%</th><th class="c">Sit.</th></tr></thead><tbody>';
-      matriculas.forEach(function(m){
+      html+='<div class="r8-subtitulo-rel">Total de aulas: '+totalAulas+'</div>';
+      html+='<table class="r8-table"><thead><tr><th class="c">#</th><th>Aluno</th><th class="c">Presenças</th><th class="c">Faltas</th><th class="c">Justif.</th><th class="c">Frequência</th><th class="c">Situação</th></tr></thead><tbody>';
+      matriculas.forEach(function(m,i){
         var fa=freqAll.filter(function(f){return f.matricula_id===m.id;});
         var resumo=resumoFreq(fa);
-        html+='<tr><td>'+esc(m.NomeExibicao||m.AlunoID)+'</td><td class="c">'+esc(m.MatriculaID)+'</td>';
-        html+='<td class="c">'+resumo.presencas+'</td><td class="c">'+resumo.faltas+'</td>';
-        html+='<td class="c">'+(resumo.pct!==null?resumo.pct+'%':'—')+'</td>';
-        html+='<td class="c">'+(resumo.pct!==null&&resumo.pct>=75?'AP':'RE')+'</td></tr>';
+        var pct=resumo.pct;
+        var cor = pct===null ? '#9898B0' : (pct<75?'#E63946':(pct<85?'#D4A843':'#2A9D8F'));
+        html+='<tr><td class="c">'+(i+1)+'</td><td>'+esc(m.NomeExibicao||m.AlunoID)+'</td>';
+        html+='<td class="c">'+resumo.presencas+'</td><td class="c">'+resumo.faltas+'</td><td class="c">'+resumo.justificadas+'</td>';
+        html+='<td class="c"><strong style="color:'+cor+'">'+(pct!==null?pct+'%':'—')+'</strong></td>';
+        html+='<td class="c">'+(pct!==null&&pct<75?'⚠ Retido':'—')+'</td></tr>';
       });
-      html+='</tbody></table></div>';
+      html+='</tbody></table>';
+      html+='<p style="font-size:7.5pt;color:#9898B0;">⚠ Frequência abaixo de 75% = retido por falta. Faltas justificadas contam como presença neste cálculo.</p>';
+      html+='</div>';
       mostrarPreview('Frequência — '+(turma?turma.TurmaID:''), html);
     });
   }
@@ -1080,30 +1201,48 @@
           var notas=(dados[idx][0].sucesso&&dados[idx][0].dados)?dados[idx][0].dados.map(normNota):[];
           var freqs=(dados[idx][1].sucesso&&dados[idx][1].dados)?dados[idx][1].dados:[];
           var freq=resumoFreq(freqs);
-          var componentes=avaliacoesTurma.map(function(av){ return calcularResultadoComponente(av, notas); });
-          var medias=componentes.filter(function(c){return c.media!==null;}).map(function(c){return c.media;});
-          var mediaGeral = medias.length ? (medias.reduce(function(a,b){return a+b;},0)/medias.length) : null;
-          var algumaPendente=componentes.some(function(c){return c.situacao==='PENDENTE';});
-          var algumReprovado=componentes.some(function(c){return c.situacao==='REPROVADO';});
+          var componentes=avaliacoesTurma.map(function(av){ return {av:av, r:calcularResultadoComponente(av, notas)}; });
+          var algumaPendente=componentes.some(function(c){return c.r.situacao==='PENDENTE';});
+          var algumReprovado=componentes.some(function(c){return c.r.situacao==='REPROVADO';});
           var situacao = (freq.pct!==null && freq.pct<75) ? 'RETIDO'
             : (algumaPendente ? 'PENDENTE' : (algumReprovado ? 'REPROVADO' : 'APROVADO'));
           if(situacao==='RETIDO') contagem.retidosFalta++;
           else if(situacao==='APROVADO') contagem.aprovados++;
           else if(situacao==='REPROVADO') contagem.reprovados++;
           else contagem.pendentes++;
-          return { m:m, mediaGeral:mediaGeral, situacao:situacao, pct:freq.pct };
+          return { m:m, componentes:componentes, situacao:situacao, pct:freq.pct };
         });
+
+        // Resumo condensado no topo (mantido — o usuário confirmou que gostou
+        // desta adição em relação ao layout original).
+        var resumo='<div style="display:flex;gap:16px;margin-bottom:10px;font-size:8.5pt;flex-wrap:wrap;">'+
+          '<span>Aprovados: <strong style="color:#2A9D8F">'+contagem.aprovados+'</strong></span>'+
+          '<span>Reprovados: <strong style="color:#E63946">'+contagem.reprovados+'</strong></span>'+
+          '<span>Ret. por falta: <strong style="color:#D4A843">'+contagem.retidosFalta+'</strong></span>'+
+          '<span>Pendentes: <strong style="color:#9898B0">'+contagem.pendentes+'</strong></span>'+
+          '<span>Total: <strong>'+linhas.length+'</strong></span>'+
+        '</div>';
+
+        // Uma coluna por componente de nota (avaliação), com média colorida
+        // individualmente — granularidade restaurada conforme o layout em uso.
+        var cabAv=avaliacoesTurma.map(function(av){return '<th class="c">'+esc(av.ComponenteNota)+'</th>';}).join('');
 
         var html='<div class="r8-folha">'+headerInstitucional('Resultados por turma');
         html+='<h2 class="r8-titulo-rel">Resultados — '+esc(turma?turma.TurmaID:'')+' · '+esc(turma?(turma.Estagio||turma.CursoSigla):'')+'</h2>';
-        html+='<table class="r8-table"><thead><tr><th>Total</th><th>Aprovados</th><th>Reprovados</th><th>Retidos por falta</th><th>Pendentes</th></tr></thead><tbody>';
-        html+='<tr><td class="c">'+linhas.length+'</td><td class="c">'+contagem.aprovados+'</td><td class="c">'+contagem.reprovados+'</td><td class="c">'+contagem.retidosFalta+'</td><td class="c">'+contagem.pendentes+'</td></tr>';
-        html+='</tbody></table>';
-        html+='<table class="r8-table"><thead><tr><th>Nome</th><th class="c">Matr.</th><th class="c">Média geral</th><th class="c">Freq.%</th><th class="c">Situação</th></tr></thead><tbody>';
-        linhas.forEach(function(l){
-          html+='<tr><td>'+esc(l.m.NomeExibicao||l.m.AlunoID)+'</td><td class="c">'+esc(l.m.MatriculaID)+'</td>';
-          html+='<td class="c">'+(l.mediaGeral!==null?l.mediaGeral.toFixed(1):'—')+'</td>';
-          html+='<td class="c">'+(l.pct!==null?l.pct+'%':'—')+'</td><td class="c">'+l.situacao+'</td></tr>';
+        html+=resumo;
+        html+='<table class="r8-table"><thead><tr><th class="c">#</th><th>Aluno</th>'+cabAv+'<th class="c">Frequência</th><th class="c">Resultado</th></tr></thead><tbody>';
+        linhas.forEach(function(l,i){
+          html+='<tr><td class="c">'+(i+1)+'</td><td>'+esc(l.m.NomeExibicao||l.m.AlunoID)+'</td>';
+          l.componentes.forEach(function(c){
+            var cor = c.r.situacao==='APROVADO'?'#2A9D8F':(c.r.situacao==='REPROVADO'?'#E63946':'#9898B0');
+            html+='<td class="c"><strong style="color:'+cor+'">'+(c.r.media!==null?c.r.media.toFixed(1):'–')+'</strong></td>';
+          });
+          var pct=l.pct;
+          var corPct = pct===null?'#9898B0':(pct<75?'#E63946':(pct<85?'#D4A843':'#2A9D8F'));
+          var resLabel={APROVADO:'Aprovado',REPROVADO:'Reprovado',RETIDO:'Ret. falta',PENDENTE:'Pendente'}[l.situacao];
+          var resCor={APROVADO:'#2A9D8F',REPROVADO:'#E63946',RETIDO:'#D4A843',PENDENTE:'#9898B0'}[l.situacao];
+          html+='<td class="c" style="color:'+corPct+';font-weight:600;">'+(pct!==null?pct+'%':'—')+'</td>';
+          html+='<td class="c"><strong style="color:'+resCor+'">'+resLabel+'</strong></td></tr>';
         });
         html+='</tbody></table></div>';
         mostrarPreview('Resultados — '+(turma?turma.TurmaID:''), html);
@@ -1112,41 +1251,76 @@
   }
 
   // ── 6) ALUNOS POR TURMA (CAMPOS) ────────────────────────────────────────
+  // Busca dados de responsável (alunos_sensiveis) para os alunos de uma
+  // turma. Não existe endpoint em lote nesta Edge Function — só
+  // { acao:'buscar', aluno_id } um de cada vez — então disparamos uma
+  // chamada por aluno em paralelo (turmas têm no máximo algumas dezenas de
+  // alunos, então isso não é um problema de volume como seria em
+  // alunos.listar). O controle de quais campos vêm de fato (professor só
+  // recebe o subconjunto de contato, nunca CPF/endereço) é feito no
+  // servidor pela própria Edge Function — aqui só repassamos o que ela
+  // devolver. Falha em um aluno específico não derruba os demais.
+  function carregarSensiveisTurma(alunoIds){
+    return Promise.all(alunoIds.map(function(id){
+      return postApi('alunos.buscarSensiveis',{aluno_id:id})
+        .then(function(r){ return {id:id, dados:(r.sucesso&&r.dados)?r.dados:null}; })
+        .catch(function(){ return {id:id, dados:null}; });
+    })).then(function(resultados){
+      var mapa={};
+      resultados.forEach(function(r){ mapa[r.id]=r.dados; });
+      return mapa;
+    });
+  }
+
   function gerarAlunosTurmaCampos(turmaId, camposSel, incluirOutras){
     var turma=S.turmas.find(function(t){return t.id===turmaId;});
     if(!camposSel.length) camposSel=CAMPOS_PADRAO.slice();
+    var colunas=CAMPOS_ALUNO.filter(function(c){return camposSel.indexOf(c.v)!==-1;});
+    var precisaSensiveis=colunas.some(function(c){return c.sensivel;});
     return Promise.all([ postApi('matriculas.listar',{turma_id:turmaId}), carregarAlunosTodos() ]).then(function(r){
       var matriculas=(r[0].sucesso&&r[0].dados)?r[0].dados.map(normM):[];
       if(!incluirOutras) matriculas=matriculas.filter(function(m){return m.SituacaoMatricula==='ATIVA';});
       if(!matriculas.length){ mostrarEstadoVazio('Nenhum aluno encontrado nesta turma.'); return; }
       var mapaAlunos=r[1];
       matriculas.sort(function(a,b){return (a.NomeExibicao||'').localeCompare(b.NomeExibicao||'','pt-BR');});
-      var colunas=CAMPOS_ALUNO.filter(function(c){return camposSel.indexOf(c.v)!==-1;});
-      var html='<div class="r8-folha">'+headerInstitucional('Alunos por turma');
-      html+='<h2 class="r8-titulo-rel">Alunos — '+esc(turma?turma.TurmaID:'')+' · '+esc(turma?(turma.Estagio||turma.CursoSigla):'')+'</h2>';
-      html+='<table class="r8-table"><thead><tr>';
-      colunas.forEach(function(c){ html+='<th>'+esc(c.l)+'</th>'; });
-      html+='<th class="c">Situação</th></tr></thead><tbody>';
-      // Linhas em texto puro (sem esc()/HTML) guardadas à parte para a
-      // exportação XLSX (ver baixarTabelaXLSX) — mesma fonte de dados da
-      // tabela em tela, não faz nova consulta nem faz parsing do DOM.
-      var linhasXlsx=[];
-      matriculas.forEach(function(m){
-        var aluno=mapaAlunos[m.aluno_id]||{};
-        html+='<tr>';
-        colunas.forEach(function(c){ html+='<td>'+esc(c.get(aluno))+'</td>'; });
-        html+='<td class="c">'+esc(m.SituacaoMatricula)+'</td></tr>';
-        var linha=colunas.map(function(c){ return c.get(aluno); });
-        linha.push(m.SituacaoMatricula);
-        linhasXlsx.push(linha);
-      });
-      html+='</tbody></table></div>';
-      S.ultimoAlunosTurmaCampos={
-        turmaId: turma?turma.TurmaID:'turma',
-        cabecalho: colunas.map(function(c){return c.l;}).concat('Situação'),
-        linhas: linhasXlsx
+
+      var prosseguir=function(mapaSens){
+        if(mapaSens){
+          matriculas.forEach(function(m){
+            var aluno=mapaAlunos[m.aluno_id];
+            if(aluno) aluno._sens=mapaSens[m.aluno_id]||null;
+          });
+        }
+        var html='<div class="r8-folha">'+headerInstitucional('Alunos por turma');
+        html+='<h2 class="r8-titulo-rel">Alunos — '+esc(turma?turma.TurmaID:'')+' · '+esc(turma?(turma.Estagio||turma.CursoSigla):'')+'</h2>';
+        html+='<table class="r8-table"><thead><tr>';
+        colunas.forEach(function(c){ html+='<th>'+esc(c.l)+'</th>'; });
+        html+='<th class="c">Situação</th></tr></thead><tbody>';
+        // Linhas em texto puro (sem esc()/HTML) guardadas à parte para a
+        // exportação XLSX (ver baixarTabelaXLSX) — mesma fonte de dados da
+        // tabela em tela, não faz nova consulta nem faz parsing do DOM.
+        var linhasXlsx=[];
+        matriculas.forEach(function(m){
+          var aluno=mapaAlunos[m.aluno_id]||{};
+          html+='<tr>';
+          colunas.forEach(function(c){ html+='<td>'+esc(c.get(aluno))+'</td>'; });
+          html+='<td class="c">'+esc(m.SituacaoMatricula)+'</td></tr>';
+          var linha=colunas.map(function(c){ return c.get(aluno); });
+          linha.push(m.SituacaoMatricula);
+          linhasXlsx.push(linha);
+        });
+        html+='</tbody></table></div>';
+        S.ultimoAlunosTurmaCampos={
+          turmaId: turma?turma.TurmaID:'turma',
+          cabecalho: colunas.map(function(c){return c.l;}).concat('Situação'),
+          linhas: linhasXlsx
+        };
+        mostrarPreview('Alunos por turma — '+(turma?turma.TurmaID:''), html);
       };
-      mostrarPreview('Alunos por turma — '+(turma?turma.TurmaID:''), html);
+
+      if(!precisaSensiveis) return prosseguir(null);
+      var alunoIds=matriculas.map(function(m){return m.aluno_id;}).filter(function(id,i,arr){return id && arr.indexOf(id)===i;});
+      return carregarSensiveisTurma(alunoIds).then(prosseguir);
     });
   }
 
@@ -1205,40 +1379,67 @@
       var mapaConteudo={};
       lista.forEach(function(c){ mapaConteudo[String(c.data_aula||'').substring(0,10)]=c.conteudo_ministrado||''; });
 
-      var semestreId=turma?turma.semestre_id:null;
-      var datasLetivas=(semestreId?S.calendario:[])
-        .filter(function(c){ return c.semestre_id===semestreId && c.tipo==='LETIVO'; })
-        .map(function(c){ return String(c.data_aula||'').substring(0,10); })
-        .sort();
+      var subtitulo=(turma?turma.TurmaID:'')+' · '+(turma?(turma.Estagio||turma.CursoSigla):'')+
+        (turma&&turma.ProfessorNome?' · Prof. '+turma.ProfessorNome:'')+
+        (turma&&turma.DiaSemana?' · '+turma.DiaSemana:'')+(turma&&turma.Horario?' '+turma.Horario:'');
 
-      if(!datasLetivas.length){
+      // Datas letivas cruzadas com o(s) dia(s) da semana da turma (não todo o
+      // calendário do semestre) — mesma lógica de f6-diario.html.
+      var datas=construirDatasTurma(turma);
+
+      if(!datas.length){
+        // Sem cruzamento possível (turma sem "Dia de aula" cadastrado, ou sem
+        // calendário importado para o semestre) — cai de volta para mostrar
+        // só o que já foi registrado.
         lista.sort(function(a,b){ return (a.data_aula||'').localeCompare(b.data_aula||''); });
-        if(!lista.length){ mostrarEstadoVazio('Nenhum conteúdo registrado nesta turma.'); return; }
-        var htmlFallback='<div class="r8-folha">'+headerInstitucional('Conteúdos da turma');
-        htmlFallback+='<h2 class="r8-titulo-rel">Conteúdos — '+esc(turma?turma.TurmaID:'')+' · '+esc(turma?(turma.Estagio||turma.CursoSigla):'')+'</h2>';
-        htmlFallback+='<div class="r8-subtitulo-rel">Calendário letivo não disponível para o semestre desta turma — mostrando apenas o conteúdo já registrado.</div>';
+        if(!lista.length){ mostrarEstadoVazio('Nenhuma data de aula encontrada. Verifique se a turma tem "Dia de aula" cadastrado e se há dias letivos no calendário do semestre.'); return; }
+        var htmlFallback='<div class="r8-folha">'+headerInstitucional('Conteúdos ministrados');
+        htmlFallback+='<h2 class="r8-titulo-rel">Conteúdos ministrados</h2>';
+        htmlFallback+='<div class="r8-subtitulo-rel">'+esc(subtitulo)+'</div>';
+        htmlFallback+='<div class="r8-subtitulo-rel" style="color:#A32D2D;">Calendário letivo cruzado com os dias de aula da turma não disponível — mostrando apenas o conteúdo já registrado.</div>';
         htmlFallback+='<table class="r8-table"><thead><tr><th class="c">Data</th><th>Conteúdo ministrado</th></tr></thead><tbody>';
         lista.forEach(function(c){
           htmlFallback+='<tr><td class="c">'+fmtData(c.data_aula)+'</td><td>'+esc(c.conteudo_ministrado||'')+'</td></tr>';
         });
         htmlFallback+='</tbody></table></div>';
-        mostrarPreview('Conteúdos — '+(turma?turma.TurmaID:''), htmlFallback);
+        mostrarPreview('Conteúdos ministrados — '+(turma?turma.TurmaID:''), htmlFallback);
         return;
       }
 
-      var hj=hoje();
-      var html='<div class="r8-folha">'+headerInstitucional('Conteúdos da turma');
-      html+='<h2 class="r8-titulo-rel">Conteúdos — '+esc(turma?turma.TurmaID:'')+' · '+esc(turma?(turma.Estagio||turma.CursoSigla):'')+'</h2>';
-      html+='<div class="r8-subtitulo-rel">Todas as datas letivas do semestre — registradas e previstas.</div>';
-      html+='<table class="r8-table"><thead><tr><th class="c">Data</th><th>Conteúdo ministrado</th></tr></thead><tbody>';
-      datasLetivas.forEach(function(d){
-        var conteudo=mapaConteudo[d];
-        var futura=d>hj;
-        var celula=conteudo?esc(conteudo):(futura?'<span style="color:#9898B0;font-style:italic;">(prevista)</span>':'<span style="color:#E63946;">(sem registro)</span>');
-        html+='<tr><td class="c">'+fmtData(d)+'</td><td>'+celula+'</td></tr>';
-      });
-      html+='</tbody></table></div>';
-      mostrarPreview('Conteúdos — '+(turma?turma.TurmaID:''), html);
+      var contReg=0, contPend=0, contFut=0;
+      var corMap ={REGISTRADO:'#1A6E65', PENDENTE:'#A32D2D', PREVISTO:'#5C5C7A'};
+      var bgMap  ={REGISTRADO:'rgba(42,157,143,0.12)', PENDENTE:'rgba(230,57,70,0.10)', PREVISTO:'#F0EEE8'};
+      var rotuloMap={REGISTRADO:'Registrado', PENDENTE:'Pendente', PREVISTO:'Previsto'};
+
+      var linhas=datas.map(function(d,i){
+        var conteudo=mapaConteudo[d.iso];
+        var situacao;
+        if(conteudo!==undefined && conteudo!==''){ situacao='REGISTRADO'; contReg++; }
+        else if(d.futura){ situacao='PREVISTO'; contFut++; }
+        else { situacao='PENDENTE'; contPend++; }
+        var celula = conteudo ? esc(conteudo)
+          : (d.futura ? '<span style="color:#9898B0;">— aula ainda não realizada —</span>'
+                      : '<span style="color:#A32D2D;">— sem registro —</span>');
+        return '<tr><td class="c">'+(i+1)+'</td>'+
+          '<td class="c" style="white-space:nowrap;">'+fmtData(d.iso)+'</td>'+
+          '<td class="c">'+DIAS_ABREV_R8[d.weekday]+'</td>'+
+          '<td class="c"><span style="display:inline-flex;padding:2px 8px;border-radius:10px;font-size:7.5pt;font-weight:700;background:'+bgMap[situacao]+';color:'+corMap[situacao]+';">'+rotuloMap[situacao]+'</span></td>'+
+          '<td>'+celula+'</td></tr>';
+      }).join('');
+
+      var resumo='<div style="display:flex;gap:16px;margin-bottom:10px;font-size:8.5pt;flex-wrap:wrap;">'+
+        '<span>Registrados: <strong style="color:#2A9D8F">'+contReg+'</strong></span>'+
+        '<span>Pendentes: <strong style="color:#E63946">'+contPend+'</strong></span>'+
+        '<span>Previstos (futuros): <strong style="color:#9898B0">'+contFut+'</strong></span>'+
+        '<span>Total de aulas: <strong>'+datas.length+'</strong></span>'+
+      '</div>';
+
+      var html='<div class="r8-folha">'+headerInstitucional('Conteúdos ministrados');
+      html+='<h2 class="r8-titulo-rel">Conteúdos ministrados</h2>';
+      html+='<div class="r8-subtitulo-rel">'+esc(subtitulo)+'</div>';
+      html+=resumo;
+      html+='<table class="r8-table"><thead><tr><th class="c">#</th><th class="c">Data</th><th class="c">Dia</th><th class="c">Situação</th><th>Conteúdo ministrado</th></tr></thead><tbody>'+linhas+'</tbody></table></div>';
+      mostrarPreview('Conteúdos ministrados — '+(turma?turma.TurmaID:''), html);
     });
   }
 
@@ -1255,45 +1456,96 @@
       if(!matriculas.length){ mostrarEstadoVazio('Nenhum aluno encontrado nesta turma.'); return; }
       matriculas.sort(function(a,b){return (a.NomeExibicao||'').localeCompare(b.NomeExibicao||'','pt-BR');});
 
-      // Preferimos as datas letivas do calendário real da turma (S.calendario),
-      // que revelam também aulas letivas sem frequência lançada ainda. Se não
-      // houver calendário importado para o semestre desta turma, caímos de volta
-      // no comportamento antigo (datas derivadas apenas dos registros já lançados).
-      var hj=hoje();
-      var semestreId=turma?turma.semestre_id:null;
-      var datasLetivas=(semestreId?S.calendario:[])
-        .filter(function(c){ return c.semestre_id===semestreId && c.tipo==='LETIVO' && String(c.data_aula||'').substring(0,10)<=hj; })
-        .map(function(c){ return String(c.data_aula||'').substring(0,10); })
-        .sort();
+      var subtitulo=(turma?turma.TurmaID:'')+' · '+(turma?(turma.Estagio||turma.CursoSigla):'')+
+        (turma&&turma.ProfessorNome?' · Prof. '+turma.ProfessorNome:'');
 
-      var datas;
-      if(datasLetivas.length){
-        datas=datasLetivas;
-      } else {
-        datas=[];
-        freqAll.forEach(function(f){ if(datas.indexOf(f.data_aula)===-1) datas.push(f.data_aula); });
-        datas.sort();
-      }
-      if(!datas.length){ mostrarEstadoVazio('Nenhuma frequência registrada nesta turma ainda.'); return; }
-      var mapa={};
-      freqAll.forEach(function(f){ mapa[f.matricula_id+'|'+f.data_aula]=f.frequencia; });
-      var html='<div class="r8-folha paisagem">'+headerInstitucional('Grade de frequência');
-      html+='<h2 class="r8-titulo-rel">Grade de frequência — '+esc(turma?turma.TurmaID:'')+' · '+esc(turma?(turma.Estagio||turma.CursoSigla):'')+'</h2>';
-      if(!datasLetivas.length){
-        html+='<div class="r8-subtitulo-rel">Calendário letivo não disponível para o semestre desta turma — mostrando apenas as datas já lançadas.</div>';
-      }
-      html+='<table class="r8-table r8-grade-freq"><thead><tr><th>Nome</th>';
-      datas.forEach(function(d){ html+='<th class="c">'+fmtData(d).substring(0,5)+'</th>'; });
-      html+='</tr></thead><tbody>';
-      matriculas.forEach(function(m){
-        html+='<tr><td>'+esc(m.NomeExibicao||m.AlunoID)+'</td>';
-        datas.forEach(function(d){
-          var v=mapa[m.id+'|'+d]||(datasLetivas.length?'<span style="color:#E63946;">(s/reg.)</span>':'—');
-          html+='<td class="c">'+(mapa[m.id+'|'+d]?esc(v):v)+'</td>';
+      // Datas letivas cruzadas com o(s) dia(s) da semana da turma, só até hoje
+      // (não faz sentido coluna de frequência para uma aula futura).
+      var datasCalendario=construirDatasTurma(turma).filter(function(d){ return !d.futura; });
+
+      if(!datasCalendario.length){
+        // Sem cruzamento possível — cai de volta para as datas que já têm ao
+        // menos um registro de frequência lançado nesta turma.
+        var datasFallback=[];
+        freqAll.forEach(function(f){ var iso=String(f.data_aula||'').substring(0,10); if(datasFallback.indexOf(iso)===-1) datasFallback.push(iso); });
+        datasFallback.sort();
+        if(!datasFallback.length){ mostrarEstadoVazio('Nenhuma frequência registrada nesta turma ainda.'); return; }
+        var mapaFb={};
+        freqAll.forEach(function(f){ mapaFb[f.matricula_id+'|'+String(f.data_aula||'').substring(0,10)]=f.frequencia; });
+        var htmlFb='<div class="r8-folha paisagem">'+headerInstitucional('Grade de frequência');
+        htmlFb+='<h2 class="r8-titulo-rel">Grade de frequência</h2>';
+        htmlFb+='<div class="r8-subtitulo-rel">'+esc(subtitulo)+'</div>';
+        htmlFb+='<div class="r8-subtitulo-rel" style="color:#A32D2D;">Calendário letivo cruzado com os dias de aula da turma não disponível — mostrando apenas as datas já lançadas.</div>';
+        htmlFb+='<table class="r8-table r8-grade-freq"><thead><tr><th>Aluno</th>';
+        datasFallback.forEach(function(d){ htmlFb+='<th class="c">'+fmtData(d).substring(0,5)+'</th>'; });
+        htmlFb+='</tr></thead><tbody>';
+        matriculas.forEach(function(m){
+          htmlFb+='<tr><td>'+esc(m.NomeExibicao||m.AlunoID)+'</td>';
+          datasFallback.forEach(function(d){
+            var v=mapaFb[m.id+'|'+d];
+            htmlFb+='<td class="c">'+(v?esc(v):'<span style="color:#C8C7C2;">–</span>')+'</td>';
+          });
+          htmlFb+='</tr>';
         });
-        html+='</tr>';
+        htmlFb+='</tbody></table></div>';
+        mostrarPreview('Grade de frequência — '+(turma?turma.TurmaID:''), htmlFb);
+        return;
+      }
+
+      var mapaFreq={};
+      freqAll.forEach(function(f){
+        var iso=String(f.data_aula||'').substring(0,10);
+        mapaFreq[f.matricula_id+'|'+iso]=f.frequencia;
       });
-      html+='</tbody></table></div>';
+
+      // Agrupa as datas por mês (1ª linha do cabeçalho)
+      var gruposMes=[];
+      datasCalendario.forEach(function(d){
+        var ultimo=gruposMes[gruposMes.length-1];
+        if(ultimo && ultimo.mes===d.mes) ultimo.qtd++;
+        else gruposMes.push({mes:d.mes, label:d.mesLabel, qtd:1});
+      });
+      var thMeses=gruposMes.map(function(g){ return '<th class="c" colspan="'+g.qtd+'" style="background:#2D2D4A;">'+g.label+'</th>'; }).join('');
+      var thDatas=datasCalendario.map(function(d){
+        return '<th class="c" style="white-space:nowrap;">'+fmtData(d.iso).substring(0,5)+'<br><span style="font-weight:400;opacity:0.85;">'+DIAS_ABREV_R8[d.weekday]+'</span></th>';
+      }).join('');
+
+      var CORES_FREQ={
+        P:{bg:'rgba(42,157,143,0.18)', cor:'#1A6E65'},
+        F:{bg:'rgba(230,57,70,0.14)',  cor:'#A32D2D'},
+        J:{bg:'rgba(233,196,106,0.30)',cor:'#5C4200'},
+      };
+
+      var linhas=matriculas.map(function(m){
+        var badgeSituacao=(incluirOutras && m.SituacaoMatricula!=='ATIVA')
+          ? ' <span style="font-size:6.5pt;font-weight:700;padding:1px 6px;border-radius:8px;background:#F0EEE8;color:#5C5C7A;white-space:nowrap;">'+esc(m.SituacaoMatricula)+'</span>'
+          : '';
+        var tdNome='<td style="white-space:nowrap;">'+esc(m.NomeExibicao||m.AlunoID)+badgeSituacao+'</td>';
+        var tds=datasCalendario.map(function(d){
+          var f=mapaFreq[m.id+'|'+d.iso];
+          if(!f) return '<td class="c" style="color:#C8C7C2;">–</td>';
+          var c=CORES_FREQ[f]||{bg:'#F5F4F0',cor:'#5C5C7A'};
+          return '<td class="c" style="background:'+c.bg+';color:'+c.cor+';font-weight:700;">'+esc(f)+'</td>';
+        }).join('');
+        return '<tr>'+tdNome+tds+'</tr>';
+      }).join('');
+
+      var legenda='<div style="display:flex;gap:14px;margin-bottom:8px;font-size:8pt;flex-wrap:wrap;">'+
+        '<span><strong style="color:#1A6E65;">P</strong> Presença</span>'+
+        '<span><strong style="color:#A32D2D;">F</strong> Falta</span>'+
+        '<span><strong style="color:#5C4200;">J</strong> Falta justificada</span>'+
+        '<span><strong style="color:#9898B0;">–</strong> Sem registro</span>'+
+      '</div>';
+
+      var html='<div class="r8-folha paisagem">'+headerInstitucional('Grade de frequência');
+      html+='<h2 class="r8-titulo-rel">Grade de frequência</h2>';
+      html+='<div class="r8-subtitulo-rel">'+esc(subtitulo)+' · '+matriculas.length+' aluno(s) · '+datasCalendario.length+' data(s)</div>';
+      html+=legenda;
+      html+='<div style="overflow-x:auto;"><table class="r8-table r8-grade-freq"><thead>'+
+        '<tr><th rowspan="2" style="vertical-align:bottom;">Aluno</th>'+thMeses+'</tr>'+
+        '<tr>'+thDatas+'</tr>'+
+        '</thead><tbody>'+linhas+'</tbody></table></div>';
+      html+='</div>';
       mostrarPreview('Grade de frequência — '+(turma?turma.TurmaID:''), html);
     });
   }
@@ -1464,15 +1716,7 @@
   }
 
   // ── 10) CONTROLE DE REGISTROS ───────────────────────────────────────────
-  function inicioFimSemana(dataRef){
-    var d=new Date(dataRef+'T00:00:00');
-    var diaSemana=d.getDay(); // 0=domingo
-    var offsetSeg=(diaSemana===0)?-6:(1-diaSemana);
-    var inicio=new Date(d); inicio.setDate(d.getDate()+offsetSeg);
-    var fim=new Date(inicio); fim.setDate(inicio.getDate()+6);
-    function toISO(dt){ return dt.toISOString().substring(0,10); }
-    return { inicio:toISO(inicio), fim:toISO(fim) };
-  }
+  var NOMES_DIA_CR_R8=['Domingo','Segunda-Feira','Terça-Feira','Quarta-Feira','Quinta-Feira','Sexta-Feira','Sábado'];
 
   function gerarControleRegistros(){
     var modo=val('r8cr-modo');
@@ -1481,82 +1725,195 @@
       alert('Neste modo é obrigatório escolher um professor.');
       return Promise.resolve();
     }
-    var turmasAlvo = S.turmas.filter(function(t){
+    // Turma ativa = não encerrada (mesma regra de f5-turmas.html/gerarControleRegistros original).
+    var turmasBase = S.turmas.filter(function(t){
       if(S.semestreAtual && t.semestre_id!==S.semestreAtual.id) return false;
+      if(t.Situacao==='ENCERRADA') return false;
       if(professorId && t.ProfessorID!==professorId) return false;
       return true;
     });
-    if(!turmasAlvo.length){ alert('Nenhuma turma encontrada para os filtros selecionados.'); return Promise.resolve(); }
+    if(!turmasBase.length){ alert('Nenhuma turma encontrada para os filtros selecionados.'); return Promise.resolve(); }
 
     var btn=el('r8cr-btn-gerar');
     if(btn){ btn.disabled=true; btn.classList.add('loading'); }
     var finalizar=function(){ if(btn){ btn.disabled=false; btn.classList.remove('loading'); } };
 
-    if(modo==='semestre'){
-      return Promise.all(turmasAlvo.map(function(t){ return postApi('frequencias.listar',{turma_id:t.id}); })).then(function(res){
-        finalizar();
-        var hj=hoje();
-        var corpo='<table class="r8cr-tabela"><thead><tr><th>Turma</th><th>Registros no período</th><th>Última aula registrada</th><th>Situação</th></tr></thead><tbody>';
-        turmasAlvo.forEach(function(t, idx){
-          var freqs=(res[idx].sucesso&&res[idx].dados)?res[idx].dados:[];
-          var datas=[]; freqs.forEach(function(f){ if(datas.indexOf(f.data_aula)===-1) datas.push(f.data_aula); });
-          datas.sort();
-          var ultima=datas.length?datas[datas.length-1]:null;
-          var diasSemUltima = ultima ? Math.floor((new Date(hj)-new Date(ultima))/86400000) : null;
-          var emDia = ultima && diasSemUltima<=8;
-          corpo+='<tr><td>'+esc(t.TurmaID)+' — '+esc(t.Estagio||t.CursoSigla)+'</td>';
-          corpo+='<td class="c">'+datas.length+'</td>';
-          corpo+='<td class="c">'+(ultima?fmtData(ultima):'Nenhum registro')+'</td>';
-          corpo+='<td class="c"><span class="r8cr-badge '+(emDia?'ok':'pend')+'">'+(emDia?'Em dia':'Em atraso')+'</span></td></tr>';
-        });
-        corpo+='</tbody></table>';
-        if(el('r8cr-corpo')) el('r8cr-corpo').innerHTML=corpo;
-        var prof=S.turmas.find(function(t){return t.ProfessorID===professorId;});
-        if(el('r8cr-resultado-titulo')) el('r8cr-resultado-titulo').textContent='Controle de registros — '+(prof?prof.ProfessorNome:'')+' · desde o início do semestre';
-        if(el('r8cr-painel')) el('r8cr-painel').classList.remove('show');
-        if(el('r8cr-resultado')) el('r8cr-resultado').classList.add('show');
-      });
+    if(modo==='semestre') return gerarControleRegistrosSemestre(turmasBase, professorId, finalizar);
+
+    var dataRef = (modo==='semana') ? (val('r8cr-semana-data')||hoje()) : (val('r8cr-data')||hoje());
+    var diasVerificar=[];
+    if(modo==='semana'){
+      var d=new Date(dataRef+'T12:00:00');
+      var dow=d.getDay();
+      var diffSeg=(dow===0)?-6:(1-dow);
+      for(var i=0;i<=5;i++){
+        var dd=new Date(d); dd.setDate(d.getDate()+diffSeg+i);
+        diasVerificar.push(dd.toISOString().substring(0,10));
+      }
+    } else {
+      diasVerificar.push(dataRef);
     }
 
-    var dataFiltro, tituloPeriodo;
-    if(modo==='data'){ dataFiltro=val('r8cr-data')||hoje(); tituloPeriodo='data '+fmtData(dataFiltro); }
-    else { var semana=inicioFimSemana(val('r8cr-semana-data')||hoje()); dataFiltro=semana; tituloPeriodo='semana de '+fmtData(semana.inicio)+' a '+fmtData(semana.fim); }
-
-    return Promise.all(turmasAlvo.map(function(t){ return postApi('frequencias.listar',{turma_id:t.id}); })).then(function(res){
+    // frequencias.listar({}) sem filtro — seguro desde a correção de paginação
+    // interna em api.js (ver claude/plano-f8-relatorios.md, seção "Risco do
+    // teto implícito do PostgREST/Supabase"), devolve o array completo.
+    return postApi('frequencias.listar',{}).then(function(r){
       finalizar();
-      var porProfessor={}, ordemProf=[];
-      turmasAlvo.forEach(function(t, idx){
-        var freqs=(res[idx].sucesso&&res[idx].dados)?res[idx].dados:[];
-        var registrouNoPeriodo;
-        if(modo==='data') registrouNoPeriodo = freqs.some(function(f){return f.data_aula===dataFiltro;});
-        else registrouNoPeriodo = freqs.some(function(f){return f.data_aula>=dataFiltro.inicio && f.data_aula<=dataFiltro.fim;});
-        var chaveProf=t.ProfessorID||'sem-professor';
-        if(!porProfessor[chaveProf]){ porProfessor[chaveProf]={ nome:t.ProfessorNome||'Sem professor', turmas:[] }; ordemProf.push(chaveProf); }
-        porProfessor[chaveProf].turmas.push({ turma:t, ok:registrouNoPeriodo });
-      });
-      ordemProf.sort(function(a,b){ return porProfessor[a].nome.localeCompare(porProfessor[b].nome,'pt-BR'); });
-
-      var totalOk=0, totalPend=0;
-      var corpo='';
-      ordemProf.forEach(function(chaveProf){
-        var grupo=porProfessor[chaveProf];
-        var ok=grupo.turmas.filter(function(x){return x.ok;}).length;
-        var pend=grupo.turmas.length-ok;
-        totalOk+=ok; totalPend+=pend;
-        corpo+='<div class="r8cr-secao"><div class="r8cr-prof-header"><span class="r8cr-prof-nome">'+esc(grupo.nome)+'</span></div>';
-        corpo+='<table class="r8cr-tabela"><tbody>';
-        grupo.turmas.forEach(function(x){
-          corpo+='<tr><td>'+esc(x.turma.TurmaID)+' — '+esc(x.turma.Estagio||x.turma.CursoSigla)+'</td>';
-          corpo+='<td class="c"><span class="r8cr-badge '+(x.ok?'ok':'pend')+'">'+(x.ok?'Registrado':'Pendente')+'</span></td></tr>';
-        });
-        corpo+='</tbody></table></div>';
+      var freqAll=(r.sucesso&&r.dados)?r.dados:[];
+      var registros={};
+      freqAll.forEach(function(f){
+        var iso=String(f.data_aula||'').substring(0,10);
+        registros[f.turma_id+'|'+iso]=true;
       });
 
-      if(el('r8cr-corpo')) el('r8cr-corpo').innerHTML=corpo;
-      if(el('r8cr-resultado-titulo')) el('r8cr-resultado-titulo').textContent='Controle de registros — '+tituloPeriodo+' ('+totalOk+' em dia, '+totalPend+' pendentes)';
-      if(el('r8cr-painel')) el('r8cr-painel').classList.remove('show');
-      if(el('r8cr-resultado')) el('r8cr-resultado').classList.add('show');
+      var diasLetivos={};
+      S.calendario.forEach(function(c){ if(c.tipo==='LETIVO') diasLetivos[String(c.data_aula||'').substring(0,10)]=true; });
+
+      var resultadosDias=[];
+      diasVerificar.forEach(function(iso){
+        if(!diasLetivos[iso]) return;
+        var dt=new Date(iso+'T12:00:00');
+        var dow2=dt.getDay();
+        var turmasDoDia=turmasBase.filter(function(t){ return diasTurmaNumeros(t).indexOf(dow2)!==-1; });
+        if(!turmasDoDia.length) return;
+        var registradas=[], pendentes=[];
+        turmasDoDia.forEach(function(t){ (registros[t.id+'|'+iso]?registradas:pendentes).push(t); });
+        resultadosDias.push({iso:iso, data:dt, registradas:registradas, pendentes:pendentes});
+      });
+
+      if(!resultadosDias.length){
+        alert(modo==='semana' ? 'Nenhum dia letivo encontrado na semana selecionada.' : 'A data selecionada não é um dia letivo.');
+        return;
+      }
+      renderizarControleRegistros(resultadosDias, modo, professorId);
     });
+  }
+
+  function renderizarControleRegistros(dias, modo, professorId){
+    var prof = professorId ? S.turmas.find(function(t){return t.ProfessorID===professorId;}) : null;
+    var titulo = modo==='semana'
+      ? 'Controle de registros — Semana de '+fmtData(dias[0].iso)+' a '+fmtData(dias[dias.length-1].iso)
+      : 'Controle de registros — '+fmtData(dias[0].iso);
+    if(prof) titulo+=' · Prof. '+prof.ProfessorNome;
+    if(el('r8cr-resultado-titulo')) el('r8cr-resultado-titulo').textContent=titulo;
+
+    var html='';
+    dias.forEach(function(diaObj){
+      var nomeDia=NOMES_DIA_CR_R8[diaObj.data.getDay()]||'';
+      html+='<div class="r8cr-secao">';
+      html+='<div class="r8cr-secao-header">'+
+        '<span class="r8cr-secao-dia">'+esc(nomeDia)+', '+fmtData(diaObj.iso)+'</span>'+
+        '<div class="r8cr-secao-counts">'+
+          '<span class="r8cr-count ok">'+diaObj.registradas.length+' em dia</span>'+
+          '<span class="r8cr-count pend">'+diaObj.pendentes.length+' pendente(s)</span>'+
+        '</div></div>';
+
+      var porProf={};
+      diaObj.registradas.concat(diaObj.pendentes).forEach(function(t){
+        var p=t.ProfessorNome||'—';
+        if(!porProf[p]) porProf[p]=[];
+        porProf[p].push(t);
+      });
+      Object.keys(porProf).sort(function(a,b){return a.localeCompare(b,'pt-BR');}).forEach(function(p){
+        html+='<div class="r8cr-prof-header">'+
+          '<span class="material-icons-round" style="font-size:15px;color:#E63946;">person</span>'+
+          '<span class="r8cr-prof-nome">'+esc(p)+'</span></div>';
+        html+='<table class="r8cr-tabela"><thead><tr>'+
+          '<th>TurmaID</th><th>Estágio</th><th>Modalidade</th><th>Horário</th><th>Situação</th>'+
+          '</tr></thead><tbody>';
+        porProf[p].sort(function(a,b){return (a.TurmaID||'').localeCompare(b.TurmaID||'','pt-BR');}).forEach(function(t){
+          var emDia=diaObj.registradas.indexOf(t)!==-1;
+          html+='<tr>'+
+            '<td style="font-family:monospace;font-size:12px;">'+esc(t.TurmaID||'—')+'</td>'+
+            '<td style="font-weight:500;">'+esc(t.Estagio||t.CursoSigla||'—')+'</td>'+
+            '<td>'+esc(t.Modalidade||'—')+'</td>'+
+            '<td>'+esc(t.Horario||'—')+'</td>'+
+            '<td><span class="r8cr-badge '+(emDia?'ok':'pend')+'">'+
+              '<span class="material-icons-round">'+(emDia?'check_circle':'schedule')+'</span>'+
+              (emDia?'Em dia':'Pendente')+'</span></td></tr>';
+        });
+        html+='</tbody></table>';
+      });
+      html+='</div>';
+    });
+
+    if(el('r8cr-corpo')) el('r8cr-corpo').innerHTML=html;
+    if(el('r8cr-painel')) el('r8cr-painel').classList.remove('show');
+    if(el('r8cr-resultado')) el('r8cr-resultado').classList.add('show');
+  }
+
+  // ── CONTROLE DE REGISTROS — modo "desde o início do semestre" ──────────
+  // Agrupa por turma (não por dia): para cada turma do professor selecionado,
+  // lista as datas previstas de aula (construirDatasTurma, que já cruza o
+  // calendário letivo com o(s) dia(s) da semana da turma) entre o início do
+  // semestre e hoje, marcando cada uma como registrada ou pendente.
+  function gerarControleRegistrosSemestre(turmasDoProf, professorId, finalizar){
+    return postApi('frequencias.listar',{}).then(function(r){
+      finalizar();
+      var freqAll=(r.sucesso&&r.dados)?r.dados:[];
+      var registros={};
+      freqAll.forEach(function(f){
+        var iso=String(f.data_aula||'').substring(0,10);
+        registros[f.turma_id+'|'+iso]=true;
+      });
+
+      var inicioData=null;
+      S.calendario.forEach(function(c){
+        if(c.tipo!=='LETIVO') return;
+        var iso=String(c.data_aula||'').substring(0,10);
+        if(iso && (!inicioData || iso<inicioData)) inicioData=iso;
+      });
+      var hj=hoje();
+
+      var turmasComDatas=turmasDoProf.map(function(t){
+        var datas=construirDatasTurma(t).filter(function(d){ return !d.futura; }).map(function(d){
+          return { iso:d.iso, weekday:d.weekday, registrado: !!registros[t.id+'|'+d.iso] };
+        });
+        var countReg=datas.filter(function(d){return d.registrado;}).length;
+        return { turma:t, datas:datas, countReg:countReg, countPend:datas.length-countReg };
+      });
+      turmasComDatas.sort(function(a,b){ return (a.turma.TurmaID||'').localeCompare(b.turma.TurmaID||'','pt-BR'); });
+
+      renderizarControleRegistrosSemestre(turmasComDatas, professorId, inicioData, hj);
+    });
+  }
+
+  function renderizarControleRegistrosSemestre(turmasComDatas, professorId, inicioData, hj){
+    var prof=S.turmas.find(function(t){return t.ProfessorID===professorId;});
+    var titulo='Controle de registros — Prof. '+(prof?prof.ProfessorNome:'')+' — de '+(inicioData?fmtData(inicioData):'—')+' até '+fmtData(hj);
+    if(el('r8cr-resultado-titulo')) el('r8cr-resultado-titulo').textContent=titulo;
+
+    var html='';
+    turmasComDatas.forEach(function(item){
+      var t=item.turma;
+      html+='<div class="r8cr-secao">';
+      html+='<div class="r8cr-secao-header">'+
+        '<div><span class="r8cr-secao-dia">'+esc(t.TurmaID||'—')+'</span>'+
+        '<div class="r8cr-turma-meta">'+esc(t.DiaSemana||'—')+' · '+esc(t.Modalidade||'—')+' · '+esc(t.Horario||'—')+'</div></div>'+
+        '<div class="r8cr-secao-counts">'+
+          '<span class="r8cr-count ok">'+item.countReg+' em dia</span>'+
+          '<span class="r8cr-count pend">'+item.countPend+' pendente(s)</span>'+
+        '</div></div>';
+      if(!item.datas.length){
+        html+='<div class="r8cr-vazio">Nenhuma aula prevista entre o início do semestre e hoje para esta turma.</div>';
+      } else {
+        html+='<table class="r8cr-tabela"><thead><tr><th>Data</th><th>Dia</th><th>Situação</th></tr></thead><tbody>';
+        item.datas.forEach(function(d){
+          html+='<tr>'+
+            '<td style="font-family:monospace;font-size:12px;">'+fmtData(d.iso)+'</td>'+
+            '<td>'+NOMES_DIA_CR_R8[d.weekday]+'</td>'+
+            '<td><span class="r8cr-badge '+(d.registrado?'ok':'pend')+'">'+
+              '<span class="material-icons-round">'+(d.registrado?'check_circle':'schedule')+'</span>'+
+              (d.registrado?'Em dia':'Pendente')+'</span></td></tr>';
+        });
+        html+='</tbody></table>';
+      }
+      html+='</div>';
+    });
+
+    if(el('r8cr-corpo')) el('r8cr-corpo').innerHTML=html;
+    if(el('r8cr-painel')) el('r8cr-painel').classList.remove('show');
+    if(el('r8cr-resultado')) el('r8cr-resultado').classList.add('show');
   }
 
   // ── EVENTOS ──────────────────────────────────────────────────────────────
