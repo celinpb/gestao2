@@ -96,6 +96,50 @@
   table.regras-tabela td.regras-modulo{font-weight:600;color:var(--c-text-1,#1A1A2E);white-space:normal;}
   table.regras-tabela td.regras-obs{white-space:normal;color:var(--c-text-2,#5C5C7A);}
   .regras-rodape{margin-top:12px;font-size:11.5px;color:var(--c-text-3,#9898B0);}
+
+  /* Tipos de público-alvo — card resumo + modal de gestão */
+  .pa-resumo{font-size:13px;color:var(--c-text-2,#5C5C7A);margin-bottom:14px;line-height:1.5;}
+  .pa-resumo strong{color:var(--c-text-1,#1A1A2E);}
+  .pa-overlay{position:fixed;inset:0;background:rgba(26,26,46,0.45);z-index:200;display:none;align-items:flex-start;justify-content:center;padding:24px 16px;overflow-y:auto;backdrop-filter:blur(2px);}
+  .pa-overlay.show{display:flex;}
+  .pa-modal{background:#fff;border-radius:14px;width:100%;max-width:760px;box-shadow:0 12px 48px rgba(26,26,46,0.18);overflow:hidden;animation:pa-in 220ms cubic-bezier(0.34,1.3,0.64,1);}
+  @keyframes pa-in{from{opacity:0;transform:translateY(16px) scale(0.97);}to{opacity:1;transform:translateY(0) scale(1);}}
+  .pa-modal-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--c-border,#E8E7E2);}
+  .pa-modal-titulo{font-size:15px;font-weight:600;color:var(--c-text-1,#1A1A2E);display:flex;align-items:center;gap:8px;}
+  .pa-modal-titulo .material-icons-round{font-size:18px;color:#E63946;}
+  .pa-btn-fechar{width:30px;height:30px;border-radius:6px;border:none;background:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--c-text-3,#9898B0);}
+  .pa-btn-fechar:hover{background:#F5F4F0;}
+  .pa-btn-fechar .material-icons-round{font-size:18px;}
+  .pa-modal-corpo{padding:18px 20px;}
+  .pa-aviso{background:#F8F7F3;border:1px solid var(--c-border,#E8E7E2);border-left:4px solid #E63946;border-radius:8px;padding:10px 14px;display:flex;align-items:flex-start;gap:10px;margin-bottom:14px;font-size:12.5px;color:var(--c-text-2,#5C5C7A);line-height:1.5;}
+  .pa-aviso .material-icons-round{font-size:17px;color:#E63946;flex-shrink:0;margin-top:1px;}
+  .pa-tabela-wrap{overflow-x:auto;border:1px solid var(--c-border,#E8E7E2);border-radius:8px;}
+  table.pa-tabela{width:100%;border-collapse:collapse;font-size:13px;}
+  table.pa-tabela th, table.pa-tabela td{padding:9px 12px;border-bottom:1px solid var(--c-border,#E8E7E2);text-align:left;vertical-align:middle;}
+  table.pa-tabela tr:last-child td{border-bottom:none;}
+  table.pa-tabela th{font-size:11px;font-weight:600;letter-spacing:0.4px;text-transform:uppercase;color:var(--c-text-3,#9898B0);background:#FAFAF8;white-space:nowrap;}
+  table.pa-tabela td.pa-c{text-align:center;white-space:nowrap;}
+  table.pa-tabela th.pa-c{text-align:center;}
+  table.pa-tabela tr.pa-inativo td{color:var(--c-text-3,#9898B0);}
+  table.pa-tabela tr.pa-editando td{background:rgba(230,57,70,0.04);}
+  .pa-nome{font-weight:500;color:var(--c-text-1,#1A1A2E);}
+  tr.pa-inativo .pa-nome{color:var(--c-text-3,#9898B0);}
+  .pa-badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:500;white-space:nowrap;}
+  .pa-badge.prio{background:rgba(230,57,70,0.10);color:#A32D2D;}
+  .pa-badge.geral{background:#F5F4F0;color:var(--c-text-3,#9898B0);}
+  .pa-badge.ativo{background:rgba(42,157,143,0.10);color:#1A6E65;}
+  .pa-badge.inativo{background:#F5F4F0;color:var(--c-text-3,#9898B0);}
+  .pa-acoes{display:flex;gap:6px;justify-content:flex-end;white-space:nowrap;}
+  .pa-form{background:#F8F7F3;border:1px solid var(--c-border,#E8E7E2);border-radius:8px;padding:14px;margin-top:14px;display:none;}
+  .pa-form.show{display:block;}
+  .pa-form-titulo{font-size:13px;font-weight:600;color:var(--c-text-1,#1A1A2E);margin-bottom:12px;}
+  .pa-form-grid{display:grid;grid-template-columns:1fr 110px;gap:10px;margin-bottom:10px;}
+  @media(max-width:560px){.pa-form-grid{grid-template-columns:1fr;}}
+  .pa-form-grid label{display:block;font-size:11px;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;color:var(--c-text-3,#9898B0);margin-bottom:4px;}
+  .pa-checks{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:12px;}
+  .pa-checks label{display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;color:var(--c-text-1,#1A1A2E);}
+  .pa-checks input{accent-color:#E63946;width:15px;height:15px;}
+  .pa-modal-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 20px;border-top:1px solid var(--c-border,#E8E7E2);background:#FAFAF8;}
 </style>
 
 <div>
@@ -261,6 +305,20 @@
         </div>
       </div>
 
+      <!-- TIPOS DE PÚBLICO-ALVO -->
+      <div class="cfg-card cfg-span2">
+        <div class="cfg-card-header">
+          <span class="material-icons-round">groups</span>
+          <span class="cfg-card-titulo">Tipos de público-alvo</span>
+        </div>
+        <div class="cfg-card-corpo">
+          <div class="pa-resumo" id="pa-resumo">Carregando…</div>
+          <button class="btn-cfg btn-cfg-sec" id="btn-abrir-pa">
+            <span class="material-icons-round">tune</span>Gerenciar tipos de público-alvo
+          </button>
+        </div>
+      </div>
+
       <!-- REGRAS DE ACESSO (RLS) — SOMENTE LEITURA -->
       <div class="cfg-card cfg-span2">
         <div class="cfg-card-header">
@@ -298,6 +356,7 @@
                 <tr><td class="regras-modulo">Comentários</td><td>Total</td><td>Total</td><td>Lança só nas próprias turmas</td><td>Só lê</td><td class="regras-obs">Mesma regra de Notas.</td></tr>
                 <tr><td class="regras-modulo">Relatórios</td><td>Lê</td><td>Lê</td><td>Lê</td><td>Lê</td><td class="regras-obs">Leitura liberada para todos os papéis.</td></tr>
                 <tr><td class="regras-modulo">Configurações</td><td>Total</td><td>Sem acesso</td><td>Sem acesso</td><td>Sem acesso</td><td class="regras-obs">Nome/logo/endereço da escola são visíveis a todos (não sensíveis).</td></tr>
+                <tr><td class="regras-modulo">Tipos de público-alvo</td><td>Cria/edita/inativa</td><td>Só lê</td><td>Só lê</td><td>Só lê</td><td class="regras-obs">Ninguém exclui, nem o admin: um tipo que sai de uso é inativado.</td></tr>
                 <tr><td class="regras-modulo">Dados sensíveis do aluno (CPF, endereço, responsáveis)</td><td>Total</td><td>Total</td><td>Só leitura parcial (menor de idade e contato do responsável)</td><td>Total</td><td class="regras-obs">Acesso exclusivo pela Edge Function alunos-sensiveis; a tabela não tem policy nenhuma, é bloqueio total por padrão.</td></tr>
               </tbody>
             </table>
@@ -308,6 +367,80 @@
 
     </div><!-- /cfg-secoes -->
   </div><!-- /cfg-conteudo -->
+
+  <!-- MODAL: GESTÃO DE TIPOS DE PÚBLICO-ALVO -->
+  <div class="pa-overlay" id="pa-overlay">
+    <div class="pa-modal" role="dialog" aria-labelledby="pa-modal-titulo">
+      <div class="pa-modal-header">
+        <span class="pa-modal-titulo" id="pa-modal-titulo">
+          <span class="material-icons-round">groups</span>Tipos de público-alvo
+        </span>
+        <button class="pa-btn-fechar" id="pa-btn-fechar" title="Fechar">
+          <span class="material-icons-round">close</span>
+        </button>
+      </div>
+      <div class="pa-modal-corpo">
+        <div class="cfg-alerta" id="cfg-alerta-pa">
+          <span class="material-icons-round">check_circle</span>
+          <span id="cfg-alerta-pa-msg"></span>
+        </div>
+        <div class="pa-aviso">
+          <span class="material-icons-round">info</span>
+          <span>O nome do tipo é o texto gravado no cadastro de cada aluno. <strong>Renomear</strong> um tipo atualiza automaticamente todos os alunos que o usam. Tipos não são excluídos: <strong>inative</strong> um tipo para que ele deixe de aparecer no cadastro de alunos (quem já o tem continua com ele).</span>
+        </div>
+
+        <div class="pa-tabela-wrap">
+          <table class="pa-tabela">
+            <thead>
+              <tr>
+                <th class="pa-c">Ordem</th>
+                <th>Nome</th>
+                <th class="pa-c">Matrícula</th>
+                <th class="pa-c">Situação</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="pa-tbody">
+              <tr><td colspan="5"><div class="cfg-spinner"><div class="cfg-spinner-anim"></div><span>Carregando…</span></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Formulário novo / editar -->
+        <div class="pa-form" id="pa-form">
+          <div class="pa-form-titulo" id="pa-form-titulo">Novo tipo</div>
+          <div class="pa-form-grid">
+            <div>
+              <label for="pa-nome">Nome <span style="color:#E63946;">*</span></label>
+              <input type="text" class="cfg-input" id="pa-nome" maxlength="200" placeholder="Ex: Servidores públicos estaduais da Paraíba">
+            </div>
+            <div>
+              <label for="pa-ordem">Ordem</label>
+              <input type="number" class="cfg-input" id="pa-ordem" min="0" step="1">
+            </div>
+          </div>
+          <div class="pa-checks">
+            <label><input type="checkbox" id="pa-prioritario"> Prioritário na matrícula</label>
+            <label><input type="checkbox" id="pa-ativo"> Ativo (aparece no cadastro de alunos)</label>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn-cfg btn-cfg-primario" id="pa-btn-salvar">
+              <div class="spinner-btn"></div>
+              <span class="material-icons-round btn-txt" style="font-size:16px;">save</span>
+              <span class="btn-txt">Salvar</span>
+            </button>
+            <button class="btn-cfg btn-cfg-sec" id="pa-btn-cancelar">Cancelar</button>
+          </div>
+        </div>
+      </div>
+      <div class="pa-modal-footer">
+        <button class="btn-cfg btn-cfg-sec" id="pa-btn-novo">
+          <span class="material-icons-round">add</span>Novo tipo
+        </button>
+        <button class="btn-cfg btn-cfg-sec" id="pa-btn-fechar-rodape">Fechar</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -346,6 +479,7 @@
     if(el('cfg-conteudo'))el('cfg-conteudo').style.display='block';
     carregarConfig();
     carregarSemestres();
+    carregarTiposPublico();
     registrarEventos();
   }
 
@@ -468,11 +602,175 @@
     });
   }
 
+  // =========================================================================
+  // TIPOS DE PÚBLICO-ALVO (tabela publico_alvo_tipos — ver
+  // claude/etapa8-publico-alvo.sql). Só admin grava (RLS); esta tela inteira
+  // já é restrita a admin em init(). Não há exclusão: inativar tira o tipo do
+  // select de f4-alunos.html, mas os alunos que já o têm continuam com ele.
+  // =========================================================================
+  var pa={tipos:[],editandoId:null,nomeOriginal:''};
+
+  function esc(s){return (s===null||s===undefined)?'':String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+
+  function carregarTiposPublico(){
+    return postApi('publicoAlvo.listar',{}).then(function(res){
+      if(!res.sucesso){
+        pa.tipos=[];
+        if(el('pa-resumo'))el('pa-resumo').textContent='Não foi possível carregar os tipos: '+(res.mensagem||'erro desconhecido.');
+        renderTabelaTipos(res.mensagem||'Erro ao carregar.');
+        return;
+      }
+      pa.tipos=res.dados||[];
+      renderResumoTipos();
+      renderTabelaTipos();
+    });
+  }
+
+  function renderResumoTipos(){
+    var wrap=el('pa-resumo'); if(!wrap)return;
+    var ativos=pa.tipos.filter(function(t){return t.ativo;}).length;
+    var prio=pa.tipos.filter(function(t){return t.ativo&&t.prioritario;}).length;
+    var inativos=pa.tipos.length-ativos;
+    wrap.innerHTML='<strong>'+ativos+'</strong> tipo(s) ativo(s) no cadastro de alunos, dos quais <strong>'+prio+'</strong> prioritário(s) na matrícula'+
+      (inativos?' · <strong>'+inativos+'</strong> inativo(s)':'')+'.';
+  }
+
+  function renderTabelaTipos(erro){
+    var tbody=el('pa-tbody'); if(!tbody)return;
+    if(erro){tbody.innerHTML='<tr><td colspan="5" style="color:#B01020;">'+esc(erro)+'</td></tr>';return;}
+    if(!pa.tipos.length){tbody.innerHTML='<tr><td colspan="5" style="color:var(--c-text-3,#9898B0);">Nenhum tipo cadastrado.</td></tr>';return;}
+    tbody.innerHTML='';
+    pa.tipos.forEach(function(t){
+      var tr=document.createElement('tr');
+      if(!t.ativo)tr.classList.add('pa-inativo');
+      if(pa.editandoId===t.id)tr.classList.add('pa-editando');
+      tr.innerHTML=
+        '<td class="pa-c">'+esc(t.ordem)+'</td>'+
+        '<td><span class="pa-nome">'+esc(t.nome)+'</span></td>'+
+        '<td class="pa-c">'+(t.prioritario?'<span class="pa-badge prio">Prioritário</span>':'<span class="pa-badge geral">Sem prioridade</span>')+'</td>'+
+        '<td class="pa-c">'+(t.ativo?'<span class="pa-badge ativo">Ativo</span>':'<span class="pa-badge inativo">Inativo</span>')+'</td>'+
+        '<td><div class="pa-acoes">'+
+          '<button class="btn-sem" data-pa-acao="editar" data-id="'+t.id+'"><span class="material-icons-round">edit</span>Editar</button>'+
+          '<button class="btn-sem" data-pa-acao="'+(t.ativo?'inativar':'ativar')+'" data-id="'+t.id+'">'+
+            '<span class="material-icons-round">'+(t.ativo?'visibility_off':'visibility')+'</span>'+(t.ativo?'Inativar':'Ativar')+
+          '</button>'+
+        '</div></td>';
+      tbody.appendChild(tr);
+    });
+    tbody.querySelectorAll('button[data-pa-acao]').forEach(function(btn){
+      btn.addEventListener('click',function(){
+        var t=pa.tipos.find(function(x){return x.id===btn.dataset.id;});
+        if(!t)return;
+        if(btn.dataset.paAcao==='editar')   abrirFormTipo(t);
+        if(btn.dataset.paAcao==='inativar') alternarAtivoTipo(t,false);
+        if(btn.dataset.paAcao==='ativar')   alternarAtivoTipo(t,true);
+      });
+    });
+  }
+
+  function abrirModalTipos(){
+    fecharFormTipo();
+    if(el('cfg-alerta-pa'))el('cfg-alerta-pa').classList.remove('show');
+    if(el('pa-overlay'))el('pa-overlay').classList.add('show');
+    carregarTiposPublico();
+  }
+  function fecharModalTipos(){
+    if(el('pa-overlay'))el('pa-overlay').classList.remove('show');
+    fecharFormTipo();
+  }
+
+  function proximaOrdem(){
+    var max=0;
+    pa.tipos.forEach(function(t){if(typeof t.ordem==='number'&&t.ordem>max)max=t.ordem;});
+    return max+1;
+  }
+
+  // t = tipo existente (editar) ou null (novo)
+  function abrirFormTipo(t){
+    pa.editandoId=t?t.id:null;
+    pa.nomeOriginal=t?t.nome:'';
+    if(el('pa-form-titulo'))el('pa-form-titulo').textContent=t?'Editar tipo':'Novo tipo';
+    if(el('pa-nome'))el('pa-nome').value=t?t.nome:'';
+    if(el('pa-ordem'))el('pa-ordem').value=t?t.ordem:proximaOrdem();
+    if(el('pa-prioritario'))el('pa-prioritario').checked=t?!!t.prioritario:true;
+    if(el('pa-ativo'))el('pa-ativo').checked=t?!!t.ativo:true;
+    if(el('pa-form'))el('pa-form').classList.add('show');
+    if(el('pa-btn-novo'))el('pa-btn-novo').style.display='none';
+    renderTabelaTipos();
+    if(el('pa-nome'))el('pa-nome').focus();
+  }
+  function fecharFormTipo(){
+    pa.editandoId=null; pa.nomeOriginal='';
+    if(el('pa-form'))el('pa-form').classList.remove('show');
+    if(el('pa-btn-novo'))el('pa-btn-novo').style.display='';
+    renderTabelaTipos();
+  }
+
+  function salvarTipo(){
+    var nome=val('pa-nome');
+    if(!nome){mostrarAlertaCampo('cfg-alerta-pa','Informe o nome do tipo.','erro');return;}
+    var ordemTxt=val('pa-ordem');
+    var dados={
+      nome:        nome,
+      ordem:       ordemTxt===''?proximaOrdem():parseInt(ordemTxt,10),
+      prioritario: el('pa-prioritario')?el('pa-prioritario').checked:true,
+      ativo:       el('pa-ativo')?el('pa-ativo').checked:true,
+    };
+    if(isNaN(dados.ordem)){mostrarAlertaCampo('cfg-alerta-pa','A ordem precisa ser um número inteiro.','erro');return;}
+    var duplicado=pa.tipos.some(function(t){return t.id!==pa.editandoId&&t.nome.toLowerCase()===nome.toLowerCase();});
+    if(duplicado){mostrarAlertaCampo('cfg-alerta-pa','Já existe um tipo com esse nome.','erro');return;}
+    if(pa.editandoId){
+      dados.id=pa.editandoId;
+      if(pa.nomeOriginal&&pa.nomeOriginal!==nome){
+        var ok=confirm('Renomear este tipo?\n\nDe: '+pa.nomeOriginal+'\nPara: '+nome+'\n\nTodos os alunos cadastrados com o nome antigo passarão a ter o novo nome.');
+        if(!ok)return;
+      }
+    }
+    var btn=el('pa-btn-salvar'); if(btn){btn.disabled=true;btn.classList.add('loading');}
+    postApi('publicoAlvo.salvar',dados).then(function(res){
+      if(btn){btn.disabled=false;btn.classList.remove('loading');}
+      if(!res.sucesso){mostrarAlertaCampo('cfg-alerta-pa',res.mensagem||'Erro ao salvar.','erro');return;}
+      mostrarAlertaCampo('cfg-alerta-pa',res.mensagem||'Tipo salvo.','sucesso');
+      if(typeof toast==='function')toast(res.mensagem||'Tipo salvo.','success');
+      fecharFormTipo();
+      carregarTiposPublico();
+    }).catch(function(e){
+      if(btn){btn.disabled=false;btn.classList.remove('loading');}
+      mostrarAlertaCampo('cfg-alerta-pa','Erro de comunicação: '+(e.message||'tente novamente.'),'erro');
+    });
+  }
+
+  function alternarAtivoTipo(t,ativo){
+    var msg=ativo
+      ? 'Ativar "'+t.nome+'"?\n\nEle volta a aparecer no cadastro de alunos.'
+      : 'Inativar "'+t.nome+'"?\n\nEle deixa de aparecer no cadastro de alunos. Os alunos que já têm este tipo continuam com ele.';
+    if(!confirm(msg))return;
+    postApi('publicoAlvo.salvar',{id:t.id,ativo:ativo}).then(function(res){
+      if(!res.sucesso){mostrarAlertaCampo('cfg-alerta-pa',res.mensagem||'Erro.','erro');return;}
+      var txt=ativo?'Tipo ativado.':'Tipo inativado.';
+      mostrarAlertaCampo('cfg-alerta-pa',txt,'sucesso');
+      if(typeof toast==='function')toast(txt,'success');
+      if(pa.editandoId===t.id)fecharFormTipo();
+      carregarTiposPublico();
+    }).catch(function(e){
+      mostrarAlertaCampo('cfg-alerta-pa','Erro de comunicação: '+(e.message||'tente novamente.'),'erro');
+    });
+  }
+
   function registrarEventos(){
     el('btn-salvar-dados')&&el('btn-salvar-dados').addEventListener('click',salvarConfig);
     el('btn-novo-sem')&&el('btn-novo-sem').addEventListener('click',abrirFormNovoSemestre);
     el('btn-cancelar-novo-sem')&&el('btn-cancelar-novo-sem').addEventListener('click',fecharFormNovoSemestre);
     el('btn-registrar-sem')&&el('btn-registrar-sem').addEventListener('click',registrarNovoSemestre);
+    // Tipos de público-alvo
+    el('btn-abrir-pa')&&el('btn-abrir-pa').addEventListener('click',abrirModalTipos);
+    el('pa-btn-fechar')&&el('pa-btn-fechar').addEventListener('click',fecharModalTipos);
+    el('pa-btn-fechar-rodape')&&el('pa-btn-fechar-rodape').addEventListener('click',fecharModalTipos);
+    el('pa-overlay')&&el('pa-overlay').addEventListener('click',function(e){if(e.target===this)fecharModalTipos();});
+    el('pa-btn-novo')&&el('pa-btn-novo').addEventListener('click',function(){abrirFormTipo(null);});
+    el('pa-btn-cancelar')&&el('pa-btn-cancelar').addEventListener('click',fecharFormTipo);
+    el('pa-btn-salvar')&&el('pa-btn-salvar').addEventListener('click',salvarTipo);
+    el('pa-nome')&&el('pa-nome').addEventListener('keydown',function(e){if(e.key==='Enter')salvarTipo();});
   }
 
   if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',init);}else{init();}
